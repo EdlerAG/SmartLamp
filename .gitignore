@@ -13,5 +13,7 @@ Thumbs.db
 
 # Secrets / credentials (NEVER commit!)
 secrets.h
+Secrets.h
+[sS]ecrets.h
 credentials.h
 wifi_credentials.*

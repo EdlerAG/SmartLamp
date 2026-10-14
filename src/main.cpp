@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "Config.h"
 #include "AppState.h"
+#include "CommandRouter.h"
 #include "InputService.h"
 #include "SensorService.h"
 #include "LedService.h"
@@ -17,9 +18,6 @@ NetworkService  networkService(appState);
 TelegramService telegramService(appState);
 DisplayService  displayService(appState);
 
-// ==============================================================
-// CORE 0 (Потік 1): Локальна мережа, Blackout Eco та I2C датчики
-// ==============================================================
 void backgroundCore0Task(void* pvParameters) {
     networkService.init();
 
@@ -32,70 +30,59 @@ void backgroundCore0Task(void* pvParameters) {
     }
 }
 
-// ==============================================================
-// CORE 0 (Потік 2): Ізольований потік Telegram API (Dual-Role)
-// ==============================================================
 void telegramCore0Task(void* pvParameters) {
     telegramService.init();
 
     for (;;) {
         telegramService.update();
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(80));
     }
 }
 
-// ==============================================================
-// Диспетчер подій (Core 1)
-// ==============================================================
 void processEvents() {
     AppEvent ev;
+    static uint8_t next_meme_cycle = NOTIFY_CAT;
+
     while (xQueueReceive(appState.eventQueue, &ev, 0) == pdTRUE) {
         switch (ev.type) {
-            // Ліва (коротко): Гортання екранів
             case EventType::BTN_LEFT_SHORT:
                 appState.screen_mode = (appState.screen_mode + 1) % SCREEN_COUNT;
                 break;
 
-            // Ліва (утримання 1 с): Примусовий запуск точки доступу з QR-кодом
             case EventType::BTN_LEFT_LONG:
                 appState.cmd_start_ap = true;
-                appState.triggerLedNotification(NOTIFY_CYAN_WAVE);
+                appState.triggerLedNotification(NOTIFY_CYAN_WAVE, false);
                 break;
 
-            // Кришка (коротко): Прочитати повідомлення (і відповісти Ярославу) або змінити світло
             case EventType::BTN_TOP_SHORT:
                 if (appState.screen_mode == SCREEN_TELEGRAM && appState.tg_unread) {
                     appState.tg_unread = false;
                     appState.cmd_send_tg_ack = true;
-                    appState.triggerLedNotification(NOTIFY_LOVE_PULSE);
+                    appState.triggerLedNotification(NOTIFY_FIRE, true);
                 } else {
-                    appState.light_mode = (appState.light_mode + 1) % AppState::LIGHT_MODE_COUNT;
-                    appState.markSettingsDirty();
+                    CommandRouter::nextLightMode(appState);
                 }
                 break;
 
-            // Кришка (утримання 1 с): Швидке вимкнення/увімкнення підсвітки
             case EventType::BTN_TOP_LONG:
-                appState.light_mode = (appState.light_mode == 5) ? 0 : 5;
-                appState.markSettingsDirty();
+                CommandRouter::togglePower(appState);
                 break;
 
-            // Права (коротко): Режим яскравості AUTO / Ручний
+            // Права (коротко): На екрані повідомлень гортає історію Inbox (1/5..5/5), на інших — змінює яскравість
             case EventType::BTN_RIGHT_SHORT:
-                if (appState.auto_brt) {
-                    appState.auto_brt = false;
-                    appState.manual_brt_idx = 0;
+                if (appState.screen_mode == SCREEN_TELEGRAM && appState.inbox_count > 1) {
+                    CommandRouter::nextInboxMessage(appState);
                 } else {
-                    appState.manual_brt_idx++;
-                    if (appState.manual_brt_idx >= 3) appState.auto_brt = true;
+                    CommandRouter::cycleBrightness(appState);
                 }
-                appState.markSettingsDirty();
                 break;
 
-            // Права (утримання 1 с): Надіслати "Сердечко" зі шкатулки Ярославу в Telegram!
+            // Права (утримання 1 с): Запускає по колу всі 5 мем-реакцій (Кіт -> НЛО -> Корона -> Вогник -> Блискавка)
             case EventType::BTN_RIGHT_LONG:
-                appState.cmd_send_love_ping = true;
-                appState.triggerLedNotification(NOTIFY_LOVE_PULSE);
+                appState.cmd_send_meme_ping = next_meme_cycle;
+                appState.triggerLedNotification((NotifyLedType)next_meme_cycle, true);
+                next_meme_cycle++;
+                if (next_meme_cycle > NOTIFY_CROWN) next_meme_cycle = NOTIFY_FIRE;
                 break;
 
             default:

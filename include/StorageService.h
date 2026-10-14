@@ -11,13 +11,13 @@ private:
 public:
     void loadUserSettings(AppState& state) {
         if (prefs.begin("box_state", false)) {
-            state.light_mode     = prefs.getUChar("l_mode", 0);
-            state.auto_brt       = prefs.getBool("a_brt", true);
-            state.manual_brt_idx = prefs.getUChar("m_brt", 1);
+            if (prefs.isKey("l_mode")) state.light_mode     = prefs.getUChar("l_mode", 0) % TOTAL_LIGHT_MODES;
+            if (prefs.isKey("a_brt"))  state.auto_brt       = prefs.getBool("a_brt", true);
+            if (prefs.isKey("m_brt"))  state.manual_brt_idx = prefs.getUChar("m_brt", 2) % 4;
 
-            String tok = prefs.getString("tg_tok", Config::DEFAULT_TG_TOKEN);
-            String adm = prefs.getString("tg_adm", Config::DEFAULT_ADMIN_ID);
-            String grl = prefs.getString("tg_grl", Config::DEFAULT_GIRL_ID);
+            String tok = prefs.isKey("tg_tok") ? prefs.getString("tg_tok") : String(Config::DEFAULT_TG_TOKEN);
+            String adm = prefs.isKey("tg_adm") ? prefs.getString("tg_adm") : String(Config::DEFAULT_ADMIN_ID);
+            String grl = prefs.isKey("tg_grl") ? prefs.getString("tg_grl") : String(Config::DEFAULT_GIRL_ID);
 
             state.setTelegramConfig(tok.c_str(), adm.c_str(), grl.c_str());
             prefs.end();
@@ -43,7 +43,6 @@ public:
     }
 
     void checkDelayedSave(AppState& state) {
-        // Якщо змінився ID через команду /iam_admin або /iam_nastia у Telegram
         if (state.tg_config_dirty) {
             state.tg_config_dirty = false;
             char tok[64], adm[20], grl[20];

@@ -3,6 +3,7 @@
 #include <Update.h>
 #include <WiFi.h>
 #include "AppState.h"
+#include "CommandRouter.h"
 #include "StorageService.h"
 #include "WifiScanner.h"
 #include "WebPortalHtml.h"
@@ -16,6 +17,12 @@ private:
     uint32_t reboot_at_ms = 0;
     bool started = false;
     bool ota_header_checked = false;
+
+    void addCorsHeaders() {
+        server.sendHeader("Access-Control-Allow-Origin", "*");
+        server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    }
 
     void sendPortalPage() {
         server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -32,7 +39,6 @@ public:
     PortalServer(AppState& st, StorageService& stor, WifiScanner& scan)
         : state(st), storage(stor), scanner(scan) {}
 
-    // FIX: Зупинка WebServer перед вимкненням WiFi (Blackout Eco), щоб socket не став stale
     void stop() {
         if (started) {
             server.stop();
@@ -48,12 +54,10 @@ public:
         server.on("/", HTTP_GET, [this]() { sendPortalPage(); });
         server.on("/setup", HTTP_GET, [this]() { sendPortalPage(); });
 
-        // Apple iOS / macOS Captive Portal
         server.on("/hotspot-detect.html", HTTP_GET, [this]() { sendPortalPage(); });
         server.on("/library/test/success.html", HTTP_GET, [this]() { sendPortalPage(); });
         server.on("/success.txt", HTTP_GET, [this]() { sendPortalPage(); });
 
-        // Android / Windows Captive Portal
         server.on("/generate_204", HTTP_GET, [this]() { redirectCaptive(); });
         server.on("/gen_204", HTTP_GET, [this]() { redirectCaptive(); });
         server.on("/ncsi.txt", HTTP_GET, [this]() { redirectCaptive(); });
@@ -61,44 +65,73 @@ public:
         server.on("/redirect", HTTP_GET, [this]() { redirectCaptive(); });
         server.on("/canonical.html", HTTP_GET, [this]() { redirectCaptive(); });
 
+        // Повний JSON статус для Web та мобільного застосунку
         server.on("/api/status", HTTP_GET, [this]() {
-            char buf[120];
-            snprintf(buf, sizeof(buf), "{\"t\":%.1f,\"h\":%.0f,\"p\":%.0f,\"l\":%d,\"m\":%d}",
-                     state.temperature, state.humidity, state.pressure, state.light_percent, state.light_mode);
+            addCorsHeaders();
+            char buf[380];
+            CommandRouter::buildStatusJson(state, buf, sizeof(buf));
             server.send(200, "application/json", buf);
         });
 
+        // Історія останніх 5 повідомлень у JSON
+        server.on("/api/inbox", HTTP_GET, [this]() {
+            addCorsHeaders();
+            char buf[768];
+            CommandRouter::buildInboxJson(state, buf, sizeof(buf));
+            server.send(200, "application/json", buf);
+        });
+
+        // Універсальний ендпоінт команд (/api/cmd)
         server.on("/api/cmd", HTTP_POST, [this]() {
-            String act = server.arg("do");
-            if (act == "mode") state.sendEvent(EventType::BTN_TOP_SHORT);
-            else if (act == "brt") state.sendEvent(EventType::BTN_RIGHT_SHORT);
-            server.send(200, "text/plain", "OK");
+            addCorsHeaders();
+            if (server.hasArg("set_mode")) {
+                CommandRouter::setLightMode(state, (uint8_t)server.arg("set_mode").toInt());
+            } else if (server.hasArg("set_brt")) {
+                String b = server.arg("set_brt");
+                if (b == "auto") CommandRouter::setBrightnessPreset(state, true);
+                else CommandRouter::setBrightnessPreset(state, false, (uint8_t)b.toInt());
+            } else if (server.hasArg("sleep")) {
+                CommandRouter::setSleepTimer(state, (uint16_t)server.arg("sleep").toInt());
+            } else if (server.hasArg("react")) {
+                String r = server.arg("react");
+                if (r == "fire")      CommandRouter::triggerReaction(state, NOTIFY_FIRE, "App Hub", "FIRE VIBE!");
+                else if (r == "zap")  CommandRouter::triggerReaction(state, NOTIFY_LIGHTNING, "App Hub", "KUS-ZAP!");
+                else if (r == "cat")  CommandRouter::triggerReaction(state, NOTIFY_CAT, "App Hub", "TYTS-KUS!");
+                else if (r == "ufo")  CommandRouter::triggerReaction(state, NOTIFY_UFO, "App Hub", "UFO BEAM!");
+                else if (r == "crown")CommandRouter::triggerReaction(state, NOTIFY_CROWN, "App Hub", "QUEEN VIBE!");
+            } else {
+                String act = server.arg("do");
+                if (act == "mode")      CommandRouter::nextLightMode(state);
+                else if (act == "brt")  CommandRouter::cycleBrightness(state);
+                else if (act == "power")CommandRouter::togglePower(state);
+                else if (act == "next_msg") CommandRouter::nextInboxMessage(state);
+            }
+            server.send(200, "application/json", "{\"ok\":true}");
         });
 
         server.on("/api/msg", HTTP_POST, [this]() {
+            addCorsHeaders();
             String s = server.arg("sender");
             String m = server.arg("msg");
-            s.trim();
-            m.trim();
+            s.trim(); m.trim();
             if (m.length() > 0) {
-                state.setTelegramData(s.length() ? s.c_str() : "Web Hub", m.c_str());
-                state.screen_mode = SCREEN_TELEGRAM;
-                state.triggerLedNotification(NOTIFY_CYAN_WAVE);
+                CommandRouter::pushMessage(state, s.length() ? s.c_str() : "Smart App", m.c_str());
             }
-            server.send(200, "text/plain", "OK");
+            server.send(200, "application/json", "{\"ok\":true}");
         });
 
-        // Збереження Токена + ID Ярослава + ID Насті
         server.on("/api/tg", HTTP_POST, [this]() {
+            addCorsHeaders();
             String tok = server.arg("token");
             String adm = server.arg("admin_id");
             String grl = server.arg("girl_id");
             tok.trim(); adm.trim(); grl.trim();
             storage.saveTelegramConfig(state, tok, adm, grl);
-            server.send(200, "text/plain", "OK");
+            server.send(200, "application/json", "{\"ok\":true}");
         });
 
         server.on("/api/scan", HTTP_GET, [this]() {
+            addCorsHeaders();
             scanner.checkAsyncScan();
             if (server.hasArg("refresh")) {
                 scanner.triggerAsyncScan();
@@ -125,7 +158,6 @@ public:
             }
         });
 
-        // Безпечне Web-OTA оновлення з перевіркою магічного байта 0xE9 та обробкою обриву
         server.on("/update", HTTP_POST, [this]() {
             server.sendHeader("Connection", "close");
             bool ok = !Update.hasError();
@@ -143,7 +175,6 @@ public:
             } else if (upload.status == UPLOAD_FILE_WRITE) {
                 if (!ota_header_checked && upload.currentSize > 0) {
                     ota_header_checked = true;
-                    // Перший байт справжньої прошивки ESP32 завжди 0xE9
                     if (upload.buf[0] != 0xE9) {
                         Update.abort();
                         state.ota_in_progress = false;
@@ -167,7 +198,15 @@ public:
             }
         });
 
-        server.onNotFound([this]() { sendPortalPage(); });
+        // Обробка CORS Preflight (HTTP_OPTIONS) для мобільних додатків + Captive Portal fallback
+        server.onNotFound([this]() {
+            if (server.method() == HTTP_OPTIONS) {
+                addCorsHeaders();
+                server.send(204);
+                return;
+            }
+            sendPortalPage();
+        });
 
         server.begin();
         started = true;

@@ -18,8 +18,8 @@ private:
         CONNECTING,
         CONNECTED,
         AP_PORTAL,
-        BLACKOUT_ECO,   // Радіо вимкнене для економії батареї, пробудження раз на 30 с
-        BLACKOUT_PROBE  // Коротке 4.5-секундне вікно перевірки, чи з'явився домашній роутер
+        BLACKOUT_ECO,
+        BLACKOUT_PROBE
     };
     NetMode net_mode = NetMode::IDLE;
 
@@ -32,9 +32,17 @@ private:
 
     String   saved_ssid = "";
     String   saved_pass = "";
-    uint32_t state_timer_ms  = 0;
-    uint32_t last_rtc_tick   = 0;
-    uint32_t drop_start_ms   = 0;
+    uint32_t state_timer_ms = 0;
+    uint32_t last_rtc_tick  = 0;
+    uint32_t drop_start_ms  = 0;
+
+    // Очікуємо завершення активного TLS-запиту Telegram перед вимкненням Wi-Fi (макс 500 мс)
+    void waitForTlsIdle() {
+        uint32_t start = millis();
+        while (state.tls_in_flight && (millis() - start < 500)) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
 
     void startStaConnection() {
         WiFi.persistent(false);
@@ -54,6 +62,9 @@ private:
     }
 
     void enterApPortalMode() {
+        state.wifi_connected = false;
+        waitForTlsIdle();
+
         WiFi.persistent(false);
         WiFi.disconnect(true);
         WiFi.mode(WIFI_STA);
@@ -77,7 +88,6 @@ private:
         state_timer_ms       = millis();
         state.ap_mode_active = true;
         state.ap_clients     = 0;
-        state.wifi_connected = false;
         state.wifi_sleeping  = false;
         state.setNetworkInfo(Config::AP_SSID, WiFi.softAPIP().toString().c_str());
         state.screen_mode = SCREEN_NETWORK;
@@ -85,7 +95,6 @@ private:
         net_mode = NetMode::AP_PORTAL;
     }
 
-    // Загальна логіка після успішного WiFi-з'єднання (DRY: не дублюємо в CONNECTING + BLACKOUT_PROBE)
     void onWifiConnected() {
         WiFi.setSleep(WIFI_PS_MIN_MODEM);
         state.wifi_connected = true;
@@ -95,51 +104,49 @@ private:
         state.setNetworkInfo(saved_ssid.c_str(), WiFi.localIP().toString().c_str());
         MDNS.begin(Config::DEVICE_NAME);
         ota.begin();
-        portal.begin(); // Перезапускає WebServer якщо був зупинений після Blackout
+        portal.begin();
 
         if (state.had_blackout_drop) {
             state.had_blackout_drop = false;
-            state.cmd_send_power_restore = true; // Сповістити в TG, що світло з'явилося!
+            state.cmd_send_power_restore = true;
         }
 
-        // FIX: Переключаємо на головний екран + примусово перемальовуємо UI
         state.screen_mode = SCREEN_CLIMATE;
         state.registerActivity();
         drop_start_ms = 0;
         net_mode = NetMode::CONNECTED;
     }
 
-    // Енергоощадний режим під час блекауту (0 мА на Wi-Fi, але автоматично ловить появу світла!)
     void enterBlackoutEcoMode() {
+        state.wifi_connected = false;
+        waitForTlsIdle(); // Безпечне завершення TLS перед зупинкою LwIP
+
         dnsServer.stop();
-        portal.stop(); // FIX: Зупиняємо WebServer — socket стає невалідним після WiFi.mode(WIFI_OFF)
+        portal.stop();
         WiFi.softAPdisconnect(true);
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
 
         state.ap_mode_active = false;
         state.ap_clients     = 0;
-        state.wifi_connected = false;
         state.wifi_sleeping  = true;
         state.setNetworkInfo(saved_ssid.length() ? saved_ssid.c_str() : "Offline Mode", "Blackout Eco");
         state_timer_ms = millis();
         net_mode = NetMode::BLACKOUT_ECO;
     }
 
-    // Оновлює годинник від внутрішнього кварцу ESP32 навіть коли Wi-Fi повністю вимкнений!
     void updateInternalRtcClock() {
         uint32_t now = millis();
         if (now - last_rtc_tick < 1000) return;
         last_rtc_tick = now;
 
-        // FIX: RSSI оновлюємо раз на секунду (було кожні 12мс у CONNECTED — надлишково)
         if (state.wifi_connected) {
             state.wifi_rssi = WiFi.RSSI();
         }
 
         struct tm timeinfo;
         if (getLocalTime(&timeinfo, 0)) {
-            if (timeinfo.tm_year > 120) { // Рік > 2020 (час вже синхронізований)
+            if (timeinfo.tm_year > 120) {
                 char t_buf[10], d_buf[16];
                 strftime(t_buf, sizeof(t_buf), "%H:%M", &timeinfo);
                 strftime(d_buf, sizeof(d_buf), "%d.%m.%Y", &timeinfo);
@@ -166,14 +173,13 @@ public:
 
     void update() override {
         storage.checkDelayedSave(state);
-        updateInternalRtcClock(); // Годинник іде завжди, незалежно від Wi-Fi
+        updateInternalRtcClock();
 
         if (state.cmd_start_ap) {
             state.cmd_start_ap = false;
             enterApPortalMode();
         }
 
-        // FIX: portal.handle() лише коли WebServer активний (не в Blackout режимах)
         if (net_mode != NetMode::BLACKOUT_ECO && net_mode != NetMode::BLACKOUT_PROBE) {
             portal.handle();
         }
@@ -185,7 +191,7 @@ public:
 
                 if (clients != state.ap_clients) {
                     state.ap_clients = clients;
-                    state.triggerLedNotification(NOTIFY_CYAN_WAVE);
+                    state.triggerLedNotification(NOTIFY_CYAN_WAVE, false);
                 }
 
                 if (clients > 0) {
@@ -211,7 +217,6 @@ public:
                     ota.handle();
                     scanner.checkAsyncScan();
                 } else {
-                    // FIX: оновлюємо UI лише один раз при втраті з'єднання
                     if (state.wifi_connected) {
                         state.wifi_connected = false;
                         state.registerActivity();
@@ -226,7 +231,6 @@ public:
                 }
                 break;
 
-            // Сон радіомодуля під час відключення світла + перевірка ефіру кожні 30 секунд
             case NetMode::BLACKOUT_ECO:
                 if (saved_ssid.length() > 0 && (millis() - state_timer_ms >= Config::BLACKOUT_PROBE_EVERY_MS)) {
                     WiFi.persistent(false);
@@ -238,10 +242,9 @@ public:
                 }
                 break;
 
-            // Коротке 4.5-секундне вікно перевірки: чи увімкнувся роутер?
             case NetMode::BLACKOUT_PROBE:
                 if (WiFi.status() == WL_CONNECTED) {
-                    onWifiConnected(); // FIX: використовуємо спільну логіку (DRY)
+                    onWifiConnected();
                 } else if (millis() - state_timer_ms >= 4500) {
                     enterBlackoutEcoMode();
                 }

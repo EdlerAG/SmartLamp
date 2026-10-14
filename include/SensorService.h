@@ -15,13 +15,14 @@ private:
     uint32_t sht_cmd_ms       = 0;
     uint32_t last_climate_ms  = 0;
     uint32_t last_ldr_ms      = 0;
+    uint32_t last_hist_ms     = 0;
+    bool     first_hist_saved = false;
 
     bool probeSht31(uint8_t addr) {
         Wire.beginTransmission(addr);
         return (Wire.endTransmission() == 0);
     }
 
-    // Апаратна перевірка цілісності пакету SHT31 (поліном 0x31)
     static uint8_t crc8(const uint8_t* data, int len) {
         uint8_t crc = 0xFF;
         for (int j = len; j > 0; --j) {
@@ -41,7 +42,7 @@ public:
         analogSetPinAttenuation(Config::PIN_LDR, ADC_11db);
 
         Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL, 400000);
-        Wire.setTimeOut(25); // Захист від зависання шини I2C
+        Wire.setTimeOut(25);
 
         if (bmp280.begin(0x76) || bmp280.begin(0x77)) {
             state.bmp_connected = true;
@@ -78,19 +79,18 @@ public:
             }
         }
 
-        // 2. ФАЗА 2 SHT31: Неблокуюче зчитування 6 байтів + перевірка CRC-8
+        // 2. ФАЗА 2 SHT31: Неблокуюче зчитування + CRC-8
         if (sht_waiting_data && (now - sht_cmd_ms >= 20)) {
             sht_waiting_data = false;
             if (Wire.requestFrom(sht_addr, (uint8_t)6) == 6) {
                 uint8_t buf[6];
                 for (int i = 0; i < 6; i++) buf[i] = Wire.read();
 
-                // Перевіряємо CRC температури та вологості
                 if (crc8(&buf[0], 2) == buf[2] && crc8(&buf[3], 2) == buf[5]) {
                     uint16_t rawT = ((uint16_t)buf[0] << 8) | buf[1];
                     uint16_t rawH = ((uint16_t)buf[3] << 8) | buf[4];
 
-                    float t = -45.0f + 175.0f * ((float)rawT / 65535.0f);
+                    float t = (-45.0f + 175.0f * ((float)rawT / 65535.0f)) + Config::TEMP_OFFSET_C;
                     float h = 100.0f * ((float)rawH / 65535.0f);
 
                     if (t > -40.0f && t < 85.0f && fabs(t - state.temperature) >= 0.05f) {
@@ -105,7 +105,7 @@ public:
             }
         }
 
-        // 3. ФАЗА 1 SHT31 + BMP280 (кожні 2.5 секунди)
+        // 3. ФАЗА 1 SHT31 + BMP280 + Історія тиску
         if (now - last_climate_ms >= 2500) {
             last_climate_ms = now;
 
@@ -123,9 +123,15 @@ public:
                 float p = bmp280.readPressure();
                 if (!isnan(p) && p > 80000.0f && p < 115000.0f) {
                     float mm = p * 0.00750062f;
-                    if (fabs(mm - state.pressure) >= 0.3f) {
+                    if (fabs(mm - state.pressure) >= 0.2f) {
                         state.pressure = mm;
                         state.ui_force_dirty = true;
+                    }
+                    // Записуємо історію тиску для графіка (перший раз одразу, далі кожні 15 хв)
+                    if (!first_hist_saved || (now - last_hist_ms >= 900000UL)) {
+                        first_hist_saved = true;
+                        last_hist_ms = now;
+                        state.addPressureSample(mm);
                     }
                 }
             }
