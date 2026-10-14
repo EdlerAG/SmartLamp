@@ -13,77 +13,30 @@ private:
     uint16_t anim_step     = 0;
     int      last_mode     = -1;
     uint16_t notify_frames = 0;
+    uint8_t  active_notify_type = NOTIFY_NONE;
 
     const uint8_t manual_levels[3] = {25, 65, 125};
 
-public:
-    LedService(AppState& st)
-        : state(st), strip(Config::NUM_LEDS, Config::PIN_LED, NEO_GRBW + NEO_KHZ800) {}
-
-    void init() override {
-        strip.begin();
-        strip.setBrightness(state.current_led_brt);
-        renderStrip(true);
-    }
-
-    bool isAnimating() const {
-        return (notify_frames > 0) || (state.light_mode >= 1 && state.light_mode <= 4);
-    }
-
-    void update() override {
-        uint32_t now = millis();
-        bool brt_changed = false;
-
-        if (now - last_brt_ms >= 45) {
-            last_brt_ms = now;
-            uint8_t target_led = state.current_led_brt;
-            uint8_t target_lcd = state.current_lcd_brt;
-
-            if (state.auto_brt) {
-                float factor = constrain((state.smooth_ldr - 200.0f) / 3500.0f, 0.0f, 1.0f);
-                target_led = (uint8_t)(Config::MIN_SAFE_BRT + factor * (Config::MAX_SAFE_BRT - Config::MIN_SAFE_BRT));
-                target_lcd = (uint8_t)(35 + factor * 220.0f);
-            } else {
-                target_led = manual_levels[state.manual_brt_idx];
-                target_lcd = (state.manual_brt_idx == 0) ? 70 : ((state.manual_brt_idx == 1) ? 175 : 255);
-            }
-
-            if (state.current_led_brt != target_led) {
-                state.current_led_brt += (target_led > state.current_led_brt) ? 1 : -1;
-                strip.setBrightness(state.current_led_brt);
-                brt_changed = true;
-                state.ui_force_dirty = true;
-            }
-
-            if (state.current_lcd_brt != target_lcd) {
-                if (abs((int)state.current_lcd_brt - (int)target_lcd) > 4)
-                    state.current_lcd_brt += (target_lcd > state.current_lcd_brt) ? 4 : -4;
-                else
-                    state.current_lcd_brt = target_lcd;
-            }
-        }
-
-        if (state.led_notify_trigger) {
-            state.led_notify_trigger = false;
-            notify_frames = 70;
-        }
-
-        renderStrip(brt_changed);
-    }
-
-private:
     void renderStrip(bool force) {
         uint32_t now = millis();
         bool mode_changed = (state.light_mode != last_mode);
         last_mode = state.light_mode;
 
+        // Відмальовка спец-ефектів сповіщень (Бірюзова хвиля або Рожевий пульс сердечка)
         if (notify_frames > 0) {
             if (now - last_anim_ms >= 20) {
                 last_anim_ms = now;
                 notify_frames--;
-                uint8_t wave = strip.sine8(notify_frames * 10);
+                uint8_t wave = strip.sine8(notify_frames * 11);
+
                 for (int i = 0; i < Config::NUM_LEDS; i++) {
-                    strip.setPixelColor(i, strip.Color(0, (wave * 180) >> 8, wave, (wave * 70) >> 8));
+                    if (active_notify_type == NOTIFY_LOVE_PULSE) {
+                        // Ніжний рожево-рубіновий пульс сердечка
+                        strip.setPixelColor(i, strip.Color(wave, (wave * 20) >> 8, (wave * 95) >> 8, (wave * 35) >> 8));
+                    } else {
+                        // Бірюзова хвиля нового повідомлення
+                        strip.setPixelColor(i, strip.Color(0, (wave * 180) >> 8, wave, (wave * 70) >> 8));
+                    }
                 }
                 strip.show();
                 if (notify_frames == 0) last_mode = -1;
@@ -163,5 +116,61 @@ private:
             }
         }
         strip.show();
+    }
+
+public:
+    LedService(AppState& st)
+        : state(st), strip(Config::NUM_LEDS, Config::PIN_LED, NEO_GRBW + NEO_KHZ800) {}
+
+    void init() override {
+        strip.begin();
+        strip.setBrightness(state.current_led_brt);
+        renderStrip(true);
+    }
+
+    bool isAnimating() const {
+        return (notify_frames > 0) || (state.light_mode >= 1 && state.light_mode <= 4);
+    }
+
+    void update() override {
+        uint32_t now = millis();
+        bool brt_changed = false;
+
+        if (now - last_brt_ms >= 45) {
+            last_brt_ms = now;
+            uint8_t target_led = state.current_led_brt;
+            uint8_t target_lcd = state.current_lcd_brt;
+
+            if (state.auto_brt) {
+                float factor = constrain((state.smooth_ldr - 200.0f) / 3500.0f, 0.0f, 1.0f);
+                target_led = (uint8_t)(Config::MIN_SAFE_BRT + factor * (Config::MAX_SAFE_BRT - Config::MIN_SAFE_BRT));
+                target_lcd = (uint8_t)(35 + factor * 220.0f);
+            } else {
+                target_led = manual_levels[state.manual_brt_idx];
+                target_lcd = (state.manual_brt_idx == 0) ? 70 : ((state.manual_brt_idx == 1) ? 175 : 255);
+            }
+
+            if (state.current_led_brt != target_led) {
+                state.current_led_brt += (target_led > state.current_led_brt) ? 1 : -1;
+                strip.setBrightness(state.current_led_brt);
+                brt_changed = true;
+                state.ui_force_dirty = true;
+            }
+
+            if (state.current_lcd_brt != target_lcd) {
+                if (abs((int)state.current_lcd_brt - (int)target_lcd) > 4)
+                    state.current_lcd_brt += (target_lcd > state.current_lcd_brt) ? 4 : -4;
+                else
+                    state.current_lcd_brt = target_lcd;
+            }
+        }
+
+        if (state.led_notify_type != NOTIFY_NONE) {
+            active_notify_type = state.led_notify_type;
+            state.led_notify_type = NOTIFY_NONE;
+            notify_frames = 85;
+        }
+
+        renderStrip(brt_changed);
     }
 };

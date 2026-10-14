@@ -18,7 +18,7 @@ h2{color:#38bdf8;margin:0 0 10px 0;font-size:15px;text-transform:uppercase;lette
 .net-item{display:flex;justify-content:space-between;align-items:center;padding:11px 12px;margin:4px 0;background:#1e293b;border-radius:9px;cursor:pointer;border:1px solid transparent;transition:0.15s}
 .net-item:active,.net-item.sel{background:#0284c7;border-color:#7dd3fc}
 .badge{font-size:11px;background:#0b1120;color:#38bdf8;padding:3px 7px;border-radius:6px;font-weight:bold}
-input,button{width:100%;padding:12px;margin:5px 0;border-radius:11px;border:1px solid #334155;background:#0b1120;color:#fff;font-size:15px;outline:none}
+input,button{width:100%;padding:12px;margin:5px 0;border-radius:11px;border:1px solid #334155;background:#0b1120;color:#fff;font-size:14px;outline:none}
 input:focus{border-color:#38bdf8}
 button{background:#0284c7;border:none;font-weight:600;cursor:pointer}
 button:active{transform:scale(0.98)}
@@ -31,12 +31,13 @@ button:active{transform:scale(0.98)}
 .prog-wrap{display:none;background:#0b1120;border-radius:8px;overflow:hidden;height:22px;margin-top:8px}
 .prog-bar{background:#10b981;height:100%;width:0%;line-height:22px;font-size:12px;font-weight:bold}
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;padding:10px 20px;border-radius:20px;font-size:14px;font-weight:600;display:none;box-shadow:0 4px 15px rgba(0,0,0,0.5)}
+.hint{font-size:11px;color:#94a3b8;margin:4px 0 8px 0}
 </style></head><body>
 <div class="wrap">
 
 <div class="card" id="wifiCard">
   <h2>📶 Підключення до Wi-Fi</h2>
-  <button onclick="scanWifi(true)" class="btn-sec" id="scanBtn">🔄 Оновити список мереж</button>
+  <button onclick="scanWifi(true)" class="btn-sec">🔄 Оновити список мереж</button>
   <div class="net-list" id="netList"></div>
   <form onsubmit="saveWifi(event)">
     <input type="text" id="ssid" name="ssid" placeholder="Оберіть мережу зі списку вище" required>
@@ -65,9 +66,22 @@ button:active{transform:scale(0.98)}
 <div class="card">
   <h2>💬 Написати на екран</h2>
   <form onsubmit="sendMsg(event)">
-    <input type="text" name="sender" placeholder="Ім'я" value="Anastasiia" maxlength="25" required>
+    <input type="text" name="sender" placeholder="Ім'я" value="Yaroslav" maxlength="25" required>
     <input type="text" id="msg" name="msg" placeholder="Повідомлення..." maxlength="55" required>
     <button type="submit">Вивести на дисплей</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>🤖 Двосторонній Telegram Бот</h2>
+  <div class="hint">Можна прив'язати командами <b>/iam_admin</b> та <b>/iam_nastia</b> у боті</div>
+  <form onsubmit="saveTg(event)">
+    <input type="text" name="token" placeholder="Bot Token (від @BotFather)">
+    <div class="btn-row">
+      <input type="text" name="admin_id" placeholder="Твій ID (Ярослав)">
+      <input type="text" name="girl_id" placeholder="Її ID (Настя)">
+    </div>
+    <button type="submit">Зберегти налаштування TG</button>
   </form>
 </div>
 
@@ -110,6 +124,12 @@ function sendMsg(e){
   fetch('/api/msg',{method:'POST',body:new FormData(e.target)}).then(()=>{
     document.getElementById('msg').value='';
     showToast('✅ Виведено на екран!');
+  });
+}
+function saveTg(e){
+  e.preventDefault();
+  fetch('/api/tg',{method:'POST',body:new FormData(e.target)}).then(()=>{
+    showToast('🤖 Налаштування Telegram збережено!');
   });
 }
 function renderNets(nets){

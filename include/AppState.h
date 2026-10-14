@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include "Config.h"
 
 enum class EventType : uint8_t {
     BTN_LEFT_SHORT,
@@ -10,8 +11,7 @@ enum class EventType : uint8_t {
     BTN_TOP_LONG,
     BTN_RIGHT_SHORT,
     BTN_RIGHT_LONG,
-    NEW_TELEGRAM_MSG,
-    WIFI_CONNECTED      // WiFi щойно підключився → можна реагувати (LED-нотифікація тощо)
+    NEW_TELEGRAM_MSG
 };
 
 struct AppEvent {
@@ -26,10 +26,17 @@ enum ScreenMode : uint8_t {
     SCREEN_COUNT = 4
 };
 
+// Тип світлового спец-ефекту сповіщення
+enum NotifyLedType : uint8_t {
+    NOTIFY_NONE = 0,
+    NOTIFY_CYAN_WAVE = 1, // Вхідне повідомлення
+    NOTIFY_LOVE_PULSE = 2 // Рожево-червоний пульс сердечка
+};
+
 struct AppState {
     portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-    // Кліматичні показники
+    // Кліматичні дані
     volatile float temperature = 22.0f;
     volatile float humidity    = 50.0f;
     volatile float pressure    = 750.0f;
@@ -57,20 +64,22 @@ struct AppState {
     // Відкладене збереження в NVS
     volatile bool     settings_dirty     = false;
     volatile uint32_t settings_change_ms = 0;
+    volatile bool     tg_config_dirty    = false; // FIX: volatile — пишеться з Core0/TG, читається з Core0/Net
 
     // Стан сенсорних кнопок
     volatile bool btn_l_pressed = false;
     volatile bool btn_t_pressed = false;
     volatile bool btn_r_pressed = false;
 
-    // Мережа
-    volatile bool    wifi_connected = false;
-    volatile bool    ap_mode_active = false;
-    volatile uint8_t ap_clients     = 0;
-    volatile bool    wifi_sleeping  = false;
-    volatile int8_t  wifi_rssi      = -60;
-    volatile bool    cmd_start_ap   = false;
-    volatile bool    time_synced    = false;
+    // Мережа та режим блекауту
+    volatile bool    wifi_connected      = false;
+    volatile bool    ap_mode_active      = false;
+    volatile uint8_t ap_clients          = 0;
+    volatile bool    wifi_sleeping       = false; // BLACKOUT_ECO режим
+    volatile int8_t  wifi_rssi           = -60;
+    volatile bool    cmd_start_ap        = false;
+    volatile bool    time_synced         = false;
+    volatile bool    had_blackout_drop   = false; // Чи втрачався зв'язок через блекаут
 
     char wifi_ssid[33]  = "Connecting...";
     char ip_address[20] = "0.0.0.0";
@@ -81,22 +90,37 @@ struct AppState {
     volatile bool    ota_in_progress = false;
     volatile uint8_t ota_progress    = 0;
 
-    // Повідомлення
-    char tg_sender[32]  = "Anastasiia";
-    char tg_message[64] = "Have a magical evening!";
-    volatile bool tg_unread          = true;
-    volatile bool led_notify_trigger = false;
+    // Telegram двосторонній стан (Admin + Girl)
+    char tg_token[64]    = "";
+    char tg_admin_id[20] = ""; // Твій ID (Ярослав)
+    char tg_girl_id[20]  = ""; // Її ID (Настя)
+    char tg_sender[32]   = "Yaroslav";
+    char tg_message[64]  = "Have a magical evening!";
+
+    volatile bool    tg_unread              = true;
+    volatile uint8_t led_notify_type        = NOTIFY_NONE;
+    volatile bool    cmd_send_tg_ack        = false; // Вона прочитала повідомлення (торкнулася кришки)
+    volatile bool    cmd_send_love_ping     = false; // Вона затиснула праву кнопку (надіслала сердечко)
+    volatile bool    cmd_send_power_restore = false; // Сповіщення про відновлення світла/Wi-Fi
 
     QueueHandle_t eventQueue = nullptr;
 
     void initQueue() {
         eventQueue = xQueueCreate(16, sizeof(AppEvent));
         last_user_activity_ms = millis();
+        strncpy(tg_token, Config::DEFAULT_TG_TOKEN, sizeof(tg_token) - 1);
+        strncpy(tg_admin_id, Config::DEFAULT_ADMIN_ID, sizeof(tg_admin_id) - 1);
+        strncpy(tg_girl_id, Config::DEFAULT_GIRL_ID, sizeof(tg_girl_id) - 1);
     }
 
     void registerActivity() {
         last_user_activity_ms = millis();
         ui_force_dirty = true;
+    }
+
+    void triggerLedNotification(NotifyLedType type) {
+        led_notify_type = type;
+        registerActivity();
     }
 
     void sendEvent(EventType type) {
@@ -146,6 +170,31 @@ struct AppState {
         ssid_out[ssid_len - 1] = '\0';
         strncpy(ip_out, ip_address, ip_len - 1);
         ip_out[ip_len - 1] = '\0';
+        portEXIT_CRITICAL(&mux);
+    }
+
+    void setTelegramConfig(const char* tok, const char* adm, const char* grl) {
+        portENTER_CRITICAL(&mux);
+        if (tok && strlen(tok) > 0) {
+            strncpy(tg_token, tok, sizeof(tg_token) - 1);
+            tg_token[sizeof(tg_token) - 1] = '\0';
+        }
+        if (adm) {
+            strncpy(tg_admin_id, adm, sizeof(tg_admin_id) - 1);
+            tg_admin_id[sizeof(tg_admin_id) - 1] = '\0';
+        }
+        if (grl) {
+            strncpy(tg_girl_id, grl, sizeof(tg_girl_id) - 1);
+            tg_girl_id[sizeof(tg_girl_id) - 1] = '\0';
+        }
+        portEXIT_CRITICAL(&mux);
+    }
+
+    void getTelegramConfig(char* tok_out, size_t t_len, char* adm_out, size_t a_len, char* grl_out, size_t g_len) {
+        portENTER_CRITICAL(&mux);
+        if (tok_out) { strncpy(tok_out, tg_token, t_len - 1); tok_out[t_len - 1] = '\0'; }
+        if (adm_out) { strncpy(adm_out, tg_admin_id, a_len - 1); adm_out[a_len - 1] = '\0'; }
+        if (grl_out) { strncpy(grl_out, tg_girl_id, g_len - 1); grl_out[g_len - 1] = '\0'; }
         portEXIT_CRITICAL(&mux);
     }
 

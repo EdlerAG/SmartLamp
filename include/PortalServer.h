@@ -32,6 +32,14 @@ public:
     PortalServer(AppState& st, StorageService& stor, WifiScanner& scan)
         : state(st), storage(stor), scanner(scan) {}
 
+    // FIX: Зупинка WebServer перед вимкненням WiFi (Blackout Eco), щоб socket не став stale
+    void stop() {
+        if (started) {
+            server.stop();
+            started = false;
+        }
+    }
+
     void begin() {
         if (started) return;
 
@@ -75,8 +83,18 @@ public:
             if (m.length() > 0) {
                 state.setTelegramData(s.length() ? s.c_str() : "Web Hub", m.c_str());
                 state.screen_mode = SCREEN_TELEGRAM;
-                state.led_notify_trigger = true;
+                state.triggerLedNotification(NOTIFY_CYAN_WAVE);
             }
+            server.send(200, "text/plain", "OK");
+        });
+
+        // Збереження Токена + ID Ярослава + ID Насті
+        server.on("/api/tg", HTTP_POST, [this]() {
+            String tok = server.arg("token");
+            String adm = server.arg("admin_id");
+            String grl = server.arg("girl_id");
+            tok.trim(); adm.trim(); grl.trim();
+            storage.saveTelegramConfig(state, tok, adm, grl);
             server.send(200, "text/plain", "OK");
         });
 
