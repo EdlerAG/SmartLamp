@@ -1,140 +1,210 @@
-# 🪄 SmartLamp — MagicBox
+# 🪄 SmartLamp — MagicBox v3.0
 
-> ESP32-S3 smart ambient lamp with round GC9A01 display, SK6812 RGBW LED strip, environmental sensors, WiFi portal, OTA updates and Telegram notifications.
+<p align="center">
+  <img src="https://img.shields.io/badge/PlatformIO-ESP32--S3-orange.svg?style=flat-square&logo=platformio" alt="PlatformIO" />
+  <img src="https://img.shields.io/badge/Framework-Arduino%20%2F%20FreeRTOS-blue.svg?style=flat-square&logo=arduino" alt="Framework" />
+  <img src="https://img.shields.io/badge/Display-GC9A01%20240x240%20IPS-purple.svg?style=flat-square" alt="Display" />
+  <img src="https://img.shields.io/badge/LEDs-SK6812%20RGBW-green.svg?style=flat-square" alt="LEDs" />
+  <img src="https://img.shields.io/badge/Version-3.0%20Release-brightgreen.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
+</p>
+
+> **MagicBox** — розумна атмосферна лампа-шкатулка на базі **ESP32-S3**, оснащена круглим IPS-дисплеєм GC9A01, адресною RGBW-стрічкою SK6812, кліматичними датчиками високої точності, інтерактивними мем-реакціями, двостороннім Telegram-ботом та адаптивною стійкістю до блекаутів.
 
 ---
 
-## ✨ Features
+## ✨ Основні можливості (v3.0)
 
-| Feature | Details |
+| Категорія | Опис |
 |---|---|
-| 🖥️ **Round display** | 240×240 GC9A01 via LovyanGFX, double-buffered 60fps sprite canvas |
-| 💡 **LED animations** | Warm Cozy, Rainbow Flow, Aurora Wave, Cyber Runner, Fire Glow, Off |
-| 🌡️ **Climate sensors** | SHT31 (temp + humidity, CRC-8 validated) + BMP280 (pressure, barometric forecast) |
-| 📡 **WiFi captive portal** | Auto AP + captive portal for first-time setup, mDNS `magicbox.local` |
-| 🌐 **Web dashboard** | Real-time sensor data, LED mode/brightness control, message push |
-| 📲 **Telegram messages** | Push messages via `/api/msg` endpoint, shown on display with pulsing ring |
-| ♻️ **OTA updates** | ArduinoOTA (wireless) + Web OTA (`/update`) with magic-byte `0xE9` validation |
-| 🔆 **Auto brightness** | LDR-based smooth auto brightness for both LCD and LED strip |
-| 💾 **NVS persistence** | Settings saved to flash with 5 s debounce (wear protection) |
-| ⚡ **Adaptive FPS** | 60 fps during interaction → 4 fps idle (core sleep, energy saving) |
-| 🌙 **Eco WiFi mode** | Auto radio-off after 3 min idle AP (hold Left button to wake) |
+| 🖥️ **Круглий IPS-екран** | 1.28" 240×240 GC9A01 через [LovyanGFX](https://github.com/lovyan03/LovyanGFX), подвійна буферизація, плавний рендеринг 60 FPS та адаптивне зниження до 4 FPS у режимі спокою для енергозбереження. |
+| 💡 **11 режимів світла** | Жива свічка, Бурштинова свічка, Затишний камін, Захід сонця, Тепле світло, Аврора, Кіберпанк, Сакура Неон, Океанський бриз, Веселка, Вимкнено. |
+| 🌙 **Таймер сну «Захід сонця»** | Розумний таймер (15 / 30 / 60 хв) з плавним згасанням яскравості пропорційно залишку часу та м'яким вимкненням світла. Зворотний відлік на екрані й у Telegram. |
+| 🎭 **5 векторних мем-реакцій** | Повноекранні динамічні анімації на круглому дисплеї з підсвічуванням стрічки: 🔥 Вогник, ⚡ Блискавка, 🐱 Котик (підморгує оком!), 👽 Пороблено (UFO Beam), 👑 Краш-режим (Корона). |
+| 📬 **Inbox Hub (Історія)** | Кільцевий буфер на 5 останніх повідомлень із мітками часу. Перемикання правою кнопкою по колу (1/5, 2/5...) або перегляд через API. |
+| 🌡️ **Метеостанція & Графік** | SHT31 (температура та вологість із калібруванням `TEMP_OFFSET_C`) + BMP280 (тиск). **Живий Sparkline-графік тиску на 24 точки** та розрахунок барометричного тренду ($\Delta P$: STEADY / RISING / FALLING). |
+| 📲 **Telegram Бот** | Прямий зв'язок без проміжних серверів: статус, зміна режимів, інтерактивні кнопки, фотографії, команди `/iam_admin` та `/iam_nastia`. |
+| 🛡️ **Стійкість до блекаутів** | Захист від крашу ядра через атомарний прапорець `tls_in_flight` при відключенні Wi-Fi. Cold-Boot синхронізація (`offset=-1`) для запобігання лавині застарілих повідомлень. |
+| 🌐 **Web Portal & Captive AP** | Сучасний веб-інтерфейс у темній темі, авто-портал налаштування Wi-Fi, підтримка CORS Preflight (`HTTP_OPTIONS`) для мобільних застосунків. |
+| ♻️ **Бездротове оновлення (OTA)** | ArduinoOTA + Web OTA (`/update`) з валідацією магічного байта прошивки ESP32 (`0xE9`). |
+| 🔒 **Захист приватних даних** | Архітектура нульового витоку: токен бота та ID користувачів зберігаються в ігнорованому Git файлі `include/Secrets.h`. |
 
 ---
 
-## 🗂️ Architecture
+## 🗂️ Двоядерна архітектура FreeRTOS
 
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                              ESP32-S3                                  │
+├───────────────────────────────────┬────────────────────────────────────┤
+│              CORE 0               │               CORE 1               │
+├───────────────────────────────────┼────────────────────────────────────┤
+│  Core0Net (Пріоритет 2, 8 KB)     │  loop()                            │
+│  ├── NetworkService               │  ├── InputService (сенсорні кнопки)│
+│  │   ├── Wi-Fi / AP Portal / mDNS │  ├── processEvents (черга подій)   │
+│  │   ├── WebServer (REST API)     │  ├── LedService (SK6812 60 FPS)    │
+│  │   ├── ArduinoOTA & Web OTA     │  └── DisplayService (GC9A01 UI)    │
+│  │   └── tls_in_flight охоронець  │                                    │
+│  └── NTP клієнт синхронізації часу│                                    │
+│                                   │                                    │
+│  Core0Telegram (Пріоритет 1, 10 KB│                                    │
+│  └── TelegramService              │                                    │
+│      ├── WiFiClientSecure (TLS)   │                                    │
+│      ├── Cold-Boot Offset Sync    │                                    │
+│      └── Обробка команд і реакцій │                                    │
+└───────────────────────────────────┴────────────────────────────────────┘
+                  Потокобезпечна шина даних: AppState (FreeRTOS Mux)
 ```
-Core 0  ──► NetworkService (WiFi / NTP / OTA / PortalServer)
-            SensorService  (SHT31 non-blocking + BMP280)
-
-Core 1  ──► InputService   (capacitive touch buttons, debounced)
-            LedService     (SK6812 animations + auto-brightness)
-            DisplayService (sprite rendering, adaptive FPS)
-            processEvents  (AppState event queue dispatcher)
-```
-
-All services share a single `AppState` struct with FreeRTOS critical sections for thread-safe cross-core access. Communication uses a lightweight `QueueHandle_t` event bus.
 
 ---
 
-## 🖥️ Screen Modes
+## 🖥️ Екрани дисплея (Screen Modes)
 
-| Screen | Description |
-|---|---|
-| **CLIMATE** | Temperature, humidity arc gauge, pressure pill, brightness bar, time, LED mode |
-| **BAROMETER** | Full-dial barometric gauge with weather forecast label |
-| **TELEGRAM** | Message card with sender, 2-line text wrap, pulsing new-message ring |
-| **NETWORK** | Auto QR code (WiFi join → web panel), IP address display when connected |
+Короткий дотик до **лівої кнопки** перемикає екрани:
+
+1. **CLIMATE (Клімат)** — поточна температура, шкала вологості, тиск, статус зв'язку, час та бейдж таймера сну (🌙 25m).
+2. **BAROMETER (Барометр)** — циферблат атмосферного тиску, барометричний прогноз погоди, стрілка тренду ($\Delta P$) та **живий стовпчиковий графік (Sparkline) за останні години**.
+3. **INBOX HUB (Повідомлення)** — картка останніх повідомлень із міткою часу. Коротким кліком правої кнопки можна гортати історію 1/5, 2/5...
+4. **NETWORK (Мережа)** — динамічний QR-код (для підключення до AP або швидкого переходу на веб-панель), IP-адреса, ім'я мережі та рівень сигналу RSSI.
 
 ---
 
-## 🔘 Button Controls
+## 🔘 Сенсорне керування (Touch Controls)
 
-| Button | Short Press | Long Press (900 ms) |
+| Кнопка | Короткий дотик | Утримання (900 мс) |
 |---|---|---|
-| **Left** | Next screen | Start AP captive portal |
-| **Top** | Next LED mode (or mark Telegram read) | Toggle LED on/off |
-| **Right** | Cycle brightness (Auto → Low → Mid → High) | Test LED notify |
+| **Ліва (Touch Left / GPIO 4)** | Наступний екран дисплея | Перезапуск точки доступу (AP Portal) |
+| **Кришка (Touch Top / GPIO 6)** | Наступний режим світла / Скинути сповіщення | Увімкнути / Вимкнути світло |
+| **Права (Touch Right / GPIO 7)** | **На екрані Inbox:** перегляд наступного повідомлення (1..5)<br>**На інших екранах:** яскравість (Авто ➔ 15% ➔ 35% ➔ 65% ➔ 100%) | Циклічний запуск 5 мем-реакцій (🔥 ➔ ⚡ ➔ 🐱 ➔ 👽 ➔ 👑) |
 
 ---
 
-## 🛠️ Hardware
+## 🛠️ Апаратне забезпечення (Hardware)
 
-| Component | Part |
-|---|---|
-| MCU | ESP32-S3-DevKitC-1 N16R8 |
-| Display | 1.28" GC9A01 round TFT 240×240 |
-| LED strip | SK6812 RGBW (60 LEDs) |
-| Temp/Humidity | SHT31 (I²C 0x44/0x45) |
-| Pressure | BMP280 (I²C 0x76/0x77) |
-| Ambient light | LDR on ADC1_CH0 (GPIO1) |
-| Touch buttons | Capacitive pads on GPIO 4 / 6 / 7 |
+| Компонент | Модель / Опис | Інтерфейс |
+|---|---|---|
+| **Контролер** | ESP32-S3-DevKitC-1 (N16R8, 16MB Flash, 8MB PSRAM) | USB-C / JTAG |
+| **Дисплей** | 1.28" GC9A01 Round IPS TFT (240×240) | SPI |
+| **Підсвічування** | Стрічка SK6812 RGBW (60 світлодіодів, Natural White) | Single-Wire RMT (GPIO 5) |
+| **Датчик клімату** | Sensirion SHT31 (температура + вологість) | I²C (0x44/0x45) |
+| **Датчик тиску** | Bosch BMP280 (атмосферний тиск) | I²C (0x76/0x77) |
+| **Освітленість** | Фоторезистор (LDR) у дільнику напруги | ADC1_CH0 (GPIO 1) |
+| **Сенсори** | Ємнісні сенсорні пластини (мідні контакти на корпусі) | GPIO 4, 6, 7 |
 
 ---
 
-## 📦 Pin Mapping
+## 📦 Розпіновка (Pinout)
 
+```text
+┌─────────────┬───────────┬──────────────────────────────────────────┐
+│ GPIO        │ Призначення│ Опис                                     │
+├─────────────┼───────────┼──────────────────────────────────────────┤
+│ GPIO 1      │ LDR       │ Фоторезистор (ADC1_CH0, автояскравість)  │
+│ GPIO 4      │ TOUCH_L   │ Ліва кнопка (зміна екранів / скидання AP)│
+│ GPIO 5      │ LED_DATA  │ DIN стрічки SK6812 RGBW (60 LED)         │
+│ GPIO 6      │ TOUCH_TOP │ Кришка (керування світлом / прочитано)   │
+│ GPIO 7      │ TOUCH_R   │ Права кнопка (яскравість / Inbox / меми) │
+│ GPIO 8      │ I2C_SDA   │ SHT31 & BMP280 SDA                       │
+│ GPIO 9      │ I2C_SCL   │ SHT31 & BMP280 SCL                       │
+│ GPIO 10     │ TFT_CS    │ GC9A01 Chip Select                       │
+│ GPIO 11     │ TFT_MOSI  │ GC9A01 SPI MOSI                          │
+│ GPIO 12     │ TFT_SCLK  │ GC9A01 SPI Clock                         │
+│ GPIO 13     │ TFT_DC    │ GC9A01 Data / Command                    │
+│ GPIO 14     │ TFT_RST   │ GC9A01 Reset                             │
+└─────────────┴───────────┴──────────────────────────────────────────┘
 ```
-GPIO  1  — LDR (ADC)
-GPIO  4  — Touch Left
-GPIO  5  — SK6812 DIN
-GPIO  6  — Touch Top (lid)
-GPIO  7  — Touch Right
-GPIO  8  — I²C SDA
-GPIO  9  — I²C SCL
-GPIO 10  — TFT CS
-GPIO 11  — TFT MOSI
-GPIO 12  — TFT SCLK
-GPIO 13  — TFT DC
-GPIO 14  — TFT RST
-```
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Швидкий старт
 
-### 1. Clone & open
+### 1. Клонування репозиторію
 ```bash
-git clone https://github.com/<you>/SmartLamp.git
+git clone https://github.com/EdlerAG/SmartLamp.git
 cd SmartLamp
 ```
 
-### 2. Build & flash (PlatformIO)
+### 2. Налаштування ключів доступу (Secrets)
+Створіть локальний файл `include/Secrets.h` (він автоматично виключений з Git через `.gitignore`):
+
+```cpp
+#pragma once
+
+namespace Secrets {
+    constexpr const char* TG_TOKEN  = "1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ"; // Токен від @BotFather
+    constexpr const char* ADMIN_ID  = "1047202957";                           // Ваш Telegram Chat ID
+    constexpr const char* GIRL_ID   = "1334785533";                           // Її Telegram Chat ID
+}
+```
+
+> [!NOTE]
+> Якщо `Secrets.h` відсутній, проєкт скомпілюється з порожніми значеннями за замовчуванням, а токен і ID можна буде внести через Web-портал.
+
+### 3. Збірка та прошивка через PlatformIO
 ```bash
+# Збірка прошивки
+pio run
+
+# Прошивка через USB
 pio run --target upload
+
+# Монітор порту
 pio device monitor
 ```
 
-### 3. First boot
-1. Device creates AP **`MagicBox-Setup`** and shows QR on display
-2. Connect phone to that AP → captive portal opens automatically
-3. Pick your WiFi network, enter password → device reboots and connects
-4. Access web dashboard at **`http://magicbox.local/`** or via IP shown on display
+---
 
-### 4. Web API
+## 📡 Перше підключення (Captive Portal)
 
-| Endpoint | Method | Description |
+1. При першому ввімкненні шкатулка створює власну мережу: **`MagicBox-Setup`** (без пароля).
+2. На круглому екрані з'явиться QR-код для миттєвого підключення зі смартфона.
+3. Після підключення відкриється сторінка конфігурації:
+   - Оберіть домашню Wi-Fi мережу та введіть пароль.
+   - За бажанням вкажіть токен Telegram-бота.
+4. Шкатулка збереже параметри в енергонезалежну пам'ять (NVS), підключиться до вашого роутера та покаже свій IP (або буде доступна за адресою **`http://magicbox.local`**).
+
+---
+
+## 🌐 REST API & Мобільна інтеграція
+
+Сервер підтримує повні CORS-заголовки та `HTTP_OPTIONS` (Preflight 204 No Content), що дозволяє керувати пристроєм із Flutter / React Native застосунків або браузера:
+
+| Endpoint | Метод | Опис |
 |---|---|---|
-| `/api/status` | GET | JSON: temp, humidity, pressure, brightness, LED mode |
-| `/api/cmd?do=mode` | POST | Next LED mode |
-| `/api/cmd?do=brt` | POST | Cycle brightness |
-| `/api/msg` | POST | Push message (`sender=`, `msg=`) |
-| `/api/scan` | GET | WiFi scan results JSON |
-| `/update` | POST | Web OTA firmware upload |
+| `/api/status` | `GET` | Повний JSON-статус (температура, тиск, тренд, яскравість, режим світла, таймер сну). |
+| `/api/inbox` | `GET` | JSON-масив останніх 5 отриманих повідомлень з мітками часу. |
+| `/api/cmd?do=mode` | `POST` | Перемикання на наступний режим підсвічування. |
+| `/api/cmd?do=mode&id=3` | `POST` | Увімкнення конкретного режиму (0–10). |
+| `/api/cmd?do=brt` | `POST` | Циклічна зміна яскравості або увімкнення авторежиму. |
+| `/api/cmd?do=sleep&min=30` | `POST` | Запуск таймера сну на 15, 30 або 60 хвилин (`min=0` — скасування). |
+| `/api/cmd?do=reaction&id=1` | `POST` | Запуск мем-реакції (1: 🔥, 2: ⚡, 3: 🐱, 4: 👽, 5: 👑). |
+| `/api/msg` | `POST` | Відправка текстового повідомлення на екран (`sender=`, `msg=`). |
+| `/api/scan` | `GET` | Сканування доступних Wi-Fi мереж. |
+| `/update` | `POST` | Бездротове оновлення бінарного файлу прошивки (Web OTA). |
 
 ---
 
-## 📚 Libraries
+## 🤖 Команди Telegram Бота
 
-- [LovyanGFX](https://github.com/lovyan03/LovyanGFX) `^1.1.16`
-- [Adafruit NeoPixel](https://github.com/adafruit/Adafruit_NeoPixel) `^1.12.3`
-- [Adafruit SHT31](https://github.com/adafruit/Adafruit_SHT31) `^2.2.2`
-- [Adafruit BMP280](https://github.com/adafruit/Adafruit_BMP280_Library) `^2.6.8`
+Шкатулка працює як повноцінний Telegram-клієнт:
+- `/start` — головне меню з інлайн-кнопками керування.
+- `/status` — актуальний кліматичний звіт, тиск, стан стрічки та час роботи.
+- `/iam_admin` — прив'язка вашого облікового запису як адміністратора пристрою.
+- `/iam_nastia` — швидка авторизація другого користувача.
+- `/sleep 15` / `/sleep 30` / `/sleep 60` — запуск таймера сну «Захід сонця».
+- Будь-яке звичайне повідомлення або фотографія, надіслані боту, негайно виводяться на екран шкатулки з пульсуючим підсвічуванням!
 
 ---
 
-## 📄 License
+## 📚 Використані бібліотеки
 
-MIT — do whatever you want, just keep the magic alive. ✨
+- [LovyanGFX](https://github.com/lovyan03/LovyanGFX) — високоефективний графічний рушій для дисплеїв ESP32 (SPI DMA).
+- [Adafruit NeoPixel](https://github.com/adafruit/Adafruit_NeoPixel) — протокол керування стрічкою SK6812.
+- [Adafruit SHT31](https://github.com/adafruit/Adafruit_SHT31) — робота з прецизійним сенсором вологості/температури.
+- [Adafruit BMP280](https://github.com/adafruit/Adafruit_BMP280_Library) — вимірювання атмосферного тиску.
 
+---
+
+## 📄 Ліцензія
+
+Розповсюджується за ліцензією **MIT**. Ви можете вільно модифікувати та використовувати код у власних проєктах.
