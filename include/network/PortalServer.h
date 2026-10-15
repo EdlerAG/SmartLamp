@@ -2,11 +2,12 @@
 #include <WebServer.h>
 #include <Update.h>
 #include <WiFi.h>
-#include "AppState.h"
-#include "CommandRouter.h"
-#include "StorageService.h"
-#include "WifiScanner.h"
-#include "WebPortalHtml.h"
+#include "core/AppState.h"
+#include "core/CommandRouter.h"
+#include "cloud/CloudOtaService.h"
+#include "core/StorageService.h"
+#include "network/WifiScanner.h"
+#include "network/WebPortalHtml.h"
 
 class PortalServer {
 private:
@@ -48,12 +49,10 @@ public:
 
     void begin() {
         if (started) return;
-
         server.enableDelay(false);
 
         server.on("/", HTTP_GET, [this]() { sendPortalPage(); });
         server.on("/setup", HTTP_GET, [this]() { sendPortalPage(); });
-
         server.on("/hotspot-detect.html", HTTP_GET, [this]() { sendPortalPage(); });
         server.on("/library/test/success.html", HTTP_GET, [this]() { sendPortalPage(); });
         server.on("/success.txt", HTTP_GET, [this]() { sendPortalPage(); });
@@ -65,15 +64,13 @@ public:
         server.on("/redirect", HTTP_GET, [this]() { redirectCaptive(); });
         server.on("/canonical.html", HTTP_GET, [this]() { redirectCaptive(); });
 
-        // Повний JSON статус для Web та мобільного застосунку
         server.on("/api/status", HTTP_GET, [this]() {
             addCorsHeaders();
-            char buf[380];
+            char buf[440];
             CommandRouter::buildStatusJson(state, buf, sizeof(buf));
             server.send(200, "application/json", buf);
         });
 
-        // Історія останніх 5 повідомлень у JSON
         server.on("/api/inbox", HTTP_GET, [this]() {
             addCorsHeaders();
             char buf[768];
@@ -81,7 +78,7 @@ public:
             server.send(200, "application/json", buf);
         });
 
-        // Універсальний ендпоінт команд (/api/cmd)
+        // Універсальний REST API (підтримує і Web-кнопки, і синтаксис із README.md!)
         server.on("/api/cmd", HTTP_POST, [this]() {
             addCorsHeaders();
             if (server.hasArg("set_mode")) {
@@ -94,17 +91,29 @@ public:
                 CommandRouter::setSleepTimer(state, (uint16_t)server.arg("sleep").toInt());
             } else if (server.hasArg("react")) {
                 String r = server.arg("react");
-                if (r == "fire")      CommandRouter::triggerReaction(state, NOTIFY_FIRE, "App Hub", "FIRE VIBE!");
-                else if (r == "zap")  CommandRouter::triggerReaction(state, NOTIFY_LIGHTNING, "App Hub", "KUS-ZAP!");
-                else if (r == "cat")  CommandRouter::triggerReaction(state, NOTIFY_CAT, "App Hub", "TYTS-KUS!");
-                else if (r == "ufo")  CommandRouter::triggerReaction(state, NOTIFY_UFO, "App Hub", "UFO BEAM!");
-                else if (r == "crown")CommandRouter::triggerReaction(state, NOTIFY_CROWN, "App Hub", "QUEEN VIBE!");
+                if (r == "fire")       CommandRouter::triggerReaction(state, NOTIFY_FIRE, "App Hub", "FIRE VIBE!");
+                else if (r == "zap")   CommandRouter::triggerReaction(state, NOTIFY_LIGHTNING, "App Hub", "KUS-ZAP!");
+                else if (r == "cat")   CommandRouter::triggerReaction(state, NOTIFY_CAT, "App Hub", "TYTS-KUS!");
+                else if (r == "ufo")   CommandRouter::triggerReaction(state, NOTIFY_UFO, "App Hub", "UFO BEAM!");
+                else if (r == "crown") CommandRouter::triggerReaction(state, NOTIFY_CROWN, "App Hub", "QUEEN VIBE!");
             } else {
                 String act = server.arg("do");
-                if (act == "mode")      CommandRouter::nextLightMode(state);
-                else if (act == "brt")  CommandRouter::cycleBrightness(state);
-                else if (act == "power")CommandRouter::togglePower(state);
-                else if (act == "next_msg") CommandRouter::nextInboxMessage(state);
+                if (act == "mode") {
+                    if (server.hasArg("id")) CommandRouter::setLightMode(state, (uint8_t)server.arg("id").toInt());
+                    else CommandRouter::nextLightMode(state);
+                } else if (act == "brt") {
+                    CommandRouter::cycleBrightness(state);
+                } else if (act == "sleep") {
+                    CommandRouter::setSleepTimer(state, (uint16_t)server.arg("min").toInt());
+                } else if (act == "reaction") {
+                    uint8_t rid = (uint8_t)server.arg("id").toInt();
+                    NotifyLedType rtype = (NotifyLedType)constrain(rid + 1, (int)NOTIFY_FIRE, (int)NOTIFY_CROWN);
+                    CommandRouter::triggerReaction(state, rtype, "API", "REACTION!");
+                } else if (act == "power") {
+                    CommandRouter::togglePower(state);
+                } else if (act == "next_msg") {
+                    CommandRouter::nextInboxMessage(state);
+                }
             }
             server.send(200, "application/json", "{\"ok\":true}");
         });
@@ -128,6 +137,17 @@ public:
             tok.trim(); adm.trim(); grl.trim();
             storage.saveTelegramConfig(state, tok, adm, grl);
             server.send(200, "application/json", "{\"ok\":true}");
+        });
+
+        server.on("/api/rollback", HTTP_POST, [this]() {
+            addCorsHeaders();
+            String err = "";
+            if (CloudOtaService::rollbackToPrevious(err)) {
+                server.send(200, "application/json", "{\"ok\":true}");
+                reboot_at_ms = millis() + 500;
+            } else {
+                server.send(400, "application/json", "{\"ok\":false,\"err\":\"" + err + "\"}");
+            }
         });
 
         server.on("/api/scan", HTTP_GET, [this]() {
@@ -198,7 +218,6 @@ public:
             }
         });
 
-        // Обробка CORS Preflight (HTTP_OPTIONS) для мобільних додатків + Captive Portal fallback
         server.onNotFound([this]() {
             if (server.method() == HTTP_OPTIONS) {
                 addCorsHeaders();

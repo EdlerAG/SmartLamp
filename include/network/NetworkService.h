@@ -1,11 +1,11 @@
 #pragma once
-#include "IService.h"
+#include "core/IService.h"
 #include "Config.h"
-#include "AppState.h"
-#include "StorageService.h"
-#include "WifiScanner.h"
-#include "PortalServer.h"
-#include "OtaManager.h"
+#include "core/AppState.h"
+#include "core/StorageService.h"
+#include "network/WifiScanner.h"
+#include "network/PortalServer.h"
+#include "network/OtaManager.h"
 #include <WiFi.h>
 #include <DNSServer.h>
 #include <ESPmDNS.h>
@@ -36,7 +36,6 @@ private:
     uint32_t last_rtc_tick  = 0;
     uint32_t drop_start_ms  = 0;
 
-    // Очікуємо завершення активного TLS-запиту Telegram перед вимкненням Wi-Fi (макс 500 мс)
     void waitForTlsIdle() {
         uint32_t start = millis();
         while (state.tls_in_flight && (millis() - start < 500)) {
@@ -119,7 +118,7 @@ private:
 
     void enterBlackoutEcoMode() {
         state.wifi_connected = false;
-        waitForTlsIdle(); // Безпечне завершення TLS перед зупинкою LwIP
+        waitForTlsIdle();
 
         dnsServer.stop();
         portal.stop();
@@ -159,6 +158,8 @@ public:
     NetworkService(AppState& st)
         : state(st), portal(st, storage, scanner), ota(st) {}
 
+    const char* getName() const override { return "Network"; }
+
     void init() override {
         storage.loadUserSettings(state);
         storage.loadWifiCredentials(saved_ssid, saved_pass);
@@ -188,20 +189,14 @@ public:
             case NetMode::AP_PORTAL: {
                 dnsServer.processNextRequest();
                 uint8_t clients = WiFi.softAPgetStationNum();
-
                 if (clients != state.ap_clients) {
                     state.ap_clients = clients;
                     state.triggerLedNotification(NOTIFY_CYAN_WAVE, false);
                 }
-
-                if (clients > 0) {
-                    state_timer_ms = millis();
-                } else if (millis() - state_timer_ms >= Config::AP_PORTAL_TIMEOUT_MS) {
-                    enterBlackoutEcoMode();
-                }
+                if (clients > 0) state_timer_ms = millis();
+                else if (millis() - state_timer_ms >= Config::AP_PORTAL_TIMEOUT_MS) enterBlackoutEcoMode();
                 break;
             }
-
             case NetMode::CONNECTING:
                 if (WiFi.status() == WL_CONNECTED) {
                     scanner.triggerAsyncScan();
@@ -211,7 +206,6 @@ public:
                     enterBlackoutEcoMode();
                 }
                 break;
-
             case NetMode::CONNECTED:
                 if (WiFi.status() == WL_CONNECTED) {
                     ota.handle();
@@ -230,7 +224,6 @@ public:
                     }
                 }
                 break;
-
             case NetMode::BLACKOUT_ECO:
                 if (saved_ssid.length() > 0 && (millis() - state_timer_ms >= Config::BLACKOUT_PROBE_EVERY_MS)) {
                     WiFi.persistent(false);
@@ -241,15 +234,10 @@ public:
                     net_mode = NetMode::BLACKOUT_PROBE;
                 }
                 break;
-
             case NetMode::BLACKOUT_PROBE:
-                if (WiFi.status() == WL_CONNECTED) {
-                    onWifiConnected();
-                } else if (millis() - state_timer_ms >= 4500) {
-                    enterBlackoutEcoMode();
-                }
+                if (WiFi.status() == WL_CONNECTED) onWifiConnected();
+                else if (millis() - state_timer_ms >= 4500) enterBlackoutEcoMode();
                 break;
-
             default:
                 break;
         }

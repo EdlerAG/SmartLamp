@@ -2,24 +2,30 @@
 #include <Arduino.h>
 
 namespace Config {
+    constexpr const char* FW_VERSION  = "v4.1-ZeroIdle";
     constexpr const char* DEVICE_NAME = "magicbox";
     constexpr const char* AP_SSID     = "MagicBox-Setup";
 
-    // --- НАЛАШТУВАННЯ TELEGRAM ---
+    // --- СЕКРЕТИ TELEGRAM ТА ORACLE CLOUD ---
 #if __has_include("Secrets.h")
     #include "Secrets.h"
-    constexpr const char* DEFAULT_TG_TOKEN = Secrets::TG_TOKEN;
-    constexpr const char* DEFAULT_ADMIN_ID = Secrets::ADMIN_ID;
-    constexpr const char* DEFAULT_GIRL_ID  = Secrets::GIRL_ID;
+    constexpr const char* DEFAULT_TG_TOKEN  = Secrets::TG_TOKEN;
+    constexpr const char* DEFAULT_ADMIN_ID  = Secrets::ADMIN_ID;
+    constexpr const char* DEFAULT_GIRL_ID   = Secrets::GIRL_ID;
+    constexpr const char* ORACLE_SERVER_URL = Secrets::ORACLE_SERVER_URL;
+    constexpr const char* ORACLE_API_KEY    = Secrets::ORACLE_API_KEY;
 #else
-    constexpr const char* DEFAULT_TG_TOKEN = "";
-    constexpr const char* DEFAULT_ADMIN_ID = "";
-    constexpr const char* DEFAULT_GIRL_ID  = "";
+    constexpr const char* DEFAULT_TG_TOKEN  = "";
+    constexpr const char* DEFAULT_ADMIN_ID  = "";
+    constexpr const char* DEFAULT_GIRL_ID   = "";
+    constexpr const char* ORACLE_SERVER_URL = "";
+    constexpr const char* ORACLE_API_KEY    = "magicbox-secret-key";
 #endif
-    constexpr uint32_t TG_POLL_MS = 2500;
+
+    constexpr uint32_t TG_POLL_MS     = 2500;
+    constexpr uint32_t ORACLE_SYNC_MS = 5000;
 
     // --- КАЛІБРУВАННЯ ДАТЧИКІВ У КОРПУСІ ---
-    // Якщо всередині дерев'яної шкатулки датчик трохи гріється від плати, можна виставити -1.2f
     constexpr float TEMP_OFFSET_C = 0.0f;
 
     // --- ТАЙМІНГИ ДЛЯ ВІДКЛЮЧЕНЬ СВІТЛА (BLACKOUT) ---
@@ -28,13 +34,13 @@ namespace Config {
     constexpr uint32_t BLACKOUT_PROBE_EVERY_MS = 30000;
 
     // --- ПІНИ ПЕРИФЕРІЇ ---
-    constexpr uint8_t PIN_LDR         = 1;  // ADC1_CH0 (фоторезистор)
-    constexpr uint8_t PIN_TOUCH_LEFT  = 4;  // Ліва кнопка (Екрани / AP)
-    constexpr uint8_t PIN_LED         = 5;  // Стрічка SK6812 DIN
-    constexpr uint8_t PIN_TOUCH_TOP   = 6;  // Кришка (Світло / Прочитано)
-    constexpr uint8_t PIN_TOUCH_RIGHT = 7;  // Права кнопка (Яскравість або гортання Inbox / Мем-реакція)
-    constexpr uint8_t PIN_I2C_SDA     = 8;  // SHT31 + BMP280 SDA
-    constexpr uint8_t PIN_I2C_SCL     = 9;  // SHT31 + BMP280 SCL
+    constexpr uint8_t PIN_LDR         = 1;
+    constexpr uint8_t PIN_TOUCH_LEFT  = 4;
+    constexpr uint8_t PIN_LED         = 5;
+    constexpr uint8_t PIN_TOUCH_TOP   = 6;
+    constexpr uint8_t PIN_TOUCH_RIGHT = 7;
+    constexpr uint8_t PIN_I2C_SDA     = 8;
+    constexpr uint8_t PIN_I2C_SCL     = 9;
 
     // --- ПІНИ ДИСПЛЕЯ GC9A01 (SPI) ---
     constexpr int8_t PIN_TFT_CS       = 10;

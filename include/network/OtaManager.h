@@ -2,7 +2,7 @@
 #include <ArduinoOTA.h>
 #include <WiFi.h>
 #include "Config.h"
-#include "AppState.h"
+#include "core/AppState.h"
 
 class OtaManager {
 private:

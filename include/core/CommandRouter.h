@@ -1,8 +1,20 @@
 #pragma once
 #include <Arduino.h>
-#include "AppState.h"
+#include "core/AppState.h"
 
 class CommandRouter {
+private:
+    static void sanitizeJsonStr(const char* in, char* out, size_t max_len) {
+        size_t j = 0;
+        for (size_t i = 0; in[i] != '\0' && j < max_len - 1; i++) {
+            char c = in[i];
+            if (c == '\"' || c == '\\') c = '\'';
+            else if ((uint8_t)c < 0x20) c = ' ';
+            out[j++] = c;
+        }
+        out[j] = '\0';
+    }
+
 public:
     static const char* getModeNameAscii(uint8_t mode) {
         static const char* const names[TOTAL_LIGHT_MODES] = {
@@ -87,7 +99,6 @@ public:
         state.markSettingsDirty();
     }
 
-    // Запуск або скасування таймера сну (minutes = 0 вимикає таймер)
     static void setSleepTimer(AppState& state, uint16_t minutes) {
         if (minutes == 0) {
             state.sleep_timer_active = false;
@@ -96,7 +107,6 @@ public:
             state.sleep_timer_total_ms = dur;
             state.sleep_timer_end_ms   = millis() + dur;
             state.sleep_timer_active   = true;
-            // Якщо світло було вимкнене — вмикаємо ніжну бурштинову свічку
             if (state.light_mode == MODE_LIGHT_OFF) {
                 state.light_mode = MODE_AMBER_EMBER;
             }
@@ -104,7 +114,6 @@ public:
         state.registerActivity();
     }
 
-    // Гортання збережених повідомлень в Inbox
     static void nextInboxMessage(AppState& state) {
         if (state.inbox_count > 1) {
             state.inbox_view_idx = (state.inbox_view_idx + 1) % state.inbox_count;
@@ -125,38 +134,42 @@ public:
         state.triggerLedNotification(NOTIFY_CYAN_WAVE, false);
     }
 
-    // Повний JSON статус для Web та майбутнього мобільного застосунку
     static void buildStatusJson(AppState& state, char* out, size_t max_len) {
         char t_str[10];
         state.getTimeString(t_str, sizeof(t_str));
 
         snprintf(out, max_len,
-                 "{\"t\":%.1f,\"h\":%.0f,\"p\":%.0f,\"p_diff\":%.1f,\"l\":%d,"
+                 "{\"fw\":\"%s\",\"t\":%.1f,\"h\":%.0f,\"p\":%.0f,\"p_diff\":%.1f,\"l\":%d,"
                  "\"m\":%d,\"m_name\":\"%s\","
                  "\"auto_b\":%s,\"b_idx\":%d,\"b_pct\":%d,"
                  "\"sleep_m\":%u,\"scr\":%d,\"rssi\":%d,\"time\":\"%s\","
-                 "\"unread\":%s,\"inbox_cnt\":%u,\"heap\":%lu}",
+                 "\"unread\":%s,\"inbox_cnt\":%u,\"oracle\":%s,\"heap\":%lu}",
+                 Config::FW_VERSION,
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
                  state.light_mode, getModeNameUa(state.light_mode),
                  state.auto_brt ? "true" : "false", state.manual_brt_idx, state.getLedBrightnessPercent(),
                  state.getSleepTimerRemainingMin(), state.screen_mode, (int)state.wifi_rssi, t_str,
-                 state.tg_unread ? "true" : "false", state.inbox_count, (unsigned long)ESP.getFreeHeap());
+                 state.tg_unread ? "true" : "false", state.inbox_count,
+                 state.oracle_online ? "true" : "false", (unsigned long)ESP.getFreeHeap());
     }
 
-    // JSON-історія останніх 5 повідомлень для мобільного застосунку та Web
     static void buildInboxJson(AppState& state, char* out, size_t max_len) {
         size_t pos = snprintf(out, max_len, "{\"unread\":%s,\"messages\":[", state.tg_unread ? "true" : "false");
         for (uint8_t i = 0; i < state.inbox_count; i++) {
-            char s[28], m[64], tm[8];
+            char raw_s[28], raw_m[64], tm[8];
             portENTER_CRITICAL(&state.mux);
-            strncpy(s, state.inbox[i].sender, sizeof(s) - 1); s[sizeof(s) - 1] = '\0';
-            strncpy(m, state.inbox[i].text, sizeof(m) - 1);   m[sizeof(m) - 1] = '\0';
+            strncpy(raw_s, state.inbox[i].sender, sizeof(raw_s) - 1); raw_s[sizeof(raw_s) - 1] = '\0';
+            strncpy(raw_m, state.inbox[i].text, sizeof(raw_m) - 1);   raw_m[sizeof(raw_m) - 1] = '\0';
             strncpy(tm, state.inbox[i].time_received, sizeof(tm) - 1); tm[sizeof(tm) - 1] = '\0';
             portEXIT_CRITICAL(&state.mux);
 
+            char safe_s[28], safe_m[64];
+            sanitizeJsonStr(raw_s, safe_s, sizeof(safe_s));
+            sanitizeJsonStr(raw_m, safe_m, sizeof(safe_m));
+
             int w = snprintf(out + pos, max_len - pos - 4,
                              "%s{\"sender\":\"%s\",\"text\":\"%s\",\"time\":\"%s\"}",
-                             (i == 0) ? "" : ",", s, m, tm);
+                             (i == 0) ? "" : ",", safe_s, safe_m, tm);
             if (w > 0 && pos + w < max_len - 4) pos += w;
         }
         snprintf(out + pos, max_len - pos, "]}");

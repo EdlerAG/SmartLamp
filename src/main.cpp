@@ -1,40 +1,46 @@
 #include <Arduino.h>
 #include "Config.h"
-#include "AppState.h"
-#include "CommandRouter.h"
-#include "InputService.h"
-#include "SensorService.h"
-#include "LedService.h"
-#include "NetworkService.h"
-#include "TelegramService.h"
-#include "DisplayService.h"
+#include "core/Types.h"
+#include "core/AppState.h"
+#include "core/CommandRouter.h"
+#include "core/ServiceRegistry.h"
+#include "hardware/InputService.h"
+#include "hardware/SensorService.h"
+#include "led/LedService.h"
+#include "network/NetworkService.h"
+#include "cloud/TelegramService.h"
+#include "cloud/OracleCloudService.h"
+#include "ui/DisplayService.h"
 
 AppState appState;
 
-InputService    inputService(appState);
-SensorService   sensorService(appState);
-LedService      ledService(appState);
-NetworkService  networkService(appState);
-TelegramService telegramService(appState);
-DisplayService  displayService(appState);
+InputService       inputService(appState);
+SensorService      sensorService(appState);
+LedService         ledService(appState);
+DisplayService     displayService(appState);
+NetworkService     networkService(appState);
+TelegramService    telegramService(appState);
+OracleCloudService oracleService(appState);
+
+ServiceRegistry<4> core1FastServices;  // Core 1: Кнопки, LED-стрічка, Дисплей
+ServiceRegistry<4> core0LocalServices; // Core 0 (Пріоритет 2): I2C датчики, Wi-Fi, WebServer
+ServiceRegistry<4> core0CloudServices; // Core 0 (Пріоритет 1): Telegram API та Oracle Cloud
 
 void backgroundCore0Task(void* pvParameters) {
-    networkService.init();
+    core0LocalServices.initAll();
 
     for (;;) {
-        sensorService.update();
-        networkService.update();
-
+        core0LocalServices.tickAll();
         bool fast_net = appState.ota_in_progress || appState.ap_mode_active;
         vTaskDelay(pdMS_TO_TICKS(fast_net ? 2 : 12));
     }
 }
 
-void telegramCore0Task(void* pvParameters) {
-    telegramService.init();
+void cloudCore0Task(void* pvParameters) {
+    core0CloudServices.initAll();
 
     for (;;) {
-        telegramService.update();
+        core0CloudServices.tickAll();
         vTaskDelay(pdMS_TO_TICKS(80));
     }
 }
@@ -68,7 +74,6 @@ void processEvents() {
                 CommandRouter::togglePower(appState);
                 break;
 
-            // Права (коротко): На екрані повідомлень гортає історію Inbox (1/5..5/5), на інших — змінює яскравість
             case EventType::BTN_RIGHT_SHORT:
                 if (appState.screen_mode == SCREEN_TELEGRAM && appState.inbox_count > 1) {
                     CommandRouter::nextInboxMessage(appState);
@@ -77,7 +82,6 @@ void processEvents() {
                 }
                 break;
 
-            // Права (утримання 1 с): Запускає по колу всі 5 мем-реакцій (Кіт -> НЛО -> Корона -> Вогник -> Блискавка)
             case EventType::BTN_RIGHT_LONG:
                 appState.cmd_send_meme_ping = next_meme_cycle;
                 appState.triggerLedNotification((NotifyLedType)next_meme_cycle, true);
@@ -95,37 +99,24 @@ void setup() {
     Serial.begin(115200);
     appState.initQueue();
 
-    inputService.init();
-    sensorService.init();
-    ledService.init();
-    displayService.init();
+    core1FastServices.add(&inputService);
+    core1FastServices.add(&ledService);
+    core1FastServices.add(&displayService);
+    core1FastServices.initAll();
 
-    xTaskCreatePinnedToCore(
-        backgroundCore0Task,
-        "Core0Net",
-        8192,
-        nullptr,
-        2,
-        nullptr,
-        0
-    );
+    core0LocalServices.add(&sensorService);
+    core0LocalServices.add(&networkService);
 
-    xTaskCreatePinnedToCore(
-        telegramCore0Task,
-        "Core0Telegram",
-        10240,
-        nullptr,
-        1,
-        nullptr,
-        0
-    );
+    core0CloudServices.add(&telegramService);
+    core0CloudServices.add(&oracleService);
+
+    xTaskCreatePinnedToCore(backgroundCore0Task, "Core0Net",   8192,  nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(cloudCore0Task,      "Core0Cloud", 10240, nullptr, 1, nullptr, 0);
 }
 
 void loop() {
-    inputService.update();
+    core1FastServices.tickAll();
     processEvents();
-    ledService.update();
-    displayService.update();
 
     bool active = ledService.isAnimating() || displayService.isHighFpsNeeded();
     vTaskDelay(pdMS_TO_TICKS(active ? 4 : 15));

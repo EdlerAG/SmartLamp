@@ -1,7 +1,7 @@
 #pragma once
-#include "IService.h"
+#include "core/IService.h"
 #include "Config.h"
-#include "AppState.h"
+#include "core/AppState.h"
 #include <Wire.h>
 #include <Adafruit_BMP280.h>
 
@@ -37,6 +37,8 @@ private:
 public:
     SensorService(AppState& st) : state(st) {}
 
+    const char* getName() const override { return "Sensors"; }
+
     void init() override {
         analogReadResolution(12);
         analogSetPinAttenuation(Config::PIN_LDR, ADC_11db);
@@ -65,7 +67,6 @@ public:
     void update() override {
         uint32_t now = millis();
 
-        // 1. Опитування фоторезистора
         uint32_t ldr_interval = state.auto_brt ? 60 : 300;
         if (now - last_ldr_ms >= ldr_interval) {
             last_ldr_ms = now;
@@ -79,7 +80,6 @@ public:
             }
         }
 
-        // 2. ФАЗА 2 SHT31: Неблокуюче зчитування + CRC-8
         if (sht_waiting_data && (now - sht_cmd_ms >= 20)) {
             sht_waiting_data = false;
             if (Wire.requestFrom(sht_addr, (uint8_t)6) == 6) {
@@ -105,7 +105,6 @@ public:
             }
         }
 
-        // 3. ФАЗА 1 SHT31 + BMP280 + Історія тиску
         if (now - last_climate_ms >= 2500) {
             last_climate_ms = now;
 
@@ -127,7 +126,6 @@ public:
                         state.pressure = mm;
                         state.ui_force_dirty = true;
                     }
-                    // Записуємо історію тиску для графіка (перший раз одразу, далі кожні 15 хв)
                     if (!first_hist_saved || (now - last_hist_ms >= 900000UL)) {
                         first_hist_saved = true;
                         last_hist_ms = now;

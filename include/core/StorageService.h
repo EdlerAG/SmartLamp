@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
-#include "AppState.h"
+#include "core/AppState.h"
 #include "Config.h"
 
 class StorageService {
@@ -68,8 +68,8 @@ public:
 
     void loadWifiCredentials(String& ssid, String& pass) {
         if (prefs.begin("wifi_cfg", false)) {
-            ssid = prefs.getString("ssid", "");
-            pass = prefs.getString("pass", "");
+            ssid = prefs.isKey("ssid") ? prefs.getString("ssid") : "";
+            pass = prefs.isKey("pass") ? prefs.getString("pass") : "";
             prefs.end();
         }
     }
