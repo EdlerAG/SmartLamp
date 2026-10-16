@@ -138,19 +138,30 @@ public:
         char t_str[10];
         state.getTimeString(t_str, sizeof(t_str));
 
+        bool ack_flag = false;
+        uint8_t ping_val = 0;
+        if (state.oracle_online && state.oracle_manages_bot) {
+            ack_flag = state.cmd_send_tg_ack;
+            ping_val = state.cmd_send_meme_ping;
+            state.cmd_send_tg_ack    = false;
+            state.cmd_send_meme_ping = 0;
+        }
+
         snprintf(out, max_len,
                  "{\"fw\":\"%s\",\"t\":%.1f,\"h\":%.0f,\"p\":%.0f,\"p_diff\":%.1f,\"l\":%d,"
                  "\"m\":%d,\"m_name\":\"%s\","
                  "\"auto_b\":%s,\"b_idx\":%d,\"b_pct\":%d,"
                  "\"sleep_m\":%u,\"scr\":%d,\"rssi\":%d,\"time\":\"%s\","
-                 "\"unread\":%s,\"inbox_cnt\":%u,\"oracle\":%s,\"heap\":%lu}",
+                 "\"unread\":%s,\"inbox_cnt\":%u,\"oracle\":%s,\"heap\":%lu,"
+                 "\"ack\":%s,\"ping\":%u}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
                  state.light_mode, getModeNameUa(state.light_mode),
                  state.auto_brt ? "true" : "false", state.manual_brt_idx, state.getLedBrightnessPercent(),
                  state.getSleepTimerRemainingMin(), state.screen_mode, (int)state.wifi_rssi, t_str,
                  state.tg_unread ? "true" : "false", state.inbox_count,
-                 state.oracle_online ? "true" : "false", (unsigned long)ESP.getFreeHeap());
+                 state.oracle_online ? "true" : "false", (unsigned long)ESP.getFreeHeap(),
+                 ack_flag ? "true" : "false", ping_val);
     }
 
     static void buildInboxJson(AppState& state, char* out, size_t max_len) {

@@ -1,0 +1,1 @@
+"""MagicBox Oracle Cloud Application Package."""

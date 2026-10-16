@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 namespace Config {
-    constexpr const char* FW_VERSION  = "v4.1-ZeroIdle";
+    constexpr const char* FW_VERSION  = "v4.5-CloudMedia";
     constexpr const char* DEVICE_NAME = "magicbox";
     constexpr const char* AP_SSID     = "MagicBox-Setup";
 
@@ -19,11 +19,11 @@ namespace Config {
     constexpr const char* DEFAULT_ADMIN_ID  = "";
     constexpr const char* DEFAULT_GIRL_ID   = "";
     constexpr const char* ORACLE_SERVER_URL = "";
-    constexpr const char* ORACLE_API_KEY    = "magicbox-secret-key";
+    constexpr const char* ORACLE_API_KEY    = "smartlamp-secret-key";
 #endif
 
     constexpr uint32_t TG_POLL_MS     = 2500;
-    constexpr uint32_t ORACLE_SYNC_MS = 5000;
+    constexpr uint32_t ORACLE_SYNC_MS = 3500; // Опитування сервера кожні 3.5 с
 
     // --- КАЛІБРУВАННЯ ДАТЧИКІВ У КОРПУСІ ---
     constexpr float TEMP_OFFSET_C = 0.0f;
@@ -48,6 +48,12 @@ namespace Config {
     constexpr int8_t PIN_TFT_SCLK     = 12;
     constexpr int8_t PIN_TFT_DC       = 13;
     constexpr int8_t PIN_TFT_RST      = 14;
+
+    // --- ПІНИ ЦИФРОВОГО АУДІО I2S (MAX98357A) ---
+    constexpr int8_t  PIN_I2S_BCLK    = 15;
+    constexpr int8_t  PIN_I2S_LRC     = 16;
+    constexpr int8_t  PIN_I2S_DOUT    = 17;
+    constexpr uint8_t DEFAULT_VOLUME  = 15; // 0..21
 
     // --- ПАРАМЕТРИ LED СТРІЧКИ ---
     constexpr uint16_t NUM_LEDS       = 60;

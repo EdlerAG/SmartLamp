@@ -2,10 +2,31 @@ import os
 from dataclasses import dataclass
 
 
+def _load_dotenv_if_exists(env_path: str = ".env") -> None:
+    if not os.path.exists(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip("'").strip('"')
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except Exception:
+        pass
+
+
+_load_dotenv_if_exists()
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     PROJECT_NAME: str = "MagicBox Oracle Cloud Hub"
-    VERSION: str = "4.5.0-AI-Weather"
+    VERSION: str = "4.5.1-Production"
 
     API_KEY: str = os.getenv("MAGICBOX_KEY", "smartlamp-secret-key")
     PUBLIC_SERVER_URL: str = os.getenv("PUBLIC_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")

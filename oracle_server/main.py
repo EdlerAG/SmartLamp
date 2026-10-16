@@ -31,6 +31,22 @@ app = FastAPI(
 app.include_router(api_router)
 
 
+@app.get("/", tags=["System"])
+async def root_info():
+    return {
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "box_online": state_service.is_online(),
+        "docs_url": "/docs",
+        "health_url": "/health",
+    }
+
+
 @app.get("/health", tags=["System"])
 async def health_check():
-    return {"status": "ok", "version": settings.VERSION, "online": state_service.is_online()}
+    return {
+        "status": "ok",
+        "version": settings.VERSION,
+        "online": state_service.is_online(),
+        "queued_commands": len(state_service.command_queue),
+    }

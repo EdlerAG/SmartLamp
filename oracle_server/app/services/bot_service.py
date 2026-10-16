@@ -231,6 +231,39 @@ class TelegramBotService:
                     })
                     return
 
+# 1b. Прийом GIF-анімацій (animation) — виводимо кадр на круглий екран
+        if "animation" in msg:
+            anim = msg["animation"]
+            thumb_id = anim.get("thumbnail", {}).get("file_id") or anim.get("file_id")
+            if thumb_id:
+                raw_bytes = await self._download_tg_file(thumb_id)
+                if raw_bytes:
+                    await media_service.convert_bytes_and_queue(raw_bytes, settings.PUBLIC_SERVER_URL)
+                    await self._api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"🎞 GIF-анімацію адаптовано та відправлено на екран шкатулки!{online_note}",
+                        "reply_markup": active_kb,
+                    })
+                    return
+
+        # 1c. Прийом голосових повідомлень (voice) — пряма трансляція голосу на динамік шкатулки
+        if "voice" in msg:
+            voice_id = msg["voice"].get("file_id")
+            if voice_id:
+                raw_voice = await self._download_tg_file(voice_id)
+                if raw_voice:
+                    with open(audio_service.TTS_FILE, "wb") as f:
+                        f.write(raw_voice)
+                    import time as _t
+                    v_url = f"{settings.PUBLIC_SERVER_URL.rstrip('/')}/api/v1/media/tts.mp3?v={int(_t.time())}"
+                    state_service.enqueue_raw({"play_url": v_url, "sender": sender[:24], "msg": "VOICE MESSAGE"})
+                    await self._api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"🎙 Голосове повідомлення відправлено на динамік шкатулки!{online_note}",
+                        "reply_markup": active_kb,
+                    })
+                    return
+
         # 2. Прийом ФОТОГРАФІЙ
         if "photo" in msg and msg["photo"]:
             best_photo = msg["photo"][-1]

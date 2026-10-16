@@ -6,6 +6,7 @@
 #include "core/ServiceRegistry.h"
 #include "hardware/InputService.h"
 #include "hardware/SensorService.h"
+#include "hardware/AudioService.h"
 #include "led/LedService.h"
 #include "network/NetworkService.h"
 #include "cloud/TelegramService.h"
@@ -16,6 +17,7 @@ AppState appState;
 
 InputService       inputService(appState);
 SensorService      sensorService(appState);
+AudioService       audioService(appState);
 LedService         ledService(appState);
 DisplayService     displayService(appState);
 NetworkService     networkService(appState);
@@ -23,7 +25,7 @@ TelegramService    telegramService(appState);
 OracleCloudService oracleService(appState);
 
 ServiceRegistry<4> core1FastServices;  // Core 1: Кнопки, LED-стрічка, Дисплей
-ServiceRegistry<4> core0LocalServices; // Core 0 (Пріоритет 2): I2C датчики, Wi-Fi, WebServer
+ServiceRegistry<4> core0LocalServices; // Core 0 (Пріоритет 2): Датчики, Wi-Fi/Web, Аудіо I2S
 ServiceRegistry<4> core0CloudServices; // Core 0 (Пріоритет 1): Telegram API та Oracle Cloud
 
 void backgroundCore0Task(void* pvParameters) {
@@ -31,8 +33,10 @@ void backgroundCore0Task(void* pvParameters) {
 
     for (;;) {
         core0LocalServices.tickAll();
-        bool fast_net = appState.ota_in_progress || appState.ap_mode_active;
-        vTaskDelay(pdMS_TO_TICKS(fast_net ? 2 : 12));
+
+        // Якщо йде OTA, роздається AP або грає музика/голос по I2S — цикл працює з мінімальною паузою 1 мс
+        bool fast_net = appState.ota_in_progress || appState.ap_mode_active || audioService.isPlaying();
+        vTaskDelay(pdMS_TO_TICKS(fast_net ? 1 : 12));
     }
 }
 
@@ -99,14 +103,18 @@ void setup() {
     Serial.begin(115200);
     appState.initQueue();
 
+    // 1. Швидкі сервіси реального часу на Core 1
     core1FastServices.add(&inputService);
     core1FastServices.add(&ledService);
     core1FastServices.add(&displayService);
     core1FastServices.initAll();
 
+    // 2. Локальні сервіси та I2S-звук на Core 0
     core0LocalServices.add(&sensorService);
     core0LocalServices.add(&networkService);
+    core0LocalServices.add(&audioService);
 
+    // 3. Хмарні сервіси (Telegram + Oracle Cloud) на Core 0
     core0CloudServices.add(&telegramService);
     core0CloudServices.add(&oracleService);
 

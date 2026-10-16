@@ -8,7 +8,7 @@
 struct AppState {
     portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-    // Климатические данные + тренд барометра
+    // Кліматичні дані + тренд барометра
     volatile float temperature   = 22.0f;
     volatile float humidity      = 50.0f;
     volatile float pressure      = 750.0f;
@@ -19,7 +19,7 @@ struct AppState {
     float   pressure_hist[24]   = {0};
     uint8_t pressure_hist_count = 0;
 
-    // Освещенность и яркость
+    // Освітленість та яскравість
     volatile int     raw_ldr         = 2000;
     volatile float   smooth_ldr      = 2000.0f;
     volatile int     light_percent   = 50;
@@ -28,58 +28,64 @@ struct AppState {
     volatile uint8_t current_led_brt = 65;
     volatile uint8_t current_lcd_brt = 200;
 
-    // Таймер сна
+    // Таймер сну
     volatile uint32_t sleep_timer_end_ms   = 0;
     volatile uint32_t sleep_timer_total_ms = 0;
     volatile bool     sleep_timer_active   = false;
 
-    // Режимы экрана и подсветки
+    // Режими екрана та підсвітки
     volatile uint8_t screen_mode = SCREEN_CLIMATE;
     volatile uint8_t light_mode  = MODE_WARM_COZY;
     static constexpr uint8_t LIGHT_MODE_COUNT = TOTAL_LIGHT_MODES;
 
-    // Активность пользователя и сети (Adaptive FPS & Radio Turbo)
+    // Активність користувача та мережі
     volatile uint32_t last_user_activity_ms = 0;
     volatile uint32_t last_net_activity_ms  = 0;
     volatile bool     ui_force_dirty        = true;
 
-    // Полноэкранный оверлей мем-реакции
+    // Повноекранний оверлей мем-реакції або кастомної наліпки/фото з сервера
     volatile uint8_t  screen_reaction_type  = NOTIFY_NONE;
     volatile uint32_t screen_reaction_until = 0;
+    volatile uint32_t custom_frame_until    = 0;
+    uint8_t*          shared_canvas_buf     = nullptr; // Вказує на буфер 240x240 RGB565 (0 байт зайвої RAM!)
 
-    // Отложенное сохранение в NVS
+    // Відкладене збереження в NVS
     volatile bool     settings_dirty     = false;
     volatile uint32_t settings_change_ms = 0;
     volatile bool     tg_config_dirty    = false;
 
-    // Состояние сенсорных кнопок
+    // Стан сенсорних кнопок
     volatile bool btn_l_pressed = false;
     volatile bool btn_t_pressed = false;
     volatile bool btn_r_pressed = false;
 
-    // Сеть, TLS-защита и Oracle Cloud
-    volatile bool    wifi_connected    = false;
-    volatile bool    ap_mode_active    = false;
-    volatile uint8_t ap_clients        = 0;
-    volatile bool    wifi_sleeping     = false;
-    volatile int8_t  wifi_rssi         = -60;
-    volatile bool    cmd_start_ap      = false;
-    volatile bool    time_synced       = false;
-    volatile bool    had_blackout_drop = false;
-    volatile bool    tls_in_flight     = false;
-    volatile bool    oracle_online     = false;
+    // Мережа, TLS-захист та Oracle Cloud
+    volatile bool    wifi_connected     = false;
+    volatile bool    ap_mode_active     = false;
+    volatile uint8_t ap_clients         = 0;
+    volatile bool    wifi_sleeping      = false;
+    volatile int8_t  wifi_rssi          = -60;
+    volatile bool    cmd_start_ap       = false;
+    volatile bool    time_synced        = false;
+    volatile bool    had_blackout_drop  = false;
+    volatile bool    tls_in_flight      = false;
+    volatile bool    oracle_online      = false;
+    volatile bool    oracle_manages_bot = false;
 
     char wifi_ssid[33]  = "Connecting...";
     char ip_address[20] = "0.0.0.0";
     char time_str[10]   = "--:--";
     char date_str[16]   = "---";
 
-    // OTA статус и отложенный URL от сервера
+    // Черги URL для OTA, Аудіо (I2S) та Картинок (RGB565)
     volatile bool    ota_in_progress = false;
     volatile uint8_t ota_progress    = 0;
+    volatile uint8_t audio_volume    = Config::DEFAULT_VOLUME;
     char pending_ota_url[160]        = "";
+    char pending_audio_url[160]      = "";
+    char pending_img_url[160]        = "";
 
-    // Telegram и История сообщений (Inbox на 5 сообщений)
+    // Telegram та Історія повідомлень (Inbox на 5 повідомлень)
     char tg_token[64]    = "";
     char tg_admin_id[20] = "";
     char tg_girl_id[20]  = "";
@@ -108,7 +114,7 @@ struct AppState {
         strncpy(tg_girl_id, Config::DEFAULT_GIRL_ID, sizeof(tg_girl_id) - 1);
 
         strncpy(inbox[0].sender, "Yaroslav", sizeof(inbox[0].sender) - 1);
-        strncpy(inbox[0].text, "MagicBox v4.2 Turbo Ready!", sizeof(inbox[0].text) - 1);
+        strncpy(inbox[0].text, "MagicBox v4.5 Ready!", sizeof(inbox[0].text) - 1);
         strncpy(inbox[0].time_received, "--:--", sizeof(inbox[0].time_received) - 1);
         for (int i = 0; i < 24; i++) pressure_hist[i] = 750.0f;
     }
@@ -125,6 +131,10 @@ struct AppState {
     bool isReactionActive(uint32_t now) const {
         return (screen_reaction_type >= NOTIFY_FIRE) &&
                ((int32_t)(screen_reaction_until - now) > 0);
+    }
+
+    bool isCustomFrameActive(uint32_t now) const {
+        return ((int32_t)(custom_frame_until - now) > 0);
     }
 
     void triggerLedNotification(NotifyLedType type, bool show_screen_overlay = false) {
@@ -149,19 +159,15 @@ struct AppState {
         return (uint16_t)((rem + 59999) / 60000);
     }
 
-    // При первом замере заполняет весь массив реальным давлением, чтобы график был ровным со старта
     void addPressureSample(float p) {
         portENTER_CRITICAL(&mux);
         if (pressure_hist_count == 0) {
             for (int i = 0; i < 24; i++) pressure_hist[i] = p;
             pressure_hist_count = 1;
-        } else if (pressure_hist_count < 24) {
-            for (int i = 0; i < 23; i++) pressure_hist[i] = pressure_hist[i + 1];
-            pressure_hist[23] = p;
-            pressure_hist_count++;
         } else {
             for (int i = 0; i < 23; i++) pressure_hist[i] = pressure_hist[i + 1];
             pressure_hist[23] = p;
+            if (pressure_hist_count < 24) pressure_hist_count++;
         }
         pressure_diff = p - pressure_hist[0];
         portEXIT_CRITICAL(&mux);
@@ -180,6 +186,7 @@ struct AppState {
         if (eventQueue) {
             AppEvent ev{type};
             xQueueSend(eventQueue, &ev, 0);
+            custom_frame_until = 0; // Будь-який клік кнопки закриває повноекранну картинку
             registerActivity();
         }
     }
@@ -203,9 +210,7 @@ struct AppState {
         time_synced = true;
         portEXIT_CRITICAL(&mux);
 
-        if (minute_changed) {
-            ui_force_dirty = true;
-        }
+        if (minute_changed) ui_force_dirty = true;
     }
 
     void getTimeString(char* t_out, size_t t_len) {
@@ -229,6 +234,48 @@ struct AppState {
             strncpy(url_out, pending_ota_url, max_len - 1);
             url_out[max_len - 1] = '\0';
             pending_ota_url[0] = '\0';
+            has = true;
+        }
+        portEXIT_CRITICAL(&mux);
+        return has;
+    }
+
+    void setPendingAudioUrl(const char* url) {
+        portENTER_CRITICAL(&mux);
+        strncpy(pending_audio_url, url, sizeof(pending_audio_url) - 1);
+        pending_audio_url[sizeof(pending_audio_url) - 1] = '\0';
+        portEXIT_CRITICAL(&mux);
+        registerNetActivity();
+    }
+
+    bool popPendingAudioUrl(char* url_out, size_t max_len) {
+        bool has = false;
+        portENTER_CRITICAL(&mux);
+        if (strlen(pending_audio_url) > 8) {
+            strncpy(url_out, pending_audio_url, max_len - 1);
+            url_out[max_len - 1] = '\0';
+            pending_audio_url[0] = '\0';
+            has = true;
+        }
+        portEXIT_CRITICAL(&mux);
+        return has;
+    }
+
+    void setPendingImageUrl(const char* url) {
+        portENTER_CRITICAL(&mux);
+        strncpy(pending_img_url, url, sizeof(pending_img_url) - 1);
+        pending_img_url[sizeof(pending_img_url) - 1] = '\0';
+        portEXIT_CRITICAL(&mux);
+        registerNetActivity();
+    }
+
+    bool popPendingImageUrl(char* url_out, size_t max_len) {
+        bool has = false;
+        portENTER_CRITICAL(&mux);
+        if (strlen(pending_img_url) > 8) {
+            strncpy(url_out, pending_img_url, max_len - 1);
+            url_out[max_len - 1] = '\0';
+            pending_img_url[0] = '\0';
             has = true;
         }
         portEXIT_CRITICAL(&mux);

@@ -42,6 +42,9 @@ public:
         canvas.createSprite(240, 240);
         canvas.setTextDatum(textdatum_t::middle_center);
 
+        // Посилання на відеобуфер для прямого потокового завантаження фото/наліпок із сервера (0 байт зайвої RAM!)
+        state.shared_canvas_buf = (uint8_t*)canvas.getBuffer();
+
         qr_cache.setPsram(false);
         qr_cache.setColorDepth(8);
         qr_cache.createSprite(110, 110);
@@ -61,6 +64,17 @@ public:
         if (applied_lcd_brt != state.current_lcd_brt) {
             applied_lcd_brt = state.current_lcd_brt;
             lcd.setBrightness(applied_lcd_brt);
+        }
+
+        // Якщо активна кастомна наліпка або фото з сервера — не затираємо буфер canvas, а лише виводимо його!
+        if (state.isCustomFrameActive(now)) {
+            if (state.ui_force_dirty) {
+                state.ui_force_dirty = false;
+                canvas.drawCircle(120, 120, 118, canvas.color565(56, 189, 248));
+                canvas.drawCircle(120, 120, 117, canvas.color565(56, 189, 248));
+                canvas.pushSprite(0, 0);
+            }
+            return;
         }
 
         bool high_fps = isHighFpsNeeded();
