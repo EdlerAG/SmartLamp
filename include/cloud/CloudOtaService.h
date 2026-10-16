@@ -6,11 +6,10 @@
 #include <Update.h>
 #include <esp_ota_ops.h>
 #include "Config.h"
-#include "AppState.h"
+#include "core/AppState.h"
 
 class CloudOtaService {
 private:
-    // RAII-гард: гарантує скидання прапорців навіть при помилці чи обриві мережі
     struct OtaStateGuard {
         AppState& st;
         OtaStateGuard(AppState& s) : st(s) {
@@ -20,7 +19,7 @@ private:
         ~OtaStateGuard() {
             st.ota_in_progress = false;
             st.tls_in_flight   = false;
-            WiFi.setSleep(WIFI_PS_MIN_MODEM);
+            st.registerNetActivity();
             st.registerActivity();
         }
     };
@@ -55,7 +54,6 @@ public:
 
         OtaStateGuard guard(state);
 
-        // Виділяємо 4 КБ буфер у PSRAM (або Heap), щоб не навантажувати стек потоку FreeRTOS
         constexpr size_t BUF_SIZE = 4096;
         uint8_t* buff = (uint8_t*)(psramFound() ? ps_malloc(BUF_SIZE) : malloc(BUF_SIZE));
         if (!buff) {
@@ -71,6 +69,9 @@ public:
         if (is_https) {
             secure_client.setInsecure();
             secure_client.setTimeout(15);
+            secure_client.setNoDelay(true);
+        } else {
+            plain_client.setNoDelay(true);
         }
 
         http.setConnectTimeout(10000);
@@ -153,7 +154,6 @@ public:
                     }
                 }
 
-                // Віддаємо квант часу іншим потокам лише раз на 15 мс (максимальна швидкість скачування!)
                 if (millis() - last_yield_ms >= 15) {
                     last_yield_ms = millis();
                     vTaskDelay(pdMS_TO_TICKS(1));

@@ -19,7 +19,6 @@ private:
     float smooth_hum_angle  = 180.0f;
     float smooth_pres_angle = 270.0f;
 
-    // Перевіряє, чи плавні стрілки вже дійшли до цільових значень
     bool isGaugeSettled() const {
         float target_hum = 180.0f + constrain(state.humidity, 0.0f, 100.0f) * 1.8f;
         float clamped_p  = constrain(state.pressure, 730.0f, 770.0f);
@@ -51,7 +50,7 @@ public:
     bool isHighFpsNeeded() const {
         uint32_t now = millis();
         return state.ota_in_progress ||
-               (now < state.screen_reaction_until) ||
+               state.isReactionActive(now) ||
                (now - state.last_user_activity_ms < 4000) ||
                state.btn_l_pressed || state.btn_t_pressed || state.btn_r_pressed;
     }
@@ -59,7 +58,6 @@ public:
     void update() override {
         uint32_t now = millis();
 
-        // Оновлюємо апаратну яскравість підсвітки навіть без перемальовки кадру
         if (applied_lcd_brt != state.current_lcd_brt) {
             applied_lcd_brt = state.current_lcd_brt;
             lcd.setBrightness(applied_lcd_brt);
@@ -68,8 +66,6 @@ public:
         bool high_fps = isHighFpsNeeded();
         bool pulsing_inbox = (state.screen_mode == SCREEN_TELEGRAM && state.tg_unread);
 
-        // ZERO-SPI IDLE: якщо немає активності, немає пульсуючого повідомлення і шкали стабілізувалися —
-        // пропускаємо рендеринг та SPI-транзакцію повністю (0% CPU)!
         if (!high_fps && !state.ui_force_dirty && !pulsing_inbox && isGaugeSettled()) {
             return;
         }
@@ -87,7 +83,7 @@ public:
             return;
         }
 
-        if (now < state.screen_reaction_until && state.screen_reaction_type >= NOTIFY_FIRE) {
+        if (state.isReactionActive(now)) {
             ReactionRenderer::draw(canvas, state.screen_reaction_type, now);
             canvas.pushSprite(0, 0);
             return;

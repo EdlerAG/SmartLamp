@@ -19,10 +19,13 @@ private:
     int64_t  last_update_id   = 0;
     uint32_t last_poll_ms     = 0;
     bool     cold_boot_synced = false;
+    bool     first_poll_done  = false;
 
     bool sendMessage(const char* token, const char* chat_id, const String& text, const char* reply_markup = nullptr) {
         if (!state.wifi_connected || strlen(token) < 10 || strlen(chat_id) == 0) return false;
         state.tls_in_flight = true;
+        state.registerNetActivity();
+
         String url = String("https://api.telegram.org/bot") + token +
                      "/sendMessage?chat_id=" + chat_id +
                      "&text=" + TgJsonUtils::urlEncode(text);
@@ -40,6 +43,8 @@ private:
     bool editMessage(const char* token, const char* chat_id, const char* msg_id, const String& text, const char* reply_markup = nullptr) {
         if (!state.wifi_connected || strlen(token) < 10 || strlen(chat_id) == 0 || strlen(msg_id) == 0) return false;
         state.tls_in_flight = true;
+        state.registerNetActivity();
+
         String url = String("https://api.telegram.org/bot") + token +
                      "/editMessageText?chat_id=" + chat_id +
                      "&message_id=" + msg_id +
@@ -58,6 +63,8 @@ private:
     void answerCallback(const char* token, const String& cb_id, const String& toast_text) {
         if (!state.wifi_connected || cb_id.length() == 0) return;
         state.tls_in_flight = true;
+        state.registerNetActivity();
+
         String url = String("https://api.telegram.org/bot") + token +
                      "/answerCallbackQuery?callback_query_id=" + cb_id +
                      "&text=" + TgJsonUtils::urlEncode(toast_text);
@@ -148,9 +155,11 @@ private:
         if (!cold_boot_synced) {
             cold_boot_synced = true;
             last_update_id = upd_id;
+            first_poll_done = false; // Сразу же переходим к рабочему опросу без ожидания 2.5 с!
             return;
         }
         last_update_id = upd_id;
+        state.registerNetActivity();
 
         int cb_idx = payload.indexOf("\"callback_query\":", upd_idx);
         if (cb_idx != -1) {
@@ -231,7 +240,6 @@ private:
             return;
         }
 
-        // ЗАХИЩЕНА ПРИВ'ЯЗКА РОЛЕЙ: спрацьовує лише якщо слот вільний або команду дає поточний власник
         if (msg.equalsIgnoreCase("/iam_admin")) {
             if (strlen(admin_id) == 0 || is_admin) {
                 state.setTelegramConfig(nullptr, chat_id.c_str(), nullptr);
@@ -343,9 +351,10 @@ public:
 
     void init() override {
         client.setInsecure();
-        client.setTimeout(4);
-        https.setConnectTimeout(3000);
-        https.setTimeout(3000);
+        client.setTimeout(3);
+        client.setNoDelay(true); // Отключаем буферизацию Нейгла для мгновенной отправки TLS-пакетов!
+        https.setConnectTimeout(2500);
+        https.setTimeout(2500);
         https.setReuse(true);
     }
 
@@ -393,8 +402,12 @@ public:
         }
 
         uint32_t now = millis();
-        if (now - last_poll_ms < Config::TG_POLL_MS) return;
-        last_poll_ms = now;
+        // Если недавно общались с ботом — опрашиваем каждые 1.2 с (быстрый диалог), иначе раз в 2.5 с
+        uint32_t poll_interval = (now - state.last_net_activity_ms < 25000) ? 1200 : Config::TG_POLL_MS;
+        if (first_poll_done && (now - last_poll_ms < poll_interval)) return;
+
+        first_poll_done = true;
+        last_poll_ms    = now;
 
         state.tls_in_flight = true;
         char url_buf[180];

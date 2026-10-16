@@ -8,7 +8,7 @@
 struct AppState {
     portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-    // Кліматичні дані + тренд барометра
+    // Климатические данные + тренд барометра
     volatile float temperature   = 22.0f;
     volatile float humidity      = 50.0f;
     volatile float pressure      = 750.0f;
@@ -19,7 +19,7 @@ struct AppState {
     float   pressure_hist[24]   = {0};
     uint8_t pressure_hist_count = 0;
 
-    // Освітленість та яскравість
+    // Освещенность и яркость
     volatile int     raw_ldr         = 2000;
     volatile float   smooth_ldr      = 2000.0f;
     volatile int     light_percent   = 50;
@@ -28,35 +28,36 @@ struct AppState {
     volatile uint8_t current_led_brt = 65;
     volatile uint8_t current_lcd_brt = 200;
 
-    // Таймер сну
+    // Таймер сна
     volatile uint32_t sleep_timer_end_ms   = 0;
     volatile uint32_t sleep_timer_total_ms = 0;
     volatile bool     sleep_timer_active   = false;
 
-    // Режими екрана та підсвітки
+    // Режимы экрана и подсветки
     volatile uint8_t screen_mode = SCREEN_CLIMATE;
     volatile uint8_t light_mode  = MODE_WARM_COZY;
     static constexpr uint8_t LIGHT_MODE_COUNT = TOTAL_LIGHT_MODES;
 
-    // Активність користувача (Adaptive FPS)
+    // Активность пользователя и сети (Adaptive FPS & Radio Turbo)
     volatile uint32_t last_user_activity_ms = 0;
+    volatile uint32_t last_net_activity_ms  = 0;
     volatile bool     ui_force_dirty        = true;
 
-    // Повноекранний оверлей мем-реакції
+    // Полноэкранный оверлей мем-реакции
     volatile uint8_t  screen_reaction_type  = NOTIFY_NONE;
     volatile uint32_t screen_reaction_until = 0;
 
-    // Відкладене збереження в NVS
+    // Отложенное сохранение в NVS
     volatile bool     settings_dirty     = false;
     volatile uint32_t settings_change_ms = 0;
     volatile bool     tg_config_dirty    = false;
 
-    // Стан сенсорних кнопок
+    // Состояние сенсорных кнопок
     volatile bool btn_l_pressed = false;
     volatile bool btn_t_pressed = false;
     volatile bool btn_r_pressed = false;
 
-    // Мережа, TLS-захист та Oracle Cloud
+    // Сеть, TLS-защита и Oracle Cloud
     volatile bool    wifi_connected    = false;
     volatile bool    ap_mode_active    = false;
     volatile uint8_t ap_clients        = 0;
@@ -73,12 +74,12 @@ struct AppState {
     char time_str[10]   = "--:--";
     char date_str[16]   = "---";
 
-    // OTA статус та відкладений URL від сервера
+    // OTA статус и отложенный URL от сервера
     volatile bool    ota_in_progress = false;
     volatile uint8_t ota_progress    = 0;
     char pending_ota_url[160]        = "";
 
-    // Telegram та Історія повідомлень (Inbox на 5 повідомлень)
+    // Telegram и История сообщений (Inbox на 5 сообщений)
     char tg_token[64]    = "";
     char tg_admin_id[20] = "";
     char tg_girl_id[20]  = "";
@@ -98,13 +99,16 @@ struct AppState {
 
     void initQueue() {
         eventQueue = xQueueCreate(16, sizeof(AppEvent));
-        last_user_activity_ms = millis();
+        uint32_t now = millis();
+        last_user_activity_ms = now;
+        last_net_activity_ms  = now;
+
         strncpy(tg_token, Config::DEFAULT_TG_TOKEN, sizeof(tg_token) - 1);
         strncpy(tg_admin_id, Config::DEFAULT_ADMIN_ID, sizeof(tg_admin_id) - 1);
         strncpy(tg_girl_id, Config::DEFAULT_GIRL_ID, sizeof(tg_girl_id) - 1);
 
         strncpy(inbox[0].sender, "Yaroslav", sizeof(inbox[0].sender) - 1);
-        strncpy(inbox[0].text, "MagicBox v4.1 Ready!", sizeof(inbox[0].text) - 1);
+        strncpy(inbox[0].text, "MagicBox v4.2 Turbo Ready!", sizeof(inbox[0].text) - 1);
         strncpy(inbox[0].time_received, "--:--", sizeof(inbox[0].time_received) - 1);
         for (int i = 0; i < 24; i++) pressure_hist[i] = 750.0f;
     }
@@ -112,6 +116,15 @@ struct AppState {
     void registerActivity() {
         last_user_activity_ms = millis();
         ui_force_dirty = true;
+    }
+
+    void registerNetActivity() {
+        last_net_activity_ms = millis();
+    }
+
+    bool isReactionActive(uint32_t now) const {
+        return (screen_reaction_type >= NOTIFY_FIRE) &&
+               ((int32_t)(screen_reaction_until - now) > 0);
     }
 
     void triggerLedNotification(NotifyLedType type, bool show_screen_overlay = false) {
@@ -136,10 +149,16 @@ struct AppState {
         return (uint16_t)((rem + 59999) / 60000);
     }
 
+    // При первом замере заполняет весь массив реальным давлением, чтобы график был ровным со старта
     void addPressureSample(float p) {
         portENTER_CRITICAL(&mux);
-        if (pressure_hist_count < 24) {
-            pressure_hist[pressure_hist_count++] = p;
+        if (pressure_hist_count == 0) {
+            for (int i = 0; i < 24; i++) pressure_hist[i] = p;
+            pressure_hist_count = 1;
+        } else if (pressure_hist_count < 24) {
+            for (int i = 0; i < 23; i++) pressure_hist[i] = pressure_hist[i + 1];
+            pressure_hist[23] = p;
+            pressure_hist_count++;
         } else {
             for (int i = 0; i < 23; i++) pressure_hist[i] = pressure_hist[i + 1];
             pressure_hist[23] = p;
@@ -171,7 +190,6 @@ struct AppState {
         registerActivity();
     }
 
-    // Оновлює час і будить екран ЛИШЕ тоді, коли реально змінилася хвилина!
     void setTimeStrings(const char* t_in, const char* d_in) {
         bool minute_changed = false;
         portENTER_CRITICAL(&mux);
