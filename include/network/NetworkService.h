@@ -39,7 +39,7 @@ private:
 
     void waitForTlsIdle() {
         uint32_t start = millis();
-        while (state.tls_in_flight && (millis() - start < 500)) {
+        while (state.tls_in_flight && (millis() - start < 3200)) {
             vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
@@ -49,7 +49,7 @@ private:
         WiFi.mode(WIFI_STA);
         WiFi.setScanMethod(WIFI_FAST_SCAN);
         WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
-        WiFi.setSleep(false); // Максимальная скорость радио при старте!
+        WiFi.setSleep(false);
         modem_sleep_now = false;
         WiFi.setTxPower(WIFI_POWER_19_5dBm);
         WiFi.begin(saved_ssid.c_str(), saved_pass.c_str());
@@ -98,7 +98,6 @@ private:
     }
 
     void onWifiConnected() {
-        // Оставляем радио в режиме низкой задержки на первые 20 секунд для мгновенного старта Telegram и NTP
         WiFi.setSleep(false);
         modem_sleep_now = false;
         state.registerNetActivity();
@@ -149,8 +148,8 @@ private:
         if (state.wifi_connected) {
             state.wifi_rssi = WiFi.RSSI();
 
-            // Адаптивный Modem Sleep: если нет сетевой/пользовательской активности 25 секунд — включаем экономию
             bool need_fast_radio = state.ota_in_progress ||
+                                   state.audio_playing ||
                                    (now - state.last_net_activity_ms < 25000) ||
                                    (now - state.last_user_activity_ms < 15000);
             if (need_fast_radio && modem_sleep_now) {
@@ -218,7 +217,6 @@ public:
             }
             case NetMode::CONNECTING:
                 if (WiFi.status() == WL_CONNECTED) {
-                    // Никакого сканирования каналов здесь! Сразу отдаем радио для Telegram и NTP
                     onWifiConnected();
                 } else if (millis() - state_timer_ms >= Config::WIFI_BOOT_TIMEOUT_MS) {
                     state.had_blackout_drop = true;

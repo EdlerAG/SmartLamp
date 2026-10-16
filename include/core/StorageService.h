@@ -18,8 +18,12 @@ public:
             String tok = prefs.isKey("tg_tok") ? prefs.getString("tg_tok") : String(Config::DEFAULT_TG_TOKEN);
             String adm = prefs.isKey("tg_adm") ? prefs.getString("tg_adm") : String(Config::DEFAULT_ADMIN_ID);
             String grl = prefs.isKey("tg_grl") ? prefs.getString("tg_grl") : String(Config::DEFAULT_GIRL_ID);
-
             state.setTelegramConfig(tok.c_str(), adm.c_str(), grl.c_str());
+
+            String o_url = prefs.isKey("or_url") ? prefs.getString("or_url") : String(Config::ORACLE_SERVER_URL);
+            String o_key = prefs.isKey("or_key") ? prefs.getString("or_key") : String(Config::ORACLE_API_KEY);
+            state.setOracleConfig(o_url.c_str(), o_key.c_str());
+
             prefs.end();
         }
     }
@@ -42,6 +46,22 @@ public:
         }
     }
 
+    void saveOracleConfig(AppState& state, const String& url, const String& key) {
+        char cur_url[128], cur_key[64];
+        state.getOracleConfig(cur_url, sizeof(cur_url), cur_key, sizeof(cur_key));
+
+        const char* final_url = (url.length() > 8) ? url.c_str() : cur_url;
+        const char* final_key = (key.length() > 0) ? key.c_str() : cur_key;
+
+        state.setOracleConfig(final_url, final_key);
+
+        if (prefs.begin("box_state", false)) {
+            prefs.putString("or_url", final_url);
+            prefs.putString("or_key", final_key);
+            prefs.end();
+        }
+    }
+
     void checkDelayedSave(AppState& state) {
         if (state.tg_config_dirty) {
             state.tg_config_dirty = false;
@@ -51,6 +71,17 @@ public:
                 prefs.putString("tg_tok", tok);
                 prefs.putString("tg_adm", adm);
                 prefs.putString("tg_grl", grl);
+                prefs.end();
+            }
+        }
+
+        if (state.cloud_config_dirty) {
+            state.cloud_config_dirty = false;
+            char url[128], key[64];
+            state.getOracleConfig(url, sizeof(url), key, sizeof(key));
+            if (prefs.begin("box_state", false)) {
+                prefs.putString("or_url", url);
+                prefs.putString("or_key", key);
                 prefs.end();
             }
         }

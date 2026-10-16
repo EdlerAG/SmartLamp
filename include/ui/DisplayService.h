@@ -39,10 +39,12 @@ public:
 
         canvas.setPsram(false);
         canvas.setColorDepth(16);
-        canvas.createSprite(240, 240);
+        if (!canvas.createSprite(240, 240)) {
+            canvas.setPsram(true);
+            canvas.createSprite(240, 240);
+        }
         canvas.setTextDatum(textdatum_t::middle_center);
 
-        // Посилання на відеобуфер для прямого потокового завантаження фото/наліпок із сервера (0 байт зайвої RAM!)
         state.shared_canvas_buf = (uint8_t*)canvas.getBuffer();
 
         qr_cache.setPsram(false);
@@ -59,6 +61,9 @@ public:
     }
 
     void update() override {
+        // Не чіпаємо відеобуфер, поки Core 0 записує туди байти RGB565 з мережі
+        if (state.canvas_loading) return;
+
         uint32_t now = millis();
 
         if (applied_lcd_brt != state.current_lcd_brt) {
@@ -66,7 +71,6 @@ public:
             lcd.setBrightness(applied_lcd_brt);
         }
 
-        // Якщо активна кастомна наліпка або фото з сервера — не затираємо буфер canvas, а лише виводимо його!
         if (state.isCustomFrameActive(now)) {
             if (state.ui_force_dirty) {
                 state.ui_force_dirty = false;

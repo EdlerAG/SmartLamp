@@ -47,12 +47,14 @@ struct AppState {
     volatile uint8_t  screen_reaction_type  = NOTIFY_NONE;
     volatile uint32_t screen_reaction_until = 0;
     volatile uint32_t custom_frame_until    = 0;
-    uint8_t*          shared_canvas_buf     = nullptr; // Вказує на буфер 240x240 RGB565 (0 байт зайвої RAM!)
+    volatile bool     canvas_loading        = false;
+    uint8_t*          shared_canvas_buf     = nullptr;
 
     // Відкладене збереження в NVS
     volatile bool     settings_dirty     = false;
     volatile uint32_t settings_change_ms = 0;
     volatile bool     tg_config_dirty    = false;
+    volatile bool     cloud_config_dirty = false;
 
     // Стан сенсорних кнопок
     volatile bool btn_l_pressed = false;
@@ -60,17 +62,19 @@ struct AppState {
     volatile bool btn_r_pressed = false;
 
     // Мережа, TLS-захист та Oracle Cloud
-    volatile bool    wifi_connected     = false;
-    volatile bool    ap_mode_active     = false;
-    volatile uint8_t ap_clients         = 0;
-    volatile bool    wifi_sleeping      = false;
-    volatile int8_t  wifi_rssi          = -60;
-    volatile bool    cmd_start_ap       = false;
-    volatile bool    time_synced        = false;
-    volatile bool    had_blackout_drop  = false;
-    volatile bool    tls_in_flight      = false;
-    volatile bool    oracle_online      = false;
-    volatile bool    oracle_manages_bot = false;
+    volatile bool    wifi_connected      = false;
+    volatile bool    ap_mode_active      = false;
+    volatile uint8_t ap_clients          = 0;
+    volatile bool    wifi_sleeping       = false;
+    volatile int8_t  wifi_rssi           = -60;
+    volatile bool    cmd_start_ap        = false;
+    volatile bool    time_synced         = false;
+    volatile bool    had_blackout_drop   = false;
+    volatile bool    tls_in_flight       = false;
+    volatile bool    oracle_online       = false;
+    volatile bool    oracle_manages_bot  = false;
+    volatile bool    has_more_cloud_cmds = false;
+    volatile bool    audio_playing       = false;
 
     char wifi_ssid[33]  = "Connecting...";
     char ip_address[20] = "0.0.0.0";
@@ -85,10 +89,12 @@ struct AppState {
     char pending_audio_url[160]      = "";
     char pending_img_url[160]        = "";
 
-    // Telegram та Історія повідомлень (Inbox на 5 повідомлень)
+    // Telegram, Oracle Cloud та Історія повідомлень (Inbox на 5 повідомлень)
     char tg_token[64]    = "";
     char tg_admin_id[20] = "";
     char tg_girl_id[20]  = "";
+    char oracle_url[128] = "";
+    char oracle_key[64]  = "";
 
     static constexpr uint8_t INBOX_CAPACITY = 5;
     InboxMessage inbox[INBOX_CAPACITY];
@@ -112,6 +118,8 @@ struct AppState {
         strncpy(tg_token, Config::DEFAULT_TG_TOKEN, sizeof(tg_token) - 1);
         strncpy(tg_admin_id, Config::DEFAULT_ADMIN_ID, sizeof(tg_admin_id) - 1);
         strncpy(tg_girl_id, Config::DEFAULT_GIRL_ID, sizeof(tg_girl_id) - 1);
+        strncpy(oracle_url, Config::ORACLE_SERVER_URL, sizeof(oracle_url) - 1);
+        strncpy(oracle_key, Config::ORACLE_API_KEY, sizeof(oracle_key) - 1);
 
         strncpy(inbox[0].sender, "Yaroslav", sizeof(inbox[0].sender) - 1);
         strncpy(inbox[0].text, "MagicBox v4.5 Ready!", sizeof(inbox[0].text) - 1);
@@ -134,7 +142,7 @@ struct AppState {
     }
 
     bool isCustomFrameActive(uint32_t now) const {
-        return ((int32_t)(custom_frame_until - now) > 0);
+        return !canvas_loading && ((int32_t)(custom_frame_until - now) > 0);
     }
 
     void triggerLedNotification(NotifyLedType type, bool show_screen_overlay = false) {
@@ -186,7 +194,7 @@ struct AppState {
         if (eventQueue) {
             AppEvent ev{type};
             xQueueSend(eventQueue, &ev, 0);
-            custom_frame_until = 0; // Будь-який клік кнопки закриває повноекранну картинку
+            custom_frame_until = 0;
             registerActivity();
         }
     }
@@ -324,6 +332,32 @@ struct AppState {
         if (adm_out) { strncpy(adm_out, tg_admin_id, a_len - 1); adm_out[a_len - 1] = '\0'; }
         if (grl_out) { strncpy(grl_out, tg_girl_id, g_len - 1); grl_out[g_len - 1] = '\0'; }
         portEXIT_CRITICAL(&mux);
+    }
+
+    void setOracleConfig(const char* url, const char* key) {
+        portENTER_CRITICAL(&mux);
+        if (url && strlen(url) > 0) {
+            strncpy(oracle_url, url, sizeof(oracle_url) - 1);
+            oracle_url[sizeof(oracle_url) - 1] = '\0';
+        }
+        if (key && strlen(key) > 0) {
+            strncpy(oracle_key, key, sizeof(oracle_key) - 1);
+            oracle_key[sizeof(oracle_key) - 1] = '\0';
+        }
+        portEXIT_CRITICAL(&mux);
+    }
+
+    void getOracleConfig(char* url_out, size_t u_len, char* key_out, size_t k_len) const {
+        portENTER_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
+        if (url_out && u_len > 0) {
+            strncpy(url_out, oracle_url, u_len - 1);
+            url_out[u_len - 1] = '\0';
+        }
+        if (key_out && k_len > 0) {
+            strncpy(key_out, oracle_key, k_len - 1);
+            key_out[k_len - 1] = '\0';
+        }
+        portEXIT_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
     }
 
     void setTelegramData(const char* sender, const char* msg) {

@@ -51,8 +51,11 @@ class TelegramBotService:
         if not f_path:
             return None
         dl_url = f"https://api.telegram.org/file/bot{settings.TG_BOT_TOKEN}/{f_path}"
-        resp = await http_pool.get().get(dl_url, timeout=20.0)
-        return resp.content if resp.status_code == 200 else None
+        try:
+            resp = await http_pool.get().get(dl_url, timeout=20.0)
+            return resp.content if resp.status_code == 200 else None
+        except Exception:
+            return None
 
     @staticmethod
     def _modes_inline_kb() -> Dict[str, Any]:
@@ -121,7 +124,7 @@ class TelegramBotService:
             f"🧭 Барометр: {d.get('p', 0):.0f} мм рт. ст.\n"
             f"⚙️ FW: {d.get('fw', '--')} | 📶 {d.get('rssi', 0)} dBm\n"
             f"📬 Команд у черзі: {len(state_service.command_queue)}\n"
-            f"💬 Надішли текст, фото, наліпку або /say [текст]!"
+            f"💬 Надішли текст, фото, наліпку, голосове або /say [текст]!"
         )
 
     async def _handle_callback(self, cb: Dict[str, Any]) -> None:
@@ -215,11 +218,11 @@ class TelegramBotService:
         active_kb = ADMIN_KB if is_admin else GIRL_KB
         online_note = "" if state_service.is_online() else "\n🌙 (Шкатулка зараз без Wi-Fi — команда в черзі й спрацює при появі світла!)"
 
-        # 1. Прийом НАЛІПОК (Stickers) — конвертуємо WebP з прозорістю під круглий екран!
+        # 1a. Прийом НАЛІПОК (Stickers)
         if "sticker" in msg:
             st = msg["sticker"]
-            # Для анімованих/відео наліпок беремо прев'ю (thumbnail), для статичних — повний файл
-            file_id = st.get("thumbnail", {}).get("file_id") if (st.get("is_animated") or st.get("is_video")) else st.get("file_id")
+            thumb_obj = st.get("thumbnail") or st.get("thumb") or {}
+            file_id = thumb_obj.get("file_id") if (st.get("is_animated") or st.get("is_video")) else st.get("file_id")
             if file_id:
                 raw_bytes = await self._download_tg_file(file_id)
                 if raw_bytes:
@@ -231,10 +234,11 @@ class TelegramBotService:
                     })
                     return
 
-# 1b. Прийом GIF-анімацій (animation) — виводимо кадр на круглий екран
+        # 1b. Прийом GIF-анімацій (animation)
         if "animation" in msg:
             anim = msg["animation"]
-            thumb_id = anim.get("thumbnail", {}).get("file_id") or anim.get("file_id")
+            thumb_obj = anim.get("thumbnail") or anim.get("thumb") or {}
+            thumb_id = thumb_obj.get("file_id") or anim.get("file_id")
             if thumb_id:
                 raw_bytes = await self._download_tg_file(thumb_id)
                 if raw_bytes:
@@ -246,17 +250,13 @@ class TelegramBotService:
                     })
                     return
 
-        # 1c. Прийом голосових повідомлень (voice) — пряма трансляція голосу на динамік шкатулки
+        # 1c. Прийом голосових повідомлень (voice — формат OGG Opus)
         if "voice" in msg:
             voice_id = msg["voice"].get("file_id")
             if voice_id:
                 raw_voice = await self._download_tg_file(voice_id)
                 if raw_voice:
-                    with open(audio_service.TTS_FILE, "wb") as f:
-                        f.write(raw_voice)
-                    import time as _t
-                    v_url = f"{settings.PUBLIC_SERVER_URL.rstrip('/')}/api/v1/media/tts.mp3?v={int(_t.time())}"
-                    state_service.enqueue_raw({"play_url": v_url, "sender": sender[:24], "msg": "VOICE MESSAGE"})
+                    audio_service.save_voice_ogg(raw_voice, sender=sender, base_url=settings.PUBLIC_SERVER_URL)
                     await self._api("sendMessage", {
                         "chat_id": chat_id,
                         "text": f"🎙 Голосове повідомлення відправлено на динамік шкатулки!{online_note}",
@@ -277,7 +277,7 @@ class TelegramBotService:
                 })
             return
 
-        # 3. Прийом прошивки (.bin) або MP3-звуку в бібліотеку
+        # 3. Прийом прошивки (.bin) або MP3-звуку в бібліотеку / на динамік
         if "document" in msg or "audio" in msg:
             doc = msg.get("document") or msg.get("audio") or {}
             fname = doc.get("file_name", "audio.mp3")
@@ -287,10 +287,21 @@ class TelegramBotService:
                     return
                 raw_bin = await self._download_tg_file(doc["file_id"])
                 if raw_bin:
-                    res = ota_service.save_binary_bytes(raw_bin, settings.PUBLIC_SERVER_URL)
+                    res = ota_service.save_binary_bytes(raw_bin, state_service.resolve_public_url(settings.PUBLIC_SERVER_URL))
                     await self._api("sendMessage", {
                         "chat_id": chat_id,
                         "text": f"🚀 Прошивку `{fname}` ({res['size']} байт) збережено на сервері та поставлено в чергу OTA!{online_note}",
+                        "reply_markup": active_kb,
+                    })
+                return
+            elif fname.lower().endswith(".mp3") or "audio" in msg:
+                raw_mp3 = await self._download_tg_file(doc["file_id"])
+                if raw_mp3:
+                    sound_tag = text or fname[:-4]
+                    audio_service.save_and_play_mp3_bytes(raw_mp3, name=sound_tag, sender=sender, base_url=settings.PUBLIC_SERVER_URL)
+                    await self._api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"🎵 Аудіо `{fname}` відправлено на динамік шкатулки!{online_note}",
                         "reply_markup": active_kb,
                     })
                 return

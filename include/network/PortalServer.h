@@ -78,7 +78,6 @@ public:
             server.send(200, "application/json", buf);
         });
 
-        // Універсальний REST API (підтримує і Web-кнопки, і синтаксис із README.md!)
         server.on("/api/cmd", HTTP_POST, [this]() {
             addCorsHeaders();
             if (server.hasArg("set_mode")) {
@@ -136,6 +135,15 @@ public:
             String grl = server.arg("girl_id");
             tok.trim(); adm.trim(); grl.trim();
             storage.saveTelegramConfig(state, tok, adm, grl);
+            server.send(200, "application/json", "{\"ok\":true}");
+        });
+
+        server.on("/api/cloud", HTTP_POST, [this]() {
+            addCorsHeaders();
+            String url = server.arg("oracle_url");
+            String key = server.arg("oracle_key");
+            url.trim(); key.trim();
+            storage.saveOracleConfig(state, url, key);
             server.send(200, "application/json", "{\"ok\":true}");
         });
 

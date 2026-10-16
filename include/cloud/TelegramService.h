@@ -155,7 +155,7 @@ private:
         if (!cold_boot_synced) {
             cold_boot_synced = true;
             last_update_id = upd_id;
-            first_poll_done = false; // Сразу же переходим к рабочему опросу без ожидания 2.5 с!
+            first_poll_done = false;
             return;
         }
         last_update_id = upd_id;
@@ -352,7 +352,7 @@ public:
     void init() override {
         client.setInsecure();
         client.setTimeout(3);
-        client.setNoDelay(true); // Отключаем буферизацию Нейгла для мгновенной отправки TLS-пакетов!
+        client.setNoDelay(true);
         https.setConnectTimeout(2500);
         https.setTimeout(2500);
         https.setReuse(true);
@@ -370,9 +370,18 @@ public:
             }
         }
 
+        // Якщо сервер Oracle онлайн і сам керує Telegram-ботом — не дублюємо getUpdates (уникаємо HTTP 409)
+        if (state.oracle_online && state.oracle_manages_bot) {
+            cold_boot_synced = false;
+            return;
+        }
+
+        // Під час активного програвання аудіо по I2S не блокуємо радіо важкими TLS-сесіями
+        if (state.audio_playing) return;
+
         char token[64], admin_id[20], girl_id[20];
         state.getTelegramConfig(token, sizeof(token), admin_id, sizeof(admin_id), girl_id, sizeof(girl_id));
-        if (strlen(token) < 15) return;
+        if (strlen(token) < 15 || strstr(token, "YOUR_TELEGRAM") != nullptr) return;
 
         if (state.cmd_send_tg_ack) {
             if (strlen(admin_id) > 0) {
@@ -402,7 +411,6 @@ public:
         }
 
         uint32_t now = millis();
-        // Если недавно общались с ботом — опрашиваем каждые 1.2 с (быстрый диалог), иначе раз в 2.5 с
         uint32_t poll_interval = (now - state.last_net_activity_ms < 25000) ? 1200 : Config::TG_POLL_MS;
         if (first_poll_done && (now - last_poll_ms < poll_interval)) return;
 

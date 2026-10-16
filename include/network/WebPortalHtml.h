@@ -94,14 +94,19 @@ button:active{transform:scale(0.98)}
 </div>
 
 <div class="card">
-  <h2>🤖 Налаштування Telegram</h2>
+  <h2>☁️ Сервер Oracle Cloud & Telegram</h2>
+  <form onsubmit="saveCloud(event)" style="margin-bottom:10px">
+    <input type="text" name="oracle_url" placeholder="Oracle URL (напр. http://140.238.XX.XX:8000)">
+    <input type="password" name="oracle_key" placeholder="Oracle API Key (X-Device-Key)">
+    <button type="submit">☁️ Зберегти сервер Oracle</button>
+  </form>
   <form onsubmit="saveTg(event)">
     <input type="text" name="token" placeholder="Bot Token (@BotFather)">
     <div class="stat-grid">
       <input type="text" name="admin_id" placeholder="Твій ID (Ярослав)">
       <input type="text" name="girl_id" placeholder="Її ID (Настя)">
     </div>
-    <button type="submit" class="btn-sec">Зберегти конфіг TG</button>
+    <button type="submit" class="btn-sec">🤖 Зберегти конфіг TG</button>
   </form>
 </div>
 
@@ -172,7 +177,11 @@ function sendMsg(e){
 }
 function saveTg(e){
   e.preventDefault();
-  fetch('/api/tg',{method:'POST',body:new FormData(e.target)}).then(()=>showToast('🤖 Збережено!'));
+  fetch('/api/tg',{method:'POST',body:new FormData(e.target)}).then(()=>showToast('🤖 Конфіг TG збережено!'));
+}
+function saveCloud(e){
+  e.preventDefault();
+  fetch('/api/cloud',{method:'POST',body:new FormData(e.target)}).then(()=>showToast('☁️ Сервер Oracle збережено!'));
 }
 function renderNets(nets){
   const list=document.getElementById('netList');

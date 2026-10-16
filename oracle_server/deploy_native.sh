@@ -19,10 +19,10 @@ if [ ! -f .env ]; then
     echo "⚠️ Створено файл .env із шаблону. Відредагуй його: nano .env"
 fi
 
-echo "⚙️ [3/4] Налаштування фонової служби systemd (ліміт RAM: 96MB, автозапуск 24/7)..."
+echo "⚙️ [3/4] Налаштування фонової служби systemd (ліміт RAM: 192MB, автозапуск 24/7)..."
 sudo tee /etc/systemd/system/magicbox.service > /dev/null <<EOF
 [Unit]
-Description=MagicBox Oracle Cloud Hub (Ultra-Low RAM)
+Description=MagicBox Oracle Cloud Hub
 After=network.target
 
 [Service]
@@ -34,7 +34,7 @@ Environment="PYTHONOPTIMIZE=1"
 Environment="PYTHONDONTWRITEBYTECODE=1"
 Environment="MALLOC_TRIM_THRESHOLD_=65536"
 Environment="MALLOC_ARENA_MAX=2"
-MemoryMax=96M
+MemoryMax=192M
 ExecStart=$APP_DIR/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --loop uvloop --http httptools --no-access-log --limit-concurrency 32
 Restart=always
 RestartSec=3

@@ -7,15 +7,15 @@ from app.services.audio_service import audio_service
 
 
 class AiService:
-    """Інтелектуальний аналізатор клімату та настрою (Gemini 3.5 Flash REST + Розумний локальний рушій)."""
+    """Інтелектуальний аналізатор клімату та настрою (Gemini Flash REST + Розумний локальний рушій)."""
 
     __slots__ = ()
+    GEMINI_MODELS = ("gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash")
 
     async def _ask_gemini(self, w: Dict[str, Any], custom_note: str) -> str:
         if not settings.GEMINI_API_KEY:
             return ""
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
         prompt = (
             "Ти — теплий, дотепний дух-охоронець розумної лампи-шкатулки MagicBox, яку Ярослав створив для Насті. "
             f"Дані в кімнаті: температура {w['indoor_temp']:.1f}°C, вологість {w['indoor_hum']:.0f}%, "
@@ -28,13 +28,19 @@ class AiService:
             "(як одягтися або який настрій створити вдома)."
         )
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        try:
-            resp = await http_pool.get().post(url, json=payload, timeout=8.0)
-            if resp.status_code == 200:
-                data = resp.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except Exception:
-            pass
+        headers = {"x-goog-api-key": settings.GEMINI_API_KEY, "Content-Type": "application/json"}
+
+        for model_name in self.GEMINI_MODELS:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+            try:
+                resp = await http_pool.get().post(url, json=payload, headers=headers, timeout=8.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    if text:
+                        return text
+            except Exception:
+                continue
         return ""
 
     async def generate_smart_briefing(self, custom_note: str = "", speak: bool = False) -> Dict[str, Any]:
@@ -44,7 +50,6 @@ class AiService:
         rain_p = w["rain_prob_6h"]
         p_mm = w["pressure_mm"]
 
-        # 1. Визначаємо ідеальний світловий режим за погодою та кліматом у кімнаті
         if rain_p >= 50 or w["weather_code"] >= 51 or p_mm < 743:
             rec_mode = 3  # 🔥 Камін з іскрами (дощ / циклон)
         elif in_t < 19.5 or out_t < 5.0:
@@ -54,7 +59,6 @@ class AiService:
         else:
             rec_mode = 5  # 🌸 Сакура Неон (комфортна погода)
 
-        # 2. Генеруємо розгорнутий прогноз через Gemini (або розумний шаблон, якщо ключа немає)
         ai_full_text = await self._ask_gemini(w, custom_note)
         if not ai_full_text:
             rain_tip = "Візьми парасольку ☔!" if rain_p >= 45 else "Опадів не очікується ✨."
@@ -65,7 +69,6 @@ class AiService:
                 f"💡 Вмикаю на шкатулці режим: {MODES_UA[rec_mode]}!"
             )
 
-        # 3. Короткий рядок для круглого екрана шкатулки (до 58 символів)
         screen_msg = custom_note[:58] if custom_note else f"Out:{out_t:+.0f}C Rain:{rain_p}% | In:{in_t:.1f}C {p_mm:.0f}mm"
 
         cmd_payload: Dict[str, Any] = {

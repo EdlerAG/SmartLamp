@@ -1,6 +1,6 @@
 import os
 import re
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from app.core.security import verify_device_key
 from app.core.config import settings
@@ -9,16 +9,25 @@ from app.services.state_service import state_service
 from app.services.blackout_service import blackout_service
 from app.services.media_service import media_service
 from app.services.audio_service import audio_service
+from app.services.ota_service import ota_service
 
 router = APIRouter(tags=["ESP32 Box Gateway"])
 
 
 @router.post("/api/v1/box/sync")
 @router.post("/api/telemetry")
-async def sync_box(payload: BoxStatusPayload, _: str = Depends(verify_device_key)):
+async def sync_box(request: Request, payload: BoxStatusPayload, _: str = Depends(verify_device_key)):
+    state_service.remember_request_base_url(str(request.base_url))
     prev_seen = state_service.update_telemetry(payload)
     await blackout_service.on_box_ping(prev_seen, ack=bool(payload.ack), ping_type=payload.ping or 0)
     return state_service.pop_next_sync_response()
+
+
+@router.get("/api/ota/latest")
+@router.get("/api/v1/ota/latest")
+async def get_latest_ota_metadata(request: Request):
+    host = state_service.resolve_public_url(str(request.base_url))
+    return ota_service.get_metadata(host)
 
 
 @router.get("/api/v1/ota/firmware.bin")
@@ -41,6 +50,13 @@ async def download_tts_mp3():
     if not os.path.exists(audio_service.TTS_FILE):
         raise HTTPException(status_code=404, detail="TTS audio not found")
     return FileResponse(audio_service.TTS_FILE, media_type="audio/mpeg", filename="tts.mp3")
+
+
+@router.get("/api/v1/media/voice.ogg")
+async def download_voice_ogg():
+    if not os.path.exists(audio_service.VOICE_OGG_FILE):
+        raise HTTPException(status_code=404, detail="Voice audio not found")
+    return FileResponse(audio_service.VOICE_OGG_FILE, media_type="audio/ogg", filename="voice.ogg")
 
 
 @router.get("/api/v1/media/sound/{name}.mp3")

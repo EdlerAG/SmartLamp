@@ -1,7 +1,7 @@
 import os
 import time
 from collections import deque
-from typing import Dict, Any, Optional, Deque, List
+from typing import Dict, Any, Optional, Deque
 import orjson
 from app.models.schemas import BoxStatusPayload, QueueCommandRequest
 from app.core.config import settings
@@ -31,6 +31,7 @@ class StateService:
         "admin_id",
         "girl_id",
         "outages",
+        "detected_base_url",
     )
 
     def __init__(self) -> None:
@@ -42,7 +43,21 @@ class StateService:
         self.admin_id: str = settings.TG_ADMIN_ID
         self.girl_id: str = settings.TG_GIRL_ID
         self.outages: Deque[Dict[str, Any]] = deque(maxlen=50)
+        self.detected_base_url: str = ""
         self.load_snapshot()
+
+    def remember_request_base_url(self, base_url: str) -> None:
+        clean = base_url.rstrip("/")
+        if clean and "127.0.0.1" not in clean and "localhost" not in clean:
+            self.detected_base_url = clean
+
+    def resolve_public_url(self, preferred: str = "") -> str:
+        cand = (preferred or settings.PUBLIC_SERVER_URL).rstrip("/")
+        if cand and "127.0.0.1" not in cand and "localhost" not in cand and "YOUR_ORACLE_IP" not in cand:
+            return cand
+        if self.detected_base_url:
+            return self.detected_base_url
+        return cand
 
     def load_snapshot(self) -> None:
         if not os.path.exists(settings.STATE_FILE):
@@ -53,6 +68,7 @@ class StateService:
             self.latest_telemetry = data.get("latest_telemetry", {})
             self.admin_id = data.get("admin_id") or settings.TG_ADMIN_ID
             self.girl_id = data.get("girl_id") or settings.TG_GIRL_ID
+            self.detected_base_url = data.get("detected_base_url", "")
             for item in data.get("climate_history", []):
                 self.climate_history.append(item)
             for item in data.get("outages", []):
@@ -67,6 +83,7 @@ class StateService:
             payload = {
                 "admin_id": self.admin_id,
                 "girl_id": self.girl_id,
+                "detected_base_url": self.detected_base_url,
                 "latest_telemetry": self.latest_telemetry,
                 "climate_history": list(self.climate_history),
                 "outages": list(self.outages),
@@ -110,16 +127,19 @@ class StateService:
                     item["set_mode"] = data["set_mode"]
                     return len(self.command_queue)
         self.command_queue.append(data)
+        if not self.is_online():
+            self.save_snapshot()
         return len(self.command_queue)
 
     def pop_next_sync_response(self) -> Dict[str, Any]:
         bot_active = settings.SERVER_MANAGES_BOT and len(settings.TG_BOT_TOKEN) > 15
         if not self.command_queue:
-            return {"bot_managed": bot_active, "has_cmd": False}
+            return {"bot_managed": bot_active, "has_cmd": False, "has_more": False}
 
         cmd = dict(self.command_queue.popleft())
         cmd["bot_managed"] = bot_active
         cmd["has_cmd"] = True
+        cmd["has_more"] = len(self.command_queue) > 0
         return cmd
 
     def is_online(self) -> bool:

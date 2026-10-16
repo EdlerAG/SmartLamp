@@ -2,6 +2,7 @@
 #include "core/IService.h"
 #include "Config.h"
 #include "core/AppState.h"
+#include <WiFi.h>
 #include <Audio.h>
 
 class AudioService : public IService {
@@ -28,6 +29,7 @@ public:
     void update() override {
         if (state.ota_in_progress) {
             if (audio.isRunning()) audio.stopSong();
+            state.audio_playing = false;
             return;
         }
 
@@ -39,12 +41,17 @@ public:
         char url_buf[160];
         if (state.popPendingAudioUrl(url_buf, sizeof(url_buf))) {
             if (state.wifi_connected) {
+                WiFi.setSleep(false);
+                state.registerNetActivity();
                 audio.stopSong();
                 audio.connecttohost(url_buf);
             }
         }
 
-        if (audio.isRunning()) {
+        bool running = audio.isRunning();
+        state.audio_playing = running;
+        if (running) {
+            state.registerNetActivity();
             audio.loop();
         }
     }
