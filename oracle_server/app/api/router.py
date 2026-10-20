@@ -1,3 +1,4 @@
+# Файл: oracle_server/app/api/router.py
 from fastapi import APIRouter
 from app.api.endpoints_box import router as box_router
 from app.api.endpoints_control import router as control_router

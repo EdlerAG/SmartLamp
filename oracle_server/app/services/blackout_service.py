@@ -1,8 +1,11 @@
+# Файл: oracle_server/app/services/blackout_service.py
 import asyncio
 import time
 from typing import Dict, Any
 from app.core.config import settings
 from app.core.http_client import http_pool
+from app.core.events import realtime_hub
+from app.services.database_service import db_service
 from app.services.state_service import state_service
 
 
@@ -28,13 +31,8 @@ class BlackoutService:
 
         if self.in_blackout and self.blackout_started_at > 0:
             duration = round(now - self.blackout_started_at, 1)
-            state_service.outages.append({
-                "disconnected_at": round(self.blackout_started_at, 1),
-                "restored_at": round(now, 1),
-                "duration_sec": duration,
-            })
+            db_service.record_outage(self.blackout_started_at, now, duration)
             self.in_blackout = False
-            state_service.save_snapshot()
             mins = max(1, int(duration // 60))
             await self.send_tg_alert(
                 f"⚡ Світло та домашній Wi-Fi увімкнули! Шкатулка онлайн.\n"
@@ -54,6 +52,12 @@ class BlackoutService:
             }
             await self.send_tg_alert(ping_names.get(ping_type, "✨ Сигнал зі шкатулки!"))
 
+        await realtime_hub.broadcast_to_dashboards({
+            "event": "telemetry",
+            "online": True,
+            "telemetry": state_service.latest_telemetry,
+        })
+
     async def watchdog_loop(self) -> None:
         while True:
             await asyncio.sleep(5.0)
@@ -63,21 +67,21 @@ class BlackoutService:
             if age >= settings.BLACKOUT_TIMEOUT_SEC and not self.in_blackout:
                 self.in_blackout = True
                 self.blackout_started_at = state_service.last_seen
-                state_service.save_snapshot()
                 last_t = state_service.latest_telemetry.get("t", "--")
                 last_h = state_service.latest_telemetry.get("h", "--")
                 await self.send_tg_alert(
                     f"🔌 Зник зв'язок зі шкатулкою MagicBox ({int(age)} с).\n"
-                    f"Ймовірно, вимкнули світло. Усі нові повідомлення та реакції будуть збережені в чергу!\n"
+                    f"Ймовірно, вимкнули світло. Усі нові повідомлення, гіфки та реакції збережено в чергу!\n"
                     f"🌡 Останні показники в кімнаті: {last_t}°C, {last_h}%."
                 )
+                await realtime_hub.broadcast_to_dashboards({"event": "blackout", "in_blackout": True})
 
     def get_status(self) -> Dict[str, Any]:
         age = state_service.seconds_since_seen()
         return {
             "in_blackout": self.in_blackout,
             "offline_seconds": age if self.in_blackout else 0.0,
-            "recent_outages": list(state_service.outages),
+            "recent_outages": db_service.get_recent_outages(limit=30),
         }
 
 

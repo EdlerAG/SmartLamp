@@ -1,3 +1,4 @@
+# Файл: oracle_server/app/core/http_client.py
 from typing import Optional
 import httpx
 
@@ -10,7 +11,7 @@ class SharedHttpClient:
 
     def get(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
-            limits = httpx.Limits(max_connections=6, max_keepalive_connections=2, keepalive_expiry=60.0)
+            limits = httpx.Limits(max_connections=8, max_keepalive_connections=3, keepalive_expiry=45.0)
             self._client = httpx.AsyncClient(limits=limits, timeout=10.0)
         return self._client
 

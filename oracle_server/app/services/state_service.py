@@ -3,8 +3,11 @@ import time
 from collections import deque
 from typing import Dict, Any, Optional, Deque
 import orjson
-from app.models.schemas import BoxStatusPayload, QueueCommandRequest
+
 from app.core.config import settings
+from app.core.events import realtime_hub
+from app.domain.schemas import BoxTelemetryPayload, CommandPayload
+from app.services.database_service import db_service
 
 MODES_UA = (
     "☀️ Теплий затишок",
@@ -25,110 +28,99 @@ class StateService:
     __slots__ = (
         "last_seen",
         "latest_telemetry",
-        "climate_history",
         "last_history_sample",
         "command_queue",
         "admin_id",
         "girl_id",
-        "outages",
         "detected_base_url",
+        "ai_persona_name",
+        "ai_system_prompt",
+        "ai_temperature",
+    )
+
+    DEFAULT_AI_PROMPT = (
+        "Ти — теплий, дотепний і турботливий дух розумної шкатулки MagicBox. "
+        "Пиши українською мовою, лаконічно (2-3 речення), живо і з гумором. "
+        "Аналізуй погоду за вікном та мікроклімат у кімнаті, давай приємні поради."
     )
 
     def __init__(self) -> None:
         self.last_seen: float = 0.0
         self.latest_telemetry: Dict[str, Any] = {}
-        self.climate_history: Deque[Dict[str, Any]] = deque(maxlen=288)
         self.last_history_sample: float = 0.0
         self.command_queue: Deque[Dict[str, Any]] = deque(maxlen=32)
-        self.admin_id: str = settings.TG_ADMIN_ID
-        self.girl_id: str = settings.TG_GIRL_ID
-        self.outages: Deque[Dict[str, Any]] = deque(maxlen=50)
-        self.detected_base_url: str = ""
-        self.load_snapshot()
+
+        self.admin_id: str = db_service.get_setting("admin_id", settings.TG_ADMIN_ID) or settings.TG_ADMIN_ID
+        self.girl_id: str = db_service.get_setting("girl_id", settings.TG_GIRL_ID) or settings.TG_GIRL_ID
+        self.detected_base_url: str = db_service.get_setting("detected_base_url", "") or ""
+
+        self.ai_persona_name: str = db_service.get_setting("ai_persona_name", "Дух MagicBox")
+        self.ai_system_prompt: str = db_service.get_setting("ai_system_prompt", self.DEFAULT_AI_PROMPT)
+        self.ai_temperature: float = float(db_service.get_setting("ai_temperature", 0.75))
+
+    def save_auth_ids(self, admin_id: Optional[str] = None, girl_id: Optional[str] = None) -> None:
+        if admin_id is not None:
+            self.admin_id = admin_id
+            db_service.set_setting("admin_id", admin_id)
+        if girl_id is not None:
+            self.girl_id = girl_id
+            db_service.set_setting("girl_id", girl_id)
+
+    def save_ai_persona(self, name: str, prompt: str, temp: float = 0.75) -> None:
+        self.ai_persona_name = name.strip() or "Дух MagicBox"
+        self.ai_system_prompt = prompt.strip() or self.DEFAULT_AI_PROMPT
+        self.ai_temperature = round(float(temp), 2)
+        db_service.set_setting("ai_persona_name", self.ai_persona_name)
+        db_service.set_setting("ai_system_prompt", self.ai_system_prompt)
+        db_service.set_setting("ai_temperature", self.ai_temperature)
 
     def remember_request_base_url(self, base_url: str) -> None:
         clean = base_url.rstrip("/")
-        if clean and "127.0.0.1" not in clean and "localhost" not in clean:
+        if clean and "127.0.0.1" not in clean and "localhost" not in clean and clean != self.detected_base_url:
             self.detected_base_url = clean
+            db_service.set_setting("detected_base_url", clean)
 
     def resolve_public_url(self, preferred: str = "") -> str:
         cand = (preferred or settings.PUBLIC_SERVER_URL).rstrip("/")
         if cand and "127.0.0.1" not in cand and "localhost" not in cand and "YOUR_ORACLE_IP" not in cand:
             return cand
-        if self.detected_base_url:
-            return self.detected_base_url
-        return cand
+        return self.detected_base_url or cand
 
-    def load_snapshot(self) -> None:
-        if not os.path.exists(settings.STATE_FILE):
-            return
-        try:
-            with open(settings.STATE_FILE, "rb") as f:
-                data = orjson.loads(f.read())
-            self.latest_telemetry = data.get("latest_telemetry", {})
-            self.admin_id = data.get("admin_id") or settings.TG_ADMIN_ID
-            self.girl_id = data.get("girl_id") or settings.TG_GIRL_ID
-            self.detected_base_url = data.get("detected_base_url", "")
-            for item in data.get("climate_history", []):
-                self.climate_history.append(item)
-            for item in data.get("outages", []):
-                self.outages.append(item)
-            for cmd in data.get("command_queue", []):
-                self.command_queue.append(cmd)
-        except Exception:
-            pass
-
-    def save_snapshot(self) -> None:
-        try:
-            payload = {
-                "admin_id": self.admin_id,
-                "girl_id": self.girl_id,
-                "detected_base_url": self.detected_base_url,
-                "latest_telemetry": self.latest_telemetry,
-                "climate_history": list(self.climate_history),
-                "outages": list(self.outages),
-                "command_queue": list(self.command_queue),
-            }
-            tmp_path = settings.STATE_FILE + ".tmp"
-            with open(tmp_path, "wb") as f:
-                f.write(orjson.dumps(payload))
-            os.replace(tmp_path, settings.STATE_FILE)
-        except Exception:
-            pass
-
-    def update_telemetry(self, payload: BoxStatusPayload) -> float:
+    def update_telemetry(self, payload: BoxTelemetryPayload) -> float:
         now = time.time()
         prev_seen = self.last_seen
         self.last_seen = now
-        self.latest_telemetry = payload.model_dump(exclude={"ack", "ping"})
 
+        dump = payload.model_dump(exclude={"ack", "ping"})
+        dump["m_name"] = MODES_UA[payload.m % len(MODES_UA)]
+        self.latest_telemetry = dump
+
+        # Записуємо зріз клімату в SQLite WAL кожні 5 хвилин
         if now - self.last_history_sample >= 300.0:
             self.last_history_sample = now
-            self.climate_history.append({
-                "ts": int(now),
-                "t": round(payload.t, 1),
-                "h": round(payload.h, 0),
-                "p": round(payload.p, 0),
-                "l": payload.l,
-            })
-            self.save_snapshot()
+            db_service.add_climate_sample(payload.t, payload.h, payload.p, payload.l)
+
         return prev_seen
 
-    def enqueue_command(self, cmd: QueueCommandRequest) -> int:
+    def enqueue_command(self, cmd: CommandPayload) -> int:
         data = cmd.model_dump(exclude_none=True)
         if data:
             self.enqueue_raw(data)
         return len(self.command_queue)
 
     def enqueue_raw(self, data: Dict[str, Any]) -> int:
-        if "set_mode" in data and len(data) == 1:
-            for item in self.command_queue:
-                if "set_mode" in item and len(item) == 1:
-                    item["set_mode"] = data["set_mode"]
+        """Розумна черга: об'єднує однотипні налаштування (режим/яскравість/таймер), щоб уникнути заторів."""
+        if self.command_queue:
+            last = self.command_queue[-1]
+            # Якщо в останній команді ще немає медіа чи тексту, можемо злити зміни світла/яскравості в один пакет
+            if not any(k in data for k in ("msg", "media_url", "play_url", "ota_url")):
+                if not any(k in last for k in ("msg", "media_url", "play_url", "ota_url")):
+                    last.update(data)
+                    realtime_hub.notify_new_command()
                     return len(self.command_queue)
+
         self.command_queue.append(data)
-        if not self.is_online():
-            self.save_snapshot()
+        realtime_hub.notify_new_command()
         return len(self.command_queue)
 
     def pop_next_sync_response(self) -> Dict[str, Any]:
@@ -149,6 +141,30 @@ class StateService:
         if self.last_seen <= 0:
             return None
         return round(time.time() - self.last_seen, 1)
+
+    @staticmethod
+    def get_quantcore_summary() -> Optional[Dict[str, Any]]:
+        """Невагоме читання стану торгового бота QuantCore V23 (якщо файл присутній на сервері)."""
+        path = settings.QUANTCORE_STATE_PATH
+        if not path or not os.path.exists(path):
+            return None
+        try:
+            with open(path, "rb") as f:
+                data = orjson.loads(f.read())
+            t = data.get("telemetry", {})
+            return {
+                "online": True,
+                "is_paused": data.get("is_paused", False),
+                "risk_profile": data.get("risk_profile", "OPTIMAL"),
+                "total_equity": t.get("total_equity", 0.0),
+                "unrealized_pnl": t.get("unrealized_pnl", 0.0),
+                "gross_leverage": t.get("gross_leverage", 0.0),
+                "top_leader": t.get("top_leader", "BTCUSDT"),
+                "market_breadth": t.get("market_breadth", 0.0),
+                "btc_price": (t.get("coin_prices") or {}).get("BTCUSDT", 0.0),
+            }
+        except Exception:
+            return None
 
 
 state_service = StateService()
