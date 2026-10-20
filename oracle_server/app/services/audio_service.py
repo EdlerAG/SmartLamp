@@ -3,7 +3,7 @@ import re
 import time
 import zlib
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from fastapi import UploadFile, HTTPException
 
 from app.core.config import settings
@@ -59,7 +59,7 @@ class AudioService:
         communicate = edge_tts.Communicate(clean_text, self.VOICE)
         await communicate.save(out_path)
         del communicate
-        memory_guard.trim_ram()
+        memory_guard.schedule_lazy_trim(8.0)
 
         host = state_service.resolve_public_url(base_url)
         audio_url = f"{host}/api/v5/ram/{fname}?v={int(time.time())}"

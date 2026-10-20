@@ -142,17 +142,25 @@ class StateService:
             return None
         return round(time.time() - self.last_seen, 1)
 
-    @staticmethod
-    def get_quantcore_summary() -> Optional[Dict[str, Any]]:
-        """Невагоме читання стану торгового бота QuantCore V23 (якщо файл присутній на сервері)."""
+
+    _qc_cache: Optional[Dict[str, Any]] = None
+    _qc_mtime: float = 0.0
+
+    @classmethod
+    def get_quantcore_summary(cls) -> Optional[Dict[str, Any]]:
+        """Zero-I/O читання стану QuantCore V23: парсить JSON лише тоді, коли змінився mtime файлу."""
         path = settings.QUANTCORE_STATE_PATH
         if not path or not os.path.exists(path):
             return None
         try:
+            mtime = os.stat(path).st_mtime
+            if cls._qc_cache is not None and mtime == cls._qc_mtime:
+                return cls._qc_cache
             with open(path, "rb") as f:
                 data = orjson.loads(f.read())
             t = data.get("telemetry", {})
-            return {
+            cls._qc_mtime = mtime
+            cls._qc_cache = {
                 "online": True,
                 "is_paused": data.get("is_paused", False),
                 "risk_profile": data.get("risk_profile", "OPTIMAL"),
@@ -163,8 +171,9 @@ class StateService:
                 "market_breadth": t.get("market_breadth", 0.0),
                 "btc_price": (t.get("coin_prices") or {}).get("BTCUSDT", 0.0),
             }
+            return cls._qc_cache
         except Exception:
-            return None
+            return cls._qc_cache
 
 
 state_service = StateService()

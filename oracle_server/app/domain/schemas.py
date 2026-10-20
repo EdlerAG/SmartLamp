@@ -26,7 +26,7 @@ class BoxTelemetryPayload(BaseModel):
 
 
 class CommandPayload(BaseModel):
-    """Команда для постановки в чергу шкатулки."""
+    """Команда для постановки в чергу шкатулки (v5.1 Sovereign Authority)."""
     set_mode: Optional[int] = Field(None, ge=0, le=10)
     set_brt: Optional[str] = Field(None, description="'auto' або '0'..'3'")
     sleep: Optional[int] = Field(None, ge=0, le=180)
@@ -36,14 +36,15 @@ class CommandPayload(BaseModel):
     msg: Optional[str] = Field(None, max_length=120)
     ota_url: Optional[str] = None
     play_url: Optional[str] = None
-    # Новий блок кастомної медіа-анімації (.mbx)
     media_name: Optional[str] = None
     media_url: Optional[str] = None
     media_crc: Optional[str] = None
     media_frames: Optional[int] = None
     media_fps: Optional[int] = None
-    ambi_rgb: Optional[List[int]] = None  # [R, G, B] підсвітка стрічки під гіфку
-
+    ambi_rgb: Optional[List[int]] = None
+    # Нові системні повноваження над залізом ESP32-S3:
+    sys_cmd: Optional[str] = Field(None, description="'reboot', 'clear_cache', 'start_ap', 'eco_sleep'")
+    
 
 class AiPersonaConfigRequest(BaseModel):
     """Налаштування кастомного ШІ-духа шкатулки."""

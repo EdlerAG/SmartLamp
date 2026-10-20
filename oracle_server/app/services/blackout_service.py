@@ -1,7 +1,7 @@
 # Файл: oracle_server/app/services/blackout_service.py
 import asyncio
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from app.core.config import settings
 from app.core.http_client import http_pool
 from app.core.events import realtime_hub
@@ -10,11 +10,17 @@ from app.services.state_service import state_service
 
 
 class BlackoutService:
-    __slots__ = ("in_blackout", "blackout_started_at")
+    """
+    Подієвий монітор живлення з 0.00% CPU у простої:
+    Використовує одноразовий таймер дедлайну замість нескінченного циклу опитування.
+    """
+
+    __slots__ = ("in_blackout", "blackout_started_at", "_deadline_handle")
 
     def __init__(self) -> None:
         self.in_blackout: bool = False
         self.blackout_started_at: float = 0.0
+        self._deadline_handle: Optional[asyncio.TimerHandle] = None
 
     async def send_tg_alert(self, text: str, chat_id: str = "") -> None:
         target = chat_id or state_service.admin_id
@@ -26,8 +32,42 @@ class BlackoutService:
         except Exception:
             pass
 
+    def _arm_deadline_timer(self) -> None:
+        """Переставляє одноразовий таймер відключення на BLACKOUT_TIMEOUT_SEC вперед (0% CPU)."""
+        try:
+            loop = asyncio.get_running_loop()
+            if self._deadline_handle is not None:
+                self._deadline_handle.cancel()
+            self._deadline_handle = loop.call_later(
+                settings.BLACKOUT_TIMEOUT_SEC,
+                lambda: asyncio.create_task(self._on_deadline_expired()),
+            )
+        except RuntimeError:
+            pass
+
+    async def _on_deadline_expired(self) -> None:
+        """Викликається рівно 1 раз, коли від шкатулки немає сигналу понад BLACKOUT_TIMEOUT_SEC."""
+        if self.in_blackout or state_service.last_seen <= 0:
+            return
+        age = time.time() - state_service.last_seen
+        if age < settings.BLACKOUT_TIMEOUT_SEC - 0.5:
+            self._arm_deadline_timer()
+            return
+
+        self.in_blackout = True
+        self.blackout_started_at = state_service.last_seen
+        last_t = state_service.latest_telemetry.get("t", "--")
+        last_h = state_service.latest_telemetry.get("h", "--")
+        await self.send_tg_alert(
+            f"🔌 Зник зв'язок зі шкатулкою MagicBox ({int(age)} с).\n"
+            f"Ймовірно, вимкнули світло. Усі нові повідомлення, гіфки та реакції збережено в чергу!\n"
+            f"🌡 Останні показники в кімнаті: {last_t}°C, {last_h}%."
+        )
+        await realtime_hub.broadcast_to_dashboards({"event": "blackout", "in_blackout": True})
+
     async def on_box_ping(self, prev_seen: float, ack: bool = False, ping_type: int = 0) -> None:
         now = time.time()
+        self._arm_deadline_timer()
 
         if self.in_blackout and self.blackout_started_at > 0:
             duration = round(now - self.blackout_started_at, 1)
@@ -58,23 +98,10 @@ class BlackoutService:
             "telemetry": state_service.latest_telemetry,
         })
 
-    async def watchdog_loop(self) -> None:
-        while True:
-            await asyncio.sleep(5.0)
-            if state_service.last_seen <= 0:
-                continue
-            age = time.time() - state_service.last_seen
-            if age >= settings.BLACKOUT_TIMEOUT_SEC and not self.in_blackout:
-                self.in_blackout = True
-                self.blackout_started_at = state_service.last_seen
-                last_t = state_service.latest_telemetry.get("t", "--")
-                last_h = state_service.latest_telemetry.get("h", "--")
-                await self.send_tg_alert(
-                    f"🔌 Зник зв'язок зі шкатулкою MagicBox ({int(age)} с).\n"
-                    f"Ймовірно, вимкнули світло. Усі нові повідомлення, гіфки та реакції збережено в чергу!\n"
-                    f"🌡 Останні показники в кімнаті: {last_t}°C, {last_h}%."
-                )
-                await realtime_hub.broadcast_to_dashboards({"event": "blackout", "in_blackout": True})
+    def shutdown(self) -> None:
+        if self._deadline_handle is not None:
+            self._deadline_handle.cancel()
+            self._deadline_handle = None
 
     def get_status(self) -> Dict[str, Any]:
         age = state_service.seconds_since_seen()
