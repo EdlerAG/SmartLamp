@@ -45,7 +45,7 @@ public:
 
     void loadScreensaverFromFs(StorageService& storage) {
         if (!state.psram_saver_buf) return;
-        size_t bytes_read = storage.loadSaverFile(state.psram_saver_buf, 18 * Config::FRAME_BYTES_RGB565);
+        size_t bytes_read = storage.loadSaverFile(state.psram_saver_buf, sizeof(MbxHeader) + 18 * Config::FRAME_BYTES_RGB565);
         if (bytes_read >= sizeof(MbxHeader)) {
             MbxHeader* hdr = (MbxHeader*)state.psram_saver_buf;
             if (memcmp(hdr->magic, "MBX5", 4) == 0 && hdr->num_frames > 0) {
@@ -123,6 +123,8 @@ public:
 
     void update() override {
         uint32_t now = millis();
+
+        state.updatePomodoroLifecycle(now);
 
         bool high_perf = isHighFpsNeeded() || state.audio_playing || state.ota_in_progress;
         updateCpuPerformance(high_perf);
@@ -251,7 +253,7 @@ public:
 
                 if (state.psram_anim_buf && state.shared_canvas_buf) {
                     cur_anim_frame = (cur_anim_frame + 1) % state.anim_frames_count;
-                    const uint8_t* frame_ptr = state.psram_anim_buf + ((size_t)cur_anim_frame * Config::FRAME_BYTES_RGB565);
+                    const uint8_t* frame_ptr = state.psram_anim_buf + sizeof(MbxHeader) + ((size_t)cur_anim_frame * Config::FRAME_BYTES_RGB565);
                     memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
                 }
 

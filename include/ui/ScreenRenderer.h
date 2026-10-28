@@ -500,7 +500,7 @@ namespace ScreenRenderer {
         snprintf(brt_info, sizeof(brt_info), "%s • Світ %d%% • Звук %s%d%%",
                  state.auto_brt ? "АВТО" : "РУЧН",
                  brt_pct,
-                 state.dnd_mode ? "🌙DND " : (state.audio_muted ? "🔇" : ""),
+                 state.dnd_mode ? "DND " : (state.audio_muted ? "MUTE " : ""),
                  state.audio_muted ? 0 : (state.audio_volume * 100) / 21);
         canvas.drawString(brt_info, 120, 168);
 
@@ -681,7 +681,7 @@ namespace ScreenRenderer {
 
             canvas.setFont(&fonts::efontCN_12);
             canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
-            canvas.drawString("📅 КАЛЕНДАР НАСТІ", 80, 46);
+            canvas.drawString("КАЛЕНДАР НАСТІ", 80, 46);
 
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
             canvas.drawString(state.cal_time[0] != '\0' ? state.cal_time : "--:--", 182, 46);
@@ -820,7 +820,7 @@ namespace ScreenRenderer {
         int deg_end = (int)(prog * 360.0f);
         canvas.drawArc(120, 120, 108, 104, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
         if (deg_end > 0) {
-            canvas.drawArc(120, 120, 108, 104, 270, (270 + deg_end) % 360, arc_col);
+            canvas.drawArc(120, 120, 108, 104, 270, 270 + deg_end, arc_col);
         }
 
         // Заголовок
@@ -847,11 +847,11 @@ namespace ScreenRenderer {
                 badge_col = HallmarkTheme::ACCENT_COOL;
                 text_col = HallmarkTheme::ACCENT_COOL;
             } else if (state.pomo_is_break) {
-                st_txt = "☕ ПЕРЕРВА • СМАРАГД";
+                st_txt = "ПЕРЕРВА • СМАРАГД";
                 badge_col = HallmarkTheme::ACCENT_SUCCESS;
                 text_col = HallmarkTheme::ACCENT_SUCCESS;
             } else {
-                st_txt = "📚 ФОКУС • БУРШТИН";
+                st_txt = "ФОКУС • БУРШТИН";
                 badge_col = HallmarkTheme::ACCENT_WARM;
                 text_col = HallmarkTheme::ACCENT_WARM;
             }
@@ -903,9 +903,9 @@ namespace ScreenRenderer {
 
         canvas.fillCircle(120, 52, 16, HallmarkTheme::BG_PRIMARY);
         canvas.drawCircle(120, 52, 16, gold_col);
-        canvas.setFont(&fonts::efontCN_14);
+        canvas.setFont(&fonts::efontCN_12);
         canvas.setTextColor(gold_col);
-        canvas.drawString("🎂", 120, 52);
+        canvas.drawString("B-DAY", 120, 52);
 
         canvas.setFont(&fonts::efontCN_12);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
@@ -913,7 +913,7 @@ namespace ScreenRenderer {
 
         canvas.setFont(&fonts::efontCN_16_b);
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-        canvas.drawString("НАСТЮ! ✨", 120, 104);
+        canvas.drawString("НАСТЮ!", 120, 104);
 
         canvas.setFont(&fonts::efontCN_12);
         canvas.setTextColor(gold_col);
@@ -925,7 +925,7 @@ namespace ScreenRenderer {
         canvas.fillRoundRect(70, 168, 100, 24, 12, HallmarkTheme::BG_PRIMARY);
         canvas.drawRoundRect(70, 168, 100, 24, 12, gold_col);
         canvas.setTextColor(gold_col);
-        canvas.drawString("🪄 ДЯКУЮ", 120, 180);
+        canvas.drawString("ДЯКУЮ", 120, 180);
     }
 
     // НАВІГАЦІЙНИЙ ПІДВАЛ (FOOTER NAV ДЛЯ 5 ВІКОН)

@@ -460,8 +460,6 @@ async def toggle_dnd(enabled: Optional[bool] = None, _: str = Depends(verify_acc
         "dnd": new_dnd,
         "muted": new_dnd,
         "set_brt": "0" if new_dnd else "auto",
-        "sender": "DND",
-        "msg": "Режим DND увімкнено" if new_dnd else "Режим DND вимкнено",
     })
     return {"ok": True, "dnd": new_dnd}
 
@@ -531,7 +529,7 @@ async def trigger_birthday_celebration(_: str = Depends(verify_admin_access)):
         birthday_celebrate=True,
         set_mode=4,
         set_brt="3",
-        msg="🎂 З ДНЕМ НАРОДЖЕННЯ, НАСТЮ! ✨",
+        msg="З ДНЕМ НАРОДЖЕННЯ, НАСТЮ!",
         play_url=f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3" if settings.PUBLIC_SERVER_URL else None,
     )
     state_service.enqueue_command(cmd)

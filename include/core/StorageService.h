@@ -102,6 +102,15 @@ public:
         return bytes_read;
     }
 
+    bool clearScreensaver() {
+        if (!fs_mounted && !initFs()) return false;
+        setSaverCrc(0);
+        if (LittleFS.exists(Config::SAVER_FILE_PATH)) {
+            return LittleFS.remove(Config::SAVER_FILE_PATH);
+        }
+        return true;
+    }
+
     void loadUserSettings(AppState& state) {
         state.onboarded        = isOnboarded();
         state.saver_crc        = getSaverCrc();

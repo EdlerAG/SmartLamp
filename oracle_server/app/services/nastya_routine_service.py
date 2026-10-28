@@ -144,10 +144,10 @@ class NastyaRoutineService:
 
         # Ставимо тепле затишне світло для концентрації (бурштин або камін)
         state_service.enqueue_raw({
+            "pomo_action": "start",
+            "pomo_min": str(work_min),
             "set_mode": 2, # Бурштинова свічка
             "set_brt": "2", # 65%
-            "sender": "Pomodoro",
-            "msg": f"📚 Фокус: {work_min} хв",
             "media_timer": work_min,
         })
         logger.info("Pomodoro started: %d min work", work_min)
@@ -158,9 +158,9 @@ class NastyaRoutineService:
         self._pomodoro_mode = "idle"
         self._pomodoro_end_time = 0.0
         state_service.enqueue_raw({
+            "pomo_action": "stop",
             "stop_media": True,
-            "sender": "Pomodoro",
-            "msg": "Фокус завершено",
+            "set_mode": 0,
         })
         logger.info("Pomodoro stopped")
         return self.get_pomodoro_status()
@@ -181,9 +181,9 @@ class NastyaRoutineService:
                 self._pomodoro_duration_min = 5
                 self._pomodoro_end_time = now + 300
                 state_service.enqueue_raw({
+                    "pomo_action": "start",
+                    "pomo_min": "5",
                     "set_mode": 7, # Океанський спокійний бриз
-                    "sender": "Pomodoro",
-                    "msg": "☕ Перерва 5 хв!",
                     "media_timer": 5,
                     "play_url": f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/notification.mp3",
                 })

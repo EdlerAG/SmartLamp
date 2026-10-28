@@ -66,7 +66,7 @@ private:
     }
 
     bool downloadRgb565ToCanvas(const String& raw_url) {
-        if (!state.shared_canvas_buf || !state.wifi_connected) return false;
+        if (!state.psram_anim_buf || !state.wifi_connected) return false;
         String url = normalizeMediaUrl(raw_url);
 
         HTTPClient img_http;
@@ -103,12 +103,13 @@ private:
         WiFiClient* stream = img_http.getStreamPtr();
         size_t total_read = 0;
         uint32_t start_ms = millis();
+        uint8_t* target_ptr = state.psram_anim_buf + sizeof(MbxHeader);
 
         while (img_http.connected() && total_read < 115200 && (millis() - start_ms < 6000)) {
             size_t avail = stream->available();
             if (avail > 0) {
-                size_t to_read = min(avail, 115200 - total_read);
-                int r = stream->readBytes(state.shared_canvas_buf + total_read, to_read);
+                size_t to_read = min(avail, (size_t)(115200 - total_read));
+                int r = stream->readBytes(target_ptr + total_read, to_read);
                 if (r > 0) total_read += r;
             } else {
                 vTaskDelay(pdMS_TO_TICKS(1));
@@ -119,9 +120,16 @@ private:
         state.tls_in_flight = false;
 
         if (total_read == 115200) {
-            state.anim_frames_count = 1;
-            state.anim_fps = 1;
-            state.stop_media_requested = false;
+            MbxHeader* hdr = (MbxHeader*)state.psram_anim_buf;
+            memcpy(hdr->magic, "MBX5", 4);
+            hdr->num_frames = 1;
+            hdr->fps = 1;
+            hdr->ambi_r = state.ambi_r;
+            hdr->ambi_g = state.ambi_g;
+            hdr->ambi_b = state.ambi_b;
+            hdr->crc32 = 0;
+            uint32_t dur = (state.media_expire_ms > millis()) ? (state.media_expire_ms - millis()) : 0;
+            state.activateCustomAnimation(1, 1, state.ambi_r, state.ambi_g, state.ambi_b, dur);
             state.screen_mode = SCREEN_LIVING_GIF;
             state.ui_force_dirty = true;
             return true;
@@ -158,7 +166,7 @@ private:
         }
 
         int content_len = mbx_http.getSize();
-        size_t max_buf = Config::MBX_MAX_FRAMES * Config::FRAME_BYTES_RGB565;
+        size_t max_buf = sizeof(MbxHeader) + Config::MBX_MAX_FRAMES * Config::FRAME_BYTES_RGB565;
         if (content_len > (int)max_buf) {
             mbx_http.end();
             state.tls_in_flight = false;
@@ -198,7 +206,7 @@ private:
                     storage_srv->saveSaverFile(state.psram_anim_buf, total_read);
                     storage_srv->setSaverCrc(hdr->crc32);
 
-                    size_t cpy_len = min(total_read, (size_t)(18 * Config::FRAME_BYTES_RGB565));
+                    size_t cpy_len = min(total_read, sizeof(MbxHeader) + (size_t)(18 * Config::FRAME_BYTES_RGB565));
                     memcpy(state.psram_saver_buf, state.psram_anim_buf, cpy_len);
                     state.saver_num_frames = hdr->num_frames;
                     state.saver_fps        = hdr->fps;
@@ -288,12 +296,20 @@ private:
         }
 
         // Обробка тихих годин та режиму DND для Насті (v5.0-v5.3)
-        if (json.indexOf("\"quiet_hours\":true") != -1 || json.indexOf("\"dnd\":true") != -1) {
-            state.setQuietHours(true);
+        if (json.indexOf("\"quiet_hours\":true") != -1) {
+            if (!state.quiet_hours_active) {
+                state.setQuietHours(true);
+            }
+        } else if (json.indexOf("\"quiet_hours\":false") != -1) {
+            if (state.quiet_hours_active) {
+                state.setQuietHours(false);
+            }
+        }
+
+        if (json.indexOf("\"dnd\":true") != -1) {
             state.dnd_mode = true;
             state.audio_muted = true;
-        } else if (json.indexOf("\"quiet_hours\":false") != -1 || json.indexOf("\"dnd\":false") != -1) {
-            state.setQuietHours(false);
+        } else if (json.indexOf("\"dnd\":false") != -1) {
             state.dnd_mode = false;
             state.audio_muted = false;
         }
@@ -430,7 +446,29 @@ private:
             if (p_min.length() > 0) {
                 state.pomo_duration_min = (uint8_t)constrain((int)p_min.toInt(), 5, 90);
             }
-            if (!state.pomo_active) state.pomoToggleStartPause();
+            state.screen_mode = SCREEN_POMODORO;
+            state.pomo_active = true;
+            state.pomo_paused = false;
+            state.pomo_is_break = false;
+            state.pomo_end_ms = millis() + (uint32_t)state.pomo_duration_min * 60000UL;
+            state.light_mode = MODE_AMBER_EMBER;
+            state.ui_force_dirty = true;
+        }
+
+        // 6. Системні команди обслуговування (v5.3)
+        String sys_cmd = TgJsonUtils::extractString(json, "sys_cmd");
+        if (sys_cmd.length() > 0) {
+            if (sys_cmd == "reboot") {
+                state.cmd_reboot = true;
+            } else if (sys_cmd == "start_ap") {
+                state.cmd_start_ap = true;
+            } else if (sys_cmd == "clear_cache") {
+                state.cmd_clear_cache = true;
+                state.saver_loaded = false;
+                state.saver_num_frames = 0;
+                state.saver_crc = 0;
+                if (storage_srv) storage_srv->clearScreensaver();
+            }
         }
 
         String med_timer_str = TgJsonUtils::extractIntStr(json, "media_timer");
@@ -553,7 +591,7 @@ public:
         char med_url[160], med_name[32], med_crc[16];
         bool is_sav = false;
         if (state.popPendingMedia(med_url, sizeof(med_url), med_name, sizeof(med_name), med_crc, sizeof(med_crc), is_sav)) {
-            if (String(med_url).endsWith(".mbx")) {
+            if (String(med_url).indexOf(".mbx") != -1) {
                 downloadMbxAnimation(String(med_url), is_sav);
             } else {
                 downloadRgb565ToCanvas(String(med_url));

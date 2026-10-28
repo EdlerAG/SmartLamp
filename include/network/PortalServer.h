@@ -66,7 +66,7 @@ public:
 
         server.on("/api/status", HTTP_GET, [this]() {
             addCorsHeaders();
-            char buf[440];
+            char buf[576];
             CommandRouter::buildStatusJson(state, buf, sizeof(buf));
             server.send(200, "application/json", buf);
         });

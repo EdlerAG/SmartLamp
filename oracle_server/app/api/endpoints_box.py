@@ -44,7 +44,9 @@ async def sync_box(
             await spotify_service.player_action("pause" if cur_p else "play")
 
     # Двостороння синхронізація режиму Pomodoro з екрана 5 / кнопок лампи
-    if payload.pomo or payload.pomo_rem > 0:
+    # Перевіряємо, чи немає активної команди pomo_action у черзі сервера, щоб уникнути race condition
+    has_pomo_cmd = any("pomo_action" in cmd for cmd in state_service.command_queue)
+    if not has_pomo_cmd and (payload.pomo or payload.pomo_rem > 0):
         nastya_routine_service.sync_pomodoro_from_box(
             active=payload.pomo,
             remaining_sec=payload.pomo_rem,
@@ -74,21 +76,23 @@ async def sync_box(
         resp["has_cmd"] = True
         if alarm_st.get("phase") == "sunrise":
             resp["set_mode"] = 2  # Бурштиновий схід
-            resp["set_brt"] = str(alarm_st.get("brightness_pct", 25))
+            ramp_pct = alarm_st.get("brightness_pct", 25)
+            # Мапимо відсотки на індекси пресетів яскравості лампи (0..3)
+            p_idx = "0" if ramp_pct <= 25 else ("1" if ramp_pct <= 50 else ("2" if ramp_pct <= 75 else "3"))
+            resp["set_brt"] = p_idx
         elif alarm_st.get("phase") == "alarm_ring":
             resp["set_mode"] = 0  # Теплий затишок 100%
             resp["set_brt"] = "3"
-            resp["msg"] = "☀️ ДОБРОГО РАНКУ, НАСТЮ!"
+            resp["msg"] = "ДОБРОГО РАНКУ, НАСТЮ!"
             resp["play_url"] = f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3"
 
     # Перевірка тихих годин
     resp["quiet_hours"] = nastya_routine_service.is_quiet_hours_now()
 
     # Перевірка найближчої події календаря Насті для Smart Hub (Zero-Knowledge)
-    if google_calendar_service.is_linked():
-        cal_ev = await google_calendar_service.get_next_event()
-        if cal_ev:
-            resp["cal_event"] = cal_ev
+    cal_ev = await google_calendar_service.get_next_event()
+    if cal_ev:
+        resp["cal_event"] = cal_ev
 
     return resp
 

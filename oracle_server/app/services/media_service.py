@@ -249,15 +249,11 @@ class MediaService:
     def stop_media(self) -> None:
         state_service.enqueue_raw({
             "stop_media": True,
-            "sender": "Web/Bot",
-            "msg": "Зупинка показу медіа",
         })
 
     def set_timer(self, minutes: int) -> None:
         state_service.enqueue_raw({
             "media_timer": int(minutes),
-            "sender": "Web/Bot",
-            "msg": f"Таймер: {minutes} хв" if minutes > 0 else "Медіа постійно",
         })
 
     def trigger_saved_media(

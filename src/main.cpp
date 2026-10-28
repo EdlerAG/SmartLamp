@@ -45,7 +45,6 @@ void cloudCore0Task(void* pvParameters) {
 
     for (;;) {
         core0CloudServices.tickAll();
-        storageService.checkDelayedSave(appState);
         vTaskDelay(pdMS_TO_TICKS(80));
     }
 }
@@ -202,8 +201,8 @@ void processEvents() {
                     appState.tg_unread = false;
                     appState.cmd_send_tg_ack = true;
                     appState.triggerLedNotification(NOTIFY_FIRE, true);
-                } else if (appState.screen_mode == SCREEN_SMART_HUB && appState.spotify.playing) {
-                    // Play / Pause для Spotify
+                } else if (appState.screen_mode == SCREEN_SMART_HUB && (appState.spotify.playing || appState.spotify.track_id[0] != '\0')) {
+                    // Play / Pause для Spotify за дотиком до сенсорної кришки
                     appState.cmd_spotify_action = 3;
                 } else {
                     CommandRouter::nextLightMode(appState);
@@ -237,9 +236,9 @@ void processEvents() {
                 } else if (appState.screen_mode == SCREEN_SMART_HUB) {
                     if (appState.tg_unread && appState.inbox_count > 1) {
                         CommandRouter::nextInboxMessage(appState);
-                    } else if (appState.spotify.playing) {
-                        // Play / Pause Spotify за кліком правої кнопки на екрані плеєра
-                        appState.cmd_spotify_action = 3;
+                    } else if (appState.spotify.playing || appState.spotify.track_id[0] != '\0') {
+                        // Наступний трек Spotify за коротким кліком правої кнопки
+                        appState.cmd_spotify_action = 1;
                     } else if (appState.inbox_count > 1) {
                         CommandRouter::nextInboxMessage(appState);
                     }
@@ -253,9 +252,9 @@ void processEvents() {
                 if (appState.screen_mode == SCREEN_POMODORO) {
                     // Довгий клік правої кнопки скидає Pomodoro
                     appState.pomoStop();
-                } else if (appState.screen_mode == SCREEN_SMART_HUB && appState.spotify.playing) {
-                    // Наступний трек у Spotify за довгим кліком
-                    appState.cmd_spotify_action = 1;
+                } else if (appState.screen_mode == SCREEN_SMART_HUB && (appState.spotify.playing || appState.spotify.track_id[0] != '\0')) {
+                    // Попередній трек Spotify за довгим кліком правої кнопки
+                    appState.cmd_spotify_action = 2;
                 } else {
                     appState.cmd_send_meme_ping = next_meme_cycle;
                     appState.triggerLedNotification((NotifyLedType)next_meme_cycle, true);
@@ -312,6 +311,13 @@ void setup() {
 void loop() {
     core1FastServices.tickAll();
     processEvents();
+
+    if (appState.cmd_reboot) {
+        delay(150);
+        ESP.restart();
+    }
+
+    storageService.checkDelayedSave(appState);
 
     bool active = ledService.isAnimating() || displayService.isHighFpsNeeded();
     vTaskDelay(pdMS_TO_TICKS(active ? 4 : 15));

@@ -3,14 +3,31 @@
 
 namespace TgJsonUtils {
     inline void decodeJsonString(const String& in, char* out, size_t max_len) {
+        if (!out || max_len == 0) return;
         size_t j = 0;
         size_t len = in.length();
         for (size_t i = 0; i < len && j < max_len - 4; i++) {
+            uint8_t b0 = (uint8_t)in[i];
+            if ((b0 & 0xF8) == 0xF0) {
+                // Пряма 4-байтова UTF-8 послідовність (смайли/емодзі) - пропускаємо, щоб уникнути артефактів шрифту
+                if (i + 3 < len) i += 3;
+                continue;
+            }
+
             if (in[i] == '\\' && i + 1 < len) {
                 char next = in[i + 1];
                 if (next == 'u' && i + 5 < len) {
                     char hex[5] = { in[i+2], in[i+3], in[i+4], in[i+5], 0 };
                     uint16_t cp = (uint16_t)strtol(hex, nullptr, 16);
+                    if (cp >= 0xD800 && cp <= 0xDBFF) {
+                        // Суррогатна пара емодзі \uD83D\uXXXX у JSON - пропускаємо обидва кодпоінти
+                        i += 5;
+                        if (i + 6 < len && in[i+1] == '\\' && in[i+2] == 'u') {
+                            i += 6;
+                        }
+                        continue;
+                    }
+
                     if (cp < 0x80) {
                         out[j++] = (char)cp;
                     } else if (cp < 0x800) {
@@ -32,6 +49,14 @@ namespace TgJsonUtils {
             } else {
                 out[j++] = in[i];
             }
+        }
+
+        // Захист від розриву UTF-8 на кінці буфера
+        while (j > 0 && ((uint8_t)out[j - 1] & 0xC0) == 0x80) {
+            j--;
+        }
+        if (j > 0 && ((uint8_t)out[j - 1] & 0x80) != 0) {
+            j--;
         }
         out[j] = '\0';
     }

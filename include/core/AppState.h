@@ -193,10 +193,10 @@ struct AppState {
         last_net_activity_ms  = now;
         boot_splash_start_ms  = now;
 
-        // Виділяємо буфери у 8 MB PSRAM
+        // Виділяємо буфери у 8 MB PSRAM з урахуванням заголовка MbxHeader
         if (psramFound()) {
-            psram_anim_buf  = (uint8_t*)ps_malloc(Config::MBX_MAX_FRAMES * Config::FRAME_BYTES_RGB565);
-            psram_saver_buf = (uint8_t*)ps_malloc(18 * Config::FRAME_BYTES_RGB565); // До 18 кадрів постійної заставки (~2.0 MB)
+            psram_anim_buf  = (uint8_t*)ps_malloc(sizeof(MbxHeader) + Config::MBX_MAX_FRAMES * Config::FRAME_BYTES_RGB565);
+            psram_saver_buf = (uint8_t*)ps_malloc(sizeof(MbxHeader) + 18 * Config::FRAME_BYTES_RGB565); // До 18 кадрів постійної заставки (~2.0 MB)
         }
 
         strncpy(tg_token, Config::DEFAULT_TG_TOKEN, sizeof(tg_token) - 1);
@@ -389,6 +389,28 @@ struct AppState {
         uint32_t now = millis();
         if (now >= pomo_end_ms) return 0;
         return (uint16_t)((pomo_end_ms - now) / 1000);
+    }
+
+    void updatePomodoroLifecycle(uint32_t now) {
+        if (!pomo_active || pomo_paused) return;
+        if (now >= pomo_end_ms) {
+            portENTER_CRITICAL(&mux);
+            if (!pomo_is_break) {
+                pomo_is_break = true;
+                pomo_end_ms = now + (5 * 60000UL);
+                light_mode = MODE_OCEAN_BREEZE;
+                trig_notify_bell = true;
+            } else {
+                pomo_active = false;
+                pomo_is_break = false;
+                pomo_end_ms = 0;
+                light_mode = MODE_WARM_COZY;
+                trig_boot_chord = true;
+            }
+            portEXIT_CRITICAL(&mux);
+            ui_force_dirty = true;
+            registerActivity();
+        }
     }
 
     void triggerBirthdayCelebration(uint32_t duration_ms = 20000) {
