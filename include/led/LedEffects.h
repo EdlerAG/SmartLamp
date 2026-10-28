@@ -4,10 +4,23 @@
 #include "core/Types.h"
 
 namespace LedEffects {
-    inline void renderNotification(Adafruit_NeoPixel& strip, uint8_t type, uint16_t frame) {
-        uint8_t wave = strip.sine8(frame * 12);
+    inline void renderNotification(
+        Adafruit_NeoPixel& strip,
+        uint8_t type,
+        uint16_t frame,
+        uint8_t ambi_r = 56,
+        uint8_t ambi_g = 189,
+        uint8_t ambi_b = 248
+    ) {
+        uint8_t wave = strip.sine8(frame * 10);
         for (int i = 0; i < Config::NUM_LEDS; i++) {
-            if (type == NOTIFY_FIRE) {
+            if (type == NOTIFY_AMBILIGHT) {
+                uint8_t pulse = 135 + (strip.sine8((frame * 7) + (i * 12)) >> 1);
+                uint8_t r = ((uint16_t)ambi_r * pulse) >> 8;
+                uint8_t g = ((uint16_t)ambi_g * pulse) >> 8;
+                uint8_t b = ((uint16_t)ambi_b * pulse) >> 8;
+                strip.setPixelColor(i, strip.Color(r, g, b, (pulse > 225) ? 25 : 0));
+            } else if (type == NOTIFY_FIRE) {
                 uint8_t spark = strip.sine8((frame * 19) + (i * 23));
                 strip.setPixelColor(i, strip.Color(200 + (spark >> 3), (spark * 110) >> 8, 0, (spark > 210) ? 60 : 0));
             } else if (type == NOTIFY_LIGHTNING) {
@@ -33,7 +46,14 @@ namespace LedEffects {
         }
     }
 
-    inline void renderDynamicMode(Adafruit_NeoPixel& strip, uint8_t mode, uint16_t step) {
+    inline void renderDynamicMode(
+        Adafruit_NeoPixel& strip,
+        uint8_t mode,
+        uint16_t step,
+        uint8_t ambi_r = 56,
+        uint8_t ambi_g = 189,
+        uint8_t ambi_b = 248
+    ) {
         switch (mode) {
             case MODE_CANDLE: {
                 uint8_t wind = strip.sine8(step * 2);
@@ -107,6 +127,18 @@ namespace LedEffects {
                 for (int i = 0; i < Config::NUM_LEDS; i++) {
                     uint16_t hue = (step * 220 + (i * 65536L / Config::NUM_LEDS)) & 0xFFFF;
                     strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(hue, 255, 255)));
+                }
+                break;
+            }
+            case MODE_SPOTIFY_AMBI: {
+                uint8_t breath = strip.sine8(step * 2);
+                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                    uint8_t wave = strip.sine8((step * 3) + (i * 8));
+                    uint8_t pulse = 160 + (wave >> 2);
+                    uint8_t r = ((uint16_t)ambi_r * pulse) >> 8;
+                    uint8_t g = ((uint16_t)ambi_g * pulse) >> 8;
+                    uint8_t b = ((uint16_t)ambi_b * pulse) >> 8;
+                    strip.setPixelColor(i, strip.Color(r, g, b, (breath > 235) ? 18 : 0));
                 }
                 break;
             }

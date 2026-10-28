@@ -14,6 +14,7 @@ from app.services.state_service import state_service
 from app.services.blackout_service import blackout_service
 from app.services.media_service import media_service
 from app.services.ota_service import ota_service
+from app.services.spotify_service import spotify_service
 
 router = APIRouter(tags=["ESP32-S3 Box Gateway v5.0"])
 
@@ -30,11 +31,32 @@ async def sync_box(
     prev_seen = state_service.update_telemetry(payload)
     await blackout_service.on_box_ping(prev_seen, ack=bool(payload.ack), ping_type=payload.ping or 0)
 
-    # Якщо черга порожня, але лампа просить Long-Poll очікування — спимо з 0% CPU до моменту кліку користувача!
+    # Обробка команд плеєра Spotify з кнопок лампи
+    if payload.sp_act > 0:
+        if payload.sp_act == 1:
+            await spotify_service.player_action("next")
+        elif payload.sp_act == 2:
+            await spotify_service.player_action("previous")
+        elif payload.sp_act == 3:
+            cur_p = spotify_service.get_cached_state().get("playing", False)
+            await spotify_service.player_action("pause" if cur_p else "play")
+
+    # Demand-driven опитування Spotify (0.00 мс якщо не відкритий Хаб)
+    sp_data = await spotify_service.get_sync_state(
+        box_screen=payload.scr,
+        box_unread=payload.unread,
+        box_led_mode=payload.m,
+    )
+
+    # Якщо черга порожня, але лампа просить Long-Poll очікування — спимо з 0% CPU до моменту кліку користувача
     if not state_service.command_queue and wait > 0:
         await realtime_hub.wait_for_command(timeout=wait)
 
-    return state_service.pop_next_sync_response()
+    resp = state_service.pop_next_sync_response()
+    if sp_data and (payload.scr == 2 or payload.m == 11):
+        resp["spotify"] = sp_data
+
+    return resp
 
 
 @router.websocket("/ws/box")
@@ -62,6 +84,14 @@ async def box_websocket_endpoint(ws: WebSocket):
         pass
     finally:
         realtime_hub.unregister_box_ws(ws)
+
+
+@router.get("/api/v5/spotify/vinyl.rgb565")
+async def download_spotify_vinyl():
+    """Віддає 36992 байти обкладинки вінілу 136x136 RGB565 з RAM-диска."""
+    if not os.path.exists(settings.SPOTIFY_VINYL_PATH):
+        raise HTTPException(status_code=404, detail="Spotify vinyl art not ready")
+    return FileResponse(settings.SPOTIFY_VINYL_PATH, media_type="application/octet-stream", filename="vinyl.rgb565")
 
 
 @router.get("/api/v5/media/live.mbx")

@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 
 class BoxTelemetryPayload(BaseModel):
-    """Вхідний пакет телеметрії від ESP32-S3 (v5.0)."""
-    fw: str = "v5.0"
+    """Вхідний пакет телеметрії від ESP32-S3 (v4.0 / v5.0)."""
+    fw: str = "v4.0"
     t: float
     h: float
     p: float
@@ -23,11 +23,12 @@ class BoxTelemetryPayload(BaseModel):
     psram_free: int = 0
     ack: bool = False
     ping: int = 0  # 2..6 = натиснута фізична кнопка реакції на лампі
+    sp_act: int = 0 # 1: next, 2: prev, 3: play_pause від кнопок лампи
 
 
 class CommandPayload(BaseModel):
-    """Команда для постановки в чергу шкатулки (v5.1 Sovereign Authority)."""
-    set_mode: Optional[int] = Field(None, ge=0, le=10)
+    """Команда для постановки в чергу шкатулки."""
+    set_mode: Optional[int] = Field(None, ge=0, le=11)
     set_brt: Optional[str] = Field(None, description="'auto' або '0'..'3'")
     sleep: Optional[int] = Field(None, ge=0, le=180)
     volume: Optional[int] = Field(None, ge=0, le=21)
@@ -42,9 +43,16 @@ class CommandPayload(BaseModel):
     media_frames: Optional[int] = None
     media_fps: Optional[int] = None
     ambi_rgb: Optional[List[int]] = None
-    # Нові системні повноваження над залізом ESP32-S3:
+    set_saver: Optional[bool] = None
+    sp_action: Optional[str] = None
+    spotify: Optional[Dict[str, Any]] = None
     sys_cmd: Optional[str] = Field(None, description="'reboot', 'clear_cache', 'start_ap', 'eco_sleep'")
-    
+
+
+class SpotifyActionRequest(BaseModel):
+    """Запит керування відтворенням Spotify."""
+    action: str = Field(..., description="'next', 'previous', 'play', 'pause'")
+
 
 class AiPersonaConfigRequest(BaseModel):
     """Налаштування кастомного ШІ-духа шкатулки."""

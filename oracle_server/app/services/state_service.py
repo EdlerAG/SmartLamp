@@ -21,6 +21,7 @@ MODES_UA = (
     "⚡ Кібер-комета",
     "🌈 Веселка",
     "🌑 Вимкнено",
+    "🎵 Spotify AmbiLight",
 )
 
 
@@ -141,39 +142,6 @@ class StateService:
         if self.last_seen <= 0:
             return None
         return round(time.time() - self.last_seen, 1)
-
-
-    _qc_cache: Optional[Dict[str, Any]] = None
-    _qc_mtime: float = 0.0
-
-    @classmethod
-    def get_quantcore_summary(cls) -> Optional[Dict[str, Any]]:
-        """Zero-I/O читання стану QuantCore V23: парсить JSON лише тоді, коли змінився mtime файлу."""
-        path = settings.QUANTCORE_STATE_PATH
-        if not path or not os.path.exists(path):
-            return None
-        try:
-            mtime = os.stat(path).st_mtime
-            if cls._qc_cache is not None and mtime == cls._qc_mtime:
-                return cls._qc_cache
-            with open(path, "rb") as f:
-                data = orjson.loads(f.read())
-            t = data.get("telemetry", {})
-            cls._qc_mtime = mtime
-            cls._qc_cache = {
-                "online": True,
-                "is_paused": data.get("is_paused", False),
-                "risk_profile": data.get("risk_profile", "OPTIMAL"),
-                "total_equity": t.get("total_equity", 0.0),
-                "unrealized_pnl": t.get("unrealized_pnl", 0.0),
-                "gross_leverage": t.get("gross_leverage", 0.0),
-                "top_leader": t.get("top_leader", "BTCUSDT"),
-                "market_breadth": t.get("market_breadth", 0.0),
-                "btc_price": (t.get("coin_prices") or {}).get("BTCUSDT", 0.0),
-            }
-            return cls._qc_cache
-        except Exception:
-            return cls._qc_cache
 
 
 state_service = StateService()

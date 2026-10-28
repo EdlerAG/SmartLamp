@@ -23,11 +23,20 @@ private:
         bool mode_changed = (state.light_mode != last_mode);
         last_mode = state.light_mode;
 
+        uint8_t eff_r = state.ambi_r;
+        uint8_t eff_g = state.ambi_g;
+        uint8_t eff_b = state.ambi_b;
+        if (state.light_mode == MODE_SPOTIFY_AMBI && state.spotify.playing) {
+            eff_r = state.spotify.ambi_r;
+            eff_g = state.spotify.ambi_g;
+            eff_b = state.spotify.ambi_b;
+        }
+
         if (notify_frames > 0) {
             if (now - last_anim_ms >= 20) {
                 last_anim_ms = now;
                 notify_frames--;
-                LedEffects::renderNotification(strip, active_notify_type, notify_frames);
+                LedEffects::renderNotification(strip, active_notify_type, notify_frames, eff_r, eff_g, eff_b);
                 strip.show();
                 if (notify_frames == 0) last_mode = -1;
             }
@@ -53,7 +62,7 @@ private:
         if (now - last_anim_ms < 22 && !mode_changed && !force) return;
         last_anim_ms = now;
 
-        LedEffects::renderDynamicMode(strip, state.light_mode, anim_step++);
+        LedEffects::renderDynamicMode(strip, state.light_mode, anim_step++, eff_r, eff_g, eff_b);
         strip.show();
     }
 
@@ -71,7 +80,8 @@ public:
 
     bool isAnimating() const {
         return (notify_frames > 0) ||
-               (state.light_mode >= MODE_CANDLE && state.light_mode <= MODE_RAINBOW_FLOW);
+               (state.light_mode >= MODE_CANDLE && state.light_mode <= MODE_RAINBOW_FLOW) ||
+               (state.light_mode == MODE_SPOTIFY_AMBI);
     }
 
     void update() override {

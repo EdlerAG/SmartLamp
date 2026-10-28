@@ -8,6 +8,14 @@
 struct AppState {
     portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
+    // Системні стани інтерфейсу (Рівень А)
+    volatile SystemUiState sys_ui_state         = SystemUiState::SYS_BOOT_SPLASH;
+    volatile uint32_t      boot_splash_start_ms = 0;
+    volatile bool          onboarded            = false;
+    volatile uint8_t       onboarding_step      = 1;
+    volatile uint32_t      onboarding_ready_ms  = 0;
+    volatile uint32_t      diag_opened_ms       = 0;
+
     // Кліматичні дані + тренд барометра
     volatile float temperature   = 22.0f;
     volatile float humidity      = 50.0f;
@@ -26,14 +34,14 @@ struct AppState {
     volatile bool    auto_brt        = true;
     volatile uint8_t manual_brt_idx  = 2;
     volatile uint8_t current_led_brt = 65;
-    volatile uint8_t current_lcd_brt = 200;
+    volatile uint8_t current_lcd_brt = 220;
 
     // Таймер сну
     volatile uint32_t sleep_timer_end_ms   = 0;
     volatile uint32_t sleep_timer_total_ms = 0;
     volatile bool     sleep_timer_active   = false;
 
-    // Режими екрана та підсвітки
+    // Режими екрана (Рівень Б: 4 основні вікна) та підсвітки
     volatile uint8_t screen_mode = SCREEN_CLIMATE;
     volatile uint8_t light_mode  = MODE_WARM_COZY;
     static constexpr uint8_t LIGHT_MODE_COUNT = TOTAL_LIGHT_MODES;
@@ -43,12 +51,45 @@ struct AppState {
     volatile uint32_t last_net_activity_ms  = 0;
     volatile bool     ui_force_dirty        = true;
 
-    // Повноекранний оверлей мем-реакції або кастомної наліпки/фото з сервера
-    volatile uint8_t  screen_reaction_type  = NOTIFY_NONE;
-    volatile uint32_t screen_reaction_until = 0;
+    // --- МУЛЬТИКАДРОВИЙ ПРОГРАВАЧ ГІФОК ТА НАЛІПОК У PSRAM (v4.0) ---
+    uint8_t*          psram_anim_buf        = nullptr; // Буфер під активні стріми (до 36 кадрів)
+    uint8_t*          psram_saver_buf       = nullptr; // Окремий буфер під постійну заставку LittleFS
+    uint8_t*          shared_canvas_buf     = nullptr;
+    volatile uint8_t  anim_frames_count     = 0;
+    volatile uint8_t  anim_fps              = 15;
     volatile uint32_t custom_frame_until    = 0;
     volatile bool     canvas_loading        = false;
-    uint8_t*          shared_canvas_buf     = nullptr;
+
+    // Постійна GIF-Заставка (Вікно 2)
+    volatile uint32_t saver_crc             = 0;
+    volatile uint8_t  saver_num_frames      = 0;
+    volatile uint8_t  saver_fps             = 12;
+    volatile size_t   saver_buf_size        = 0;
+    volatile bool     saver_loaded          = false;
+    volatile bool     saver_show_clock      = true;
+    volatile bool     cmd_save_saver        = false;
+
+    // Колір AmbiLight для синхронізації стрічки SK6812 з активною гіфкою або Spotify
+    volatile uint8_t  ambi_r                = 56;
+    volatile uint8_t  ambi_g                = 189;
+    volatile uint8_t  ambi_b                = 248;
+    volatile bool     ambi_active           = false;
+
+    // Резервний оверлей реакції
+    volatile uint8_t  screen_reaction_type  = NOTIFY_NONE;
+    volatile uint32_t screen_reaction_until = 0;
+
+    // --- SPOTIFY VINYL HUB (v4.0) ---
+    SpotifyTrackInfo  spotify;
+    volatile int8_t   cmd_spotify_action    = 0; // 0: none, 1: next, 2: prev, 3: play_pause
+    volatile bool     spotify_vinyl_needed  = false;
+    volatile bool     spotify_vinyl_loading = false;
+
+    // --- ТАКТИЛЬНІ ТА ПРОЦЕДУРНІ I2S ЗВУКИ ---
+    volatile bool     trig_touch_click      = false;
+    volatile bool     trig_boot_chord       = false;
+    volatile bool     trig_notify_bell      = false;
+    volatile uint8_t  trig_reaction_synth   = 0; // 2..6
 
     // Відкладене збереження в NVS
     volatile bool     settings_dirty     = false;
@@ -68,6 +109,8 @@ struct AppState {
     volatile bool    wifi_sleeping       = false;
     volatile int8_t  wifi_rssi           = -60;
     volatile bool    cmd_start_ap        = false;
+    volatile bool    cmd_reboot          = false;
+    volatile bool    cmd_clear_cache     = false;
     volatile bool    time_synced         = false;
     volatile bool    had_blackout_drop   = false;
     volatile bool    tls_in_flight       = false;
@@ -76,18 +119,23 @@ struct AppState {
     volatile bool    has_more_cloud_cmds = false;
     volatile bool    audio_playing       = false;
 
-    char wifi_ssid[33]  = "Connecting...";
+    char wifi_ssid[33]  = "Підключення...";
     char ip_address[20] = "0.0.0.0";
     char time_str[10]   = "--:--";
     char date_str[16]   = "---";
 
-    // Черги URL для OTA, Аудіо (I2S) та Картинок (RGB565)
+    // Черги URL для OTA, Аудіо (I2S) та Анімацій (.mbx / .rgb565)
     volatile bool    ota_in_progress = false;
     volatile uint8_t ota_progress    = 0;
     volatile uint8_t audio_volume    = Config::DEFAULT_VOLUME;
+
     char pending_ota_url[160]        = "";
+    char pending_ota_sha256[65]      = "";
     char pending_audio_url[160]      = "";
-    char pending_img_url[160]        = "";
+    char pending_media_url[160]      = "";
+    char pending_media_name[32]      = "";
+    char pending_media_crc[16]       = "";
+    volatile bool pending_media_is_saver = false;
 
     // Telegram, Oracle Cloud та Історія повідомлень (Inbox на 5 повідомлень)
     char tg_token[64]    = "";
@@ -114,6 +162,13 @@ struct AppState {
         uint32_t now = millis();
         last_user_activity_ms = now;
         last_net_activity_ms  = now;
+        boot_splash_start_ms  = now;
+
+        // Виділяємо буфери у 8 MB PSRAM
+        if (psramFound()) {
+            psram_anim_buf  = (uint8_t*)ps_malloc(Config::MBX_MAX_FRAMES * Config::FRAME_BYTES_RGB565);
+            psram_saver_buf = (uint8_t*)ps_malloc(18 * Config::FRAME_BYTES_RGB565); // До 18 кадрів постійної заставки (~2.0 MB)
+        }
 
         strncpy(tg_token, Config::DEFAULT_TG_TOKEN, sizeof(tg_token) - 1);
         strncpy(tg_admin_id, Config::DEFAULT_ADMIN_ID, sizeof(tg_admin_id) - 1);
@@ -121,8 +176,8 @@ struct AppState {
         strncpy(oracle_url, Config::ORACLE_SERVER_URL, sizeof(oracle_url) - 1);
         strncpy(oracle_key, Config::ORACLE_API_KEY, sizeof(oracle_key) - 1);
 
-        strncpy(inbox[0].sender, "Yaroslav", sizeof(inbox[0].sender) - 1);
-        strncpy(inbox[0].text, "MagicBox v4.5 Ready!", sizeof(inbox[0].text) - 1);
+        strncpy(inbox[0].sender, "Ярослав", sizeof(inbox[0].sender) - 1);
+        strncpy(inbox[0].text, "Шкатулка MagicBox v4.0 готова! Надішли наліпку чи гіфку ✨", sizeof(inbox[0].text) - 1);
         strncpy(inbox[0].time_received, "--:--", sizeof(inbox[0].time_received) - 1);
         for (int i = 0; i < 24; i++) pressure_hist[i] = 750.0f;
     }
@@ -142,12 +197,27 @@ struct AppState {
     }
 
     bool isCustomFrameActive(uint32_t now) const {
-        return !canvas_loading && ((int32_t)(custom_frame_until - now) > 0);
+        return !canvas_loading && (anim_frames_count > 0) && ((int32_t)(custom_frame_until - now) > 0);
+    }
+
+    void activateCustomAnimation(uint8_t frames, uint8_t fps, uint8_t r, uint8_t g, uint8_t b, uint32_t duration_ms = 11000) {
+        portENTER_CRITICAL(&mux);
+        anim_frames_count  = constrain(frames, (uint8_t)1, Config::MBX_MAX_FRAMES);
+        anim_fps           = constrain(fps, (uint8_t)4, (uint8_t)30);
+        ambi_r             = r;
+        ambi_g             = g;
+        ambi_b             = b;
+        ambi_active        = true;
+        custom_frame_until = millis() + duration_ms;
+        canvas_loading     = false;
+        portEXIT_CRITICAL(&mux);
+        led_notify_type = NOTIFY_AMBILIGHT;
+        registerActivity();
     }
 
     void triggerLedNotification(NotifyLedType type, bool show_screen_overlay = false) {
         led_notify_type = type;
-        if (show_screen_overlay && type >= NOTIFY_FIRE) {
+        if (show_screen_overlay && type >= NOTIFY_FIRE && type <= NOTIFY_CROWN) {
             screen_reaction_type  = type;
             screen_reaction_until = millis() + 4500;
         }
@@ -195,6 +265,7 @@ struct AppState {
             AppEvent ev{type};
             xQueueSend(eventQueue, &ev, 0);
             custom_frame_until = 0;
+            ambi_active        = false;
             registerActivity();
         }
     }
@@ -217,7 +288,6 @@ struct AppState {
         date_str[sizeof(date_str) - 1] = '\0';
         time_synced = true;
         portEXIT_CRITICAL(&mux);
-
         if (minute_changed) ui_force_dirty = true;
     }
 
@@ -228,20 +298,27 @@ struct AppState {
         portEXIT_CRITICAL(&mux);
     }
 
-    void setPendingOtaUrl(const char* url) {
+    void setPendingOtaUrl(const char* url, const char* sha256 = "") {
         portENTER_CRITICAL(&mux);
-        strncpy(pending_ota_url, url, sizeof(pending_ota_url) - 1);
+        strncpy(pending_ota_url, url ? url : "", sizeof(pending_ota_url) - 1);
         pending_ota_url[sizeof(pending_ota_url) - 1] = '\0';
+        strncpy(pending_ota_sha256, sha256 ? sha256 : "", sizeof(pending_ota_sha256) - 1);
+        pending_ota_sha256[sizeof(pending_ota_sha256) - 1] = '\0';
         portEXIT_CRITICAL(&mux);
     }
 
-    bool popPendingOtaUrl(char* url_out, size_t max_len) {
+    bool popPendingOtaUrl(char* url_out, size_t max_len, char* sha_out = nullptr, size_t sha_len = 0) {
         bool has = false;
         portENTER_CRITICAL(&mux);
         if (strlen(pending_ota_url) > 10) {
             strncpy(url_out, pending_ota_url, max_len - 1);
             url_out[max_len - 1] = '\0';
+            if (sha_out && sha_len > 0) {
+                strncpy(sha_out, pending_ota_sha256, sha_len - 1);
+                sha_out[sha_len - 1] = '\0';
+            }
             pending_ota_url[0] = '\0';
+            pending_ota_sha256[0] = '\0';
             has = true;
         }
         portEXIT_CRITICAL(&mux);
@@ -269,21 +346,38 @@ struct AppState {
         return has;
     }
 
-    void setPendingImageUrl(const char* url) {
+    void setPendingMedia(const char* url, const char* name = "", const char* crc = "", bool is_saver = false) {
         portENTER_CRITICAL(&mux);
-        strncpy(pending_img_url, url, sizeof(pending_img_url) - 1);
-        pending_img_url[sizeof(pending_img_url) - 1] = '\0';
+        strncpy(pending_media_url, url, sizeof(pending_media_url) - 1);
+        pending_media_url[sizeof(pending_media_url) - 1] = '\0';
+        strncpy(pending_media_name, name ? name : "", sizeof(pending_media_name) - 1);
+        pending_media_name[sizeof(pending_media_name) - 1] = '\0';
+        strncpy(pending_media_crc, crc ? crc : "", sizeof(pending_media_crc) - 1);
+        pending_media_crc[sizeof(pending_media_crc) - 1] = '\0';
+        pending_media_is_saver = is_saver;
         portEXIT_CRITICAL(&mux);
         registerNetActivity();
     }
 
+    void setPendingImageUrl(const char* url) {
+        setPendingMedia(url);
+    }
+
     bool popPendingImageUrl(char* url_out, size_t max_len) {
+        char n[32], c[16];
+        bool is_sav = false;
+        return popPendingMedia(url_out, max_len, n, sizeof(n), c, sizeof(c), is_sav);
+    }
+
+    bool popPendingMedia(char* url_out, size_t u_len, char* name_out, size_t n_len, char* crc_out, size_t c_len, bool& is_saver_out) {
         bool has = false;
         portENTER_CRITICAL(&mux);
-        if (strlen(pending_img_url) > 8) {
-            strncpy(url_out, pending_img_url, max_len - 1);
-            url_out[max_len - 1] = '\0';
-            pending_img_url[0] = '\0';
+        if (strlen(pending_media_url) > 8) {
+            strncpy(url_out, pending_media_url, u_len - 1); url_out[u_len - 1] = '\0';
+            strncpy(name_out, pending_media_name, n_len - 1); name_out[n_len - 1] = '\0';
+            strncpy(crc_out, pending_media_crc, c_len - 1); crc_out[c_len - 1] = '\0';
+            is_saver_out = pending_media_is_saver;
+            pending_media_url[0] = '\0';
             has = true;
         }
         portEXIT_CRITICAL(&mux);

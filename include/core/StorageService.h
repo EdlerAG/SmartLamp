@@ -1,15 +1,112 @@
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
+#include <LittleFS.h>
 #include "core/AppState.h"
 #include "Config.h"
 
 class StorageService {
 private:
     Preferences prefs;
+    bool fs_mounted = false;
 
 public:
+    bool initFs() {
+        if (LittleFS.begin(true)) {
+            fs_mounted = true;
+            return true;
+        }
+        Serial.println("[FS] LittleFS Mount Failed");
+        fs_mounted = false;
+        return false;
+    }
+
+    bool isFsMounted() const {
+        return fs_mounted;
+    }
+
+    bool isOnboarded() {
+        if (prefs.begin("box_state", true)) {
+            bool val = prefs.getBool("onboarded", false);
+            prefs.end();
+            return val;
+        }
+        return false;
+    }
+
+    void setOnboarded(bool val) {
+        if (prefs.begin("box_state", false)) {
+            prefs.putBool("onboarded", val);
+            prefs.end();
+        }
+    }
+
+    uint32_t getSaverCrc() {
+        if (prefs.begin("box_state", true)) {
+            uint32_t crc = prefs.getUInt("saver_crc", 0);
+            prefs.end();
+            return crc;
+        }
+        return 0;
+    }
+
+    void setSaverCrc(uint32_t crc) {
+        if (prefs.begin("box_state", false)) {
+            prefs.putUInt("saver_crc", crc);
+            prefs.end();
+        }
+    }
+
+    bool getSaverShowClock() {
+        if (prefs.begin("box_state", true)) {
+            bool clk = prefs.getBool("saver_clk", true);
+            prefs.end();
+            return clk;
+        }
+        return true;
+    }
+
+    void setSaverShowClock(bool val) {
+        if (prefs.begin("box_state", false)) {
+            prefs.putBool("saver_clk", val);
+            prefs.end();
+        }
+    }
+
+    bool saveSaverFile(const uint8_t* data, size_t len) {
+        if (!fs_mounted && !initFs()) return false;
+        File f = LittleFS.open(Config::SAVER_FILE_PATH, "w");
+        if (!f) return false;
+        size_t written = f.write(data, len);
+        f.flush();
+        f.close();
+        return written == len;
+    }
+
+    size_t loadSaverFile(uint8_t* dest, size_t max_len) {
+        if (!dest || max_len == 0) return 0;
+        if (!fs_mounted && !initFs()) return 0;
+        if (!LittleFS.exists(Config::SAVER_FILE_PATH)) return 0;
+
+        File f = LittleFS.open(Config::SAVER_FILE_PATH, "r");
+        if (!f) return 0;
+
+        size_t sz = f.size();
+        if (sz == 0 || sz > max_len) {
+            f.close();
+            return 0;
+        }
+
+        size_t bytes_read = f.read(dest, sz);
+        f.close();
+        return bytes_read;
+    }
+
     void loadUserSettings(AppState& state) {
+        state.onboarded        = isOnboarded();
+        state.saver_crc        = getSaverCrc();
+        state.saver_show_clock = getSaverShowClock();
+
         if (prefs.begin("box_state", false)) {
             if (prefs.isKey("l_mode")) state.light_mode     = prefs.getUChar("l_mode", 0) % TOTAL_LIGHT_MODES;
             if (prefs.isKey("a_brt"))  state.auto_brt       = prefs.getBool("a_brt", true);

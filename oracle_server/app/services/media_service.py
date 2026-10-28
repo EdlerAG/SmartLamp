@@ -25,14 +25,20 @@ def _build_circular_mask(size: int = 240) -> np.ndarray:
 
 _CIRCLE_MASK_240 = _build_circular_mask(240)
 
+BAYER_4X4 = np.array([
+    [ 0,  8,  2, 10],
+    [12,  4, 14,  6],
+    [ 3, 11,  1,  9],
+    [15,  7, 13,  5]
+], dtype=np.float32)
+
 
 class MediaService:
     """
-    Векторизований NumPy медіа-рушій v5.0:
-    - Конвертує статичні фото/стікери (.webp, .png, .jpg) та анімації (.gif, animated .webp)
-      у бінарний формат RGB565 та мультикадровий контейнер .mbx (MagicBox Stream).
-    - Автоматично вираховує домінуючий колір AmbiLight для синхронної підсвітки стрічки SK6812.
-    - Активний стрім віддає з RAM-диска (/dev/shm) за 0 мс дискового I/O.
+    Векторизований NumPy медіа-рушій v4.0 / v5.0:
+    - Конвертує статичні фото/стікери та анімації у RGB565 з Bayer 4x4 Ordered Dithering.
+    - Автоматично вираховує домінуючий колір AmbiLight для стрічки SK6812.
+    - Підтримує збереження постійної заставки для Вікна 2 (set_saver: true).
     """
 
     __slots__ = ()
@@ -48,7 +54,6 @@ class MediaService:
 
         if frame_img.mode in ("RGBA", "LA") or (frame_img.mode == "P" and "transparency" in frame_img.info):
             rgba = frame_img.convert("RGBA")
-            # Центруємо стікер із невеликим відступом, щоб він ідеально вписався в круглий екран
             rgba.thumbnail((224, 224), Image.Resampling.BILINEAR)
             bg = Image.new("RGBA", (240, 240), (*cls.BG_COLOR, 255))
             offset = ((240 - rgba.width) // 2, (240 - rgba.height) // 2)
@@ -58,28 +63,39 @@ class MediaService:
             rgb_img = ImageOps.fit(frame_img.convert("RGB"), (240, 240), method=Image.Resampling.BILINEAR)
 
         arr = np.asarray(rgb_img, dtype=np.uint8).copy()
-        # Очищуємо невидимі кути за межами кола 240x240 для кращого стиснення
         arr[~_CIRCLE_MASK_240] = cls.BG_COLOR
         return arr
 
     @staticmethod
     def _rgb_array_to_rgb565_bytes(arr: np.ndarray) -> bytes:
         """
-        Векторизована C-конвертація (240, 240, 3) uint8 -> 115200 байт RGB565 Big-Endian.
-        Працює у ~100 разів швидше за цикл Python.
+        Векторизоване перетворення (H, W, 3) uint8 -> RGB565 Big-Endian
+        із застосуванням Bayer 4x4 Ordered Dithering для усунення градієнтної смугастості на GC9A01.
         """
-        r = (arr[:, :, 0].astype(np.uint16) & 0xF8) << 8
-        g = (arr[:, :, 1].astype(np.uint16) & 0xFC) << 3
-        b = arr[:, :, 2].astype(np.uint16) >> 3
+        h, w = arr.shape[:2]
+        tile_y = (h + 3) // 4
+        tile_x = (w + 3) // 4
+        bayer_grid = np.tile(BAYER_4X4, (tile_y, tile_x))[:h, :w]
+
+        # Розраховуємо делікатне зміщення для кожного кванту
+        dither_r = (bayer_grid / 16.0 - 0.5) * 8.0
+        dither_g = (bayer_grid / 16.0 - 0.5) * 4.0
+        dither_b = (bayer_grid / 16.0 - 0.5) * 8.0
+
+        r_dith = np.clip(arr[:, :, 0].astype(np.float32) + dither_r, 0, 255).astype(np.uint16)
+        g_dith = np.clip(arr[:, :, 1].astype(np.float32) + dither_g, 0, 255).astype(np.uint16)
+        b_dith = np.clip(arr[:, :, 2].astype(np.float32) + dither_b, 0, 255).astype(np.uint16)
+
+        r = (r_dith & 0xF8) << 8
+        g = (g_dith & 0xFC) << 3
+        b = b_dith >> 3
         rgb565 = r | g | b
-        # Big-Endian порядок байтів (старший байт перший — рідний для LovyanGFX pushSprite/SPI)
         return rgb565.astype(">u2").tobytes()
 
     @staticmethod
     def _extract_ambilight_color(arr: np.ndarray) -> Tuple[int, int, int]:
         """Визначає насичений домінуючий колір кадру для підсвітки LED-стрічки SK6812."""
         flat = arr[_CIRCLE_MASK_240].reshape(-1, 3).astype(np.float32)
-        # Відкидаємо занадто темні пікселі фону та чисто білі відблиски
         brightness = np.max(flat, axis=1)
         saturation = brightness - np.min(flat, axis=1)
         mask = (brightness > 45.0) & (saturation > 25.0)
@@ -89,7 +105,6 @@ class MediaService:
         if len(vivid) == 0:
             return (56, 189, 248)
         mean_rgb = np.mean(vivid, axis=0)
-        # Підсилюємо яскравість до соковитого рівня для адресної стрічки
         peak = float(np.max(mean_rgb))
         if peak > 0:
             mean_rgb = np.clip(mean_rgb * (235.0 / peak), 0, 255)
@@ -116,7 +131,6 @@ class MediaService:
                 duration_ms = img.info.get("duration", 66) or 66
                 fps = max(6, min(25, int(round(1000.0 / max(20.0, float(duration_ms))))))
                 max_f = settings.GIF_MAX_FRAMES
-                # Якщо у GIF більше кадрів ніж ліміт (напр. 90), рівномірно проріджуємо їх зі збереженням циклу
                 step = max(1, total_src_frames // max_f)
                 frame_indices = list(range(0, total_src_frames, step))[:max_f]
 
@@ -134,15 +148,10 @@ class MediaService:
         num_frames = len(frames_bytes)
         media_type = "gif" if num_frames > 1 else "sticker"
 
-        # 1. Записуємо головний кадр у RAM-диск для миттєвого доступу (.rgb565)
         mid_frame = frames_bytes[num_frames // 2]
         with open(cls.RAM_FRAME_PATH, "wb") as f:
             f.write(mid_frame)
 
-        # 2. Формуємо бінарний контейнер .mbx (16-байтний заголовок + послідовність кадрів RGB565)
-        # Формат заголовка (16 байт):
-        # 4s: "MBX5" | B: version(5) | B: num_frames | B: fps | B: reserved(0)
-        # B: ambi_r  | B: ambi_g     | B: ambi_b     | B: reserved(0) | I: crc32 (uint32)
         body_blob = b"".join(frames_bytes)
         crc_val = zlib.crc32(body_blob) & 0xFFFFFFFF
         crc_hex = f"{crc_val:08x}"
@@ -169,7 +178,6 @@ class MediaService:
         if not safe_name:
             safe_name = f"custom_slot_{reaction_slot}" if reaction_slot > 0 else f"live_{crc_hex[:6]}"
 
-        # Якщо задано ім'я або слот реакції — зберігаємо у постійну колекцію на диску
         if save_name or reaction_slot > 0:
             perm_path = os.path.join(settings.STICKERS_DIR, f"{safe_name}.mbx")
             with open(perm_path, "wb") as f:
@@ -207,6 +215,7 @@ class MediaService:
         base_url: str = "",
         save_name: str = "",
         reaction_slot: int = 0,
+        set_as_saver: bool = False,
     ) -> Dict[str, Any]:
         meta = await asyncio.to_thread(self._process_media_sync, raw_bytes, save_name, reaction_slot)
         host = state_service.resolve_public_url(base_url)
@@ -218,7 +227,7 @@ class MediaService:
 
         frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
 
-        state_service.enqueue_raw({
+        cmd_dict: Dict[str, Any] = {
             "media_name": meta["name"],
             "media_url": media_url,
             "img_url": frame_url,
@@ -226,17 +235,25 @@ class MediaService:
             "media_frames": meta["frames"],
             "media_fps": meta["fps"],
             "ambi_rgb": meta["ambi_rgb"],
-        })
+        }
+        if set_as_saver:
+            cmd_dict["set_saver"] = True
+
+        state_service.enqueue_raw(cmd_dict)
         meta["media_url"] = media_url
         return meta
 
-    def trigger_saved_media(self, name: str, base_url: str = "") -> Dict[str, Any]:
+    def trigger_saved_media(
+        self,
+        name: str,
+        base_url: str = "",
+        set_as_saver: bool = False,
+    ) -> Dict[str, Any]:
         safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", name)[:28].lower()
         info = db_service.get_media_by_name(safe_name)
         if not info or not os.path.exists(info["file_path"]):
             raise HTTPException(status_code=404, detail=f"Кастомну гіфку/наліпку '{safe_name}' не знайдено")
 
-        # Копіюємо також перший кадр у RAM для миттєвого прев'ю
         with open(info["file_path"], "rb") as src:
             raw_mbx = src.read()
         with open(self.RAM_ANIM_PATH, "wb") as dst:
@@ -250,7 +267,7 @@ class MediaService:
         frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
         ambi = [info["ambi_r"], info["ambi_g"], info["ambi_b"]]
 
-        state_service.enqueue_raw({
+        cmd_dict: Dict[str, Any] = {
             "media_name": safe_name,
             "media_url": media_url,
             "img_url": frame_url,
@@ -258,7 +275,11 @@ class MediaService:
             "media_frames": info["frames"],
             "media_fps": info["fps"],
             "ambi_rgb": ambi,
-        })
+        }
+        if set_as_saver:
+            cmd_dict["set_saver"] = True
+
+        state_service.enqueue_raw(cmd_dict)
         return {
             "ok": True,
             "name": safe_name,
@@ -268,6 +289,7 @@ class MediaService:
             "crc": info["crc32_hex"],
             "ambi_rgb": ambi,
             "media_url": media_url,
+            "is_saver": set_as_saver,
         }
 
     async def handle_upload(
@@ -276,12 +298,13 @@ class MediaService:
         base_url: str = "",
         save_name: str = "",
         reaction_slot: int = 0,
+        set_as_saver: bool = False,
     ) -> Dict[str, Any]:
         raw = await file.read(10 * 1024 * 1024)
         if not raw:
             raise HTTPException(status_code=400, detail="Порожній файл")
         try:
-            return await self.process_and_enqueue(raw, base_url, save_name, reaction_slot)
+            return await self.process_and_enqueue(raw, base_url, save_name, reaction_slot, set_as_saver)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Помилка конвертації медіа: {e}")
 

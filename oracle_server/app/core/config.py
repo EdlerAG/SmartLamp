@@ -47,20 +47,19 @@ class Settings:
     TG_GIRL_ID: str = os.getenv("TG_GIRL_ID", "")
     SERVER_MANAGES_BOT: bool = os.getenv("SERVER_MANAGES_BOT", "true").lower() == "true"
 
+    # Spotify OAuth2 та Vinyl Hub (v4.0)
+    SPOTIFY_CLIENT_ID: str = os.getenv("SPOTIFY_CLIENT_ID", "")
+    SPOTIFY_CLIENT_SECRET: str = os.getenv("SPOTIFY_CLIENT_SECRET", "")
+    SPOTIFY_REDIRECT_URI: str = os.getenv("SPOTIFY_REDIRECT_URI", "")
+
     # Таймінги блекауту та синхронізації
     BLACKOUT_TIMEOUT_SEC: float = float(os.getenv("BLACKOUT_TIMEOUT_SEC", "25.0"))
 
-    # Погода та Кастомний ШІ (Опціональний, неблокуючий)
+    # Погода та Кастомний ШІ
     WEATHER_LAT: float = float(os.getenv("WEATHER_LAT", "49.68"))
     WEATHER_LON: float = float(os.getenv("WEATHER_LON", "32.33"))
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
-    # Опціональний міст із QuantCore (читання статусу портфеля з сусідньої папки без витрат RAM)
-    QUANTCORE_STATE_PATH: str = os.getenv(
-        "QUANTCORE_STATE_PATH",
-        os.path.abspath(os.path.join(os.getcwd(), "..", "trading_agent", "QuantCore-GrandMaster-Server", "storage", "engine_state.json")),
-    )
 
     # Постійне дискове сховище (SQLite WAL, бібліотека кастомних гіфок та звуків)
     STORAGE_DIR: str = os.getenv("STORAGE_DIR", "storage")
@@ -72,11 +71,12 @@ class Settings:
     # Надшвидкий буфер у RAM (/dev/shm) для активних стрімів
     RAM_MEDIA_DIR: str = _resolve_ram_cache_dir(STORAGE_DIR)
     MEDIA_DIR: str = _resolve_ram_cache_dir(STORAGE_DIR)
+    SPOTIFY_VINYL_PATH: str = os.path.join(RAM_MEDIA_DIR, "spotify_vinyl.rgb565")
 
     # Ліміти для 1GB RAM VPS
     MAX_FW_SIZE: int = 4 * 1024 * 1024
     MAX_STORAGE_BYTES: int = int(os.getenv("MAX_STORAGE_MB", "150")) * 1024 * 1024
-    GIF_MAX_FRAMES: int = int(os.getenv("GIF_MAX_FRAMES", "36"))  # До 36 кадрів 240x240 у PSRAM лампи
+    GIF_MAX_FRAMES: int = int(os.getenv("GIF_MAX_FRAMES", "36"))
     GIF_DEFAULT_FPS: int = int(os.getenv("GIF_DEFAULT_FPS", "15"))
 
 

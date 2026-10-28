@@ -362,9 +362,10 @@ public:
         if (!state.wifi_connected || state.ap_mode_active || state.ota_in_progress) return;
 
         char ota_url_buf[160];
-        if (state.popPendingOtaUrl(ota_url_buf, sizeof(ota_url_buf))) {
+        char ota_sha_buf[65];
+        if (state.popPendingOtaUrl(ota_url_buf, sizeof(ota_url_buf), ota_sha_buf, sizeof(ota_sha_buf))) {
             String err = "";
-            if (CloudOtaService::flashFromUrl(state, String(ota_url_buf), err)) {
+            if (CloudOtaService::flashFromUrl(state, String(ota_url_buf), err, ota_sha_buf)) {
                 vTaskDelay(pdMS_TO_TICKS(500));
                 ESP.restart();
             }

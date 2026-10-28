@@ -3,6 +3,8 @@
 #include "Config.h"
 #include "core/AppState.h"
 #include "core/CommandRouter.h"
+#include "core/StorageService.h"
+#include "ui/DisplayService.h"
 #include "cloud/CloudOtaService.h"
 #include "cloud/TgJsonUtils.h"
 #include <WiFi.h>
@@ -12,6 +14,9 @@
 class OracleCloudService : public IService {
 private:
     AppState&        state;
+    DisplayService*  display_srv = nullptr;
+    StorageService*  storage_srv = nullptr;
+
     WiFiClient       net_client;
     WiFiClientSecure sec_client;
     HTTPClient       http;
@@ -42,7 +47,7 @@ private:
             sync_endpoint   = base;
         } else {
             base_server_url = base;
-            sync_endpoint   = base + "/api/v1/box/sync";
+            sync_endpoint   = base + "/api/v5/box/sync";
         }
     }
 
@@ -95,7 +100,6 @@ private:
             return false;
         }
 
-        // Забороняємо Core 1 малювати у буфер на час прийому кадру
         state.canvas_loading = true;
         WiFiClient* stream = img_http.getStreamPtr();
         size_t total_read = 0;
@@ -129,9 +133,191 @@ private:
         return false;
     }
 
+    bool downloadMbxAnimation(const String& raw_url, bool is_saver) {
+        if (!state.psram_anim_buf || !state.wifi_connected) return false;
+        String url = normalizeMediaUrl(raw_url);
+
+        HTTPClient mbx_http;
+        WiFiClient m_client;
+        WiFiClientSecure m_sec;
+
+        mbx_http.setConnectTimeout(4000);
+        mbx_http.setTimeout(12000);
+
+        state.tls_in_flight = true;
+        bool begun = url.startsWith("https://")
+                     ? (m_sec.setInsecure(), m_sec.setNoDelay(true), mbx_http.begin(m_sec, url))
+                     : (m_client.setNoDelay(true), mbx_http.begin(m_client, url));
+
+        if (!begun) {
+            state.tls_in_flight = false;
+            return false;
+        }
+
+        int code = mbx_http.GET();
+        if (code != HTTP_CODE_OK) {
+            mbx_http.end();
+            state.tls_in_flight = false;
+            return false;
+        }
+
+        int content_len = mbx_http.getSize();
+        size_t max_buf = Config::MBX_MAX_FRAMES * Config::FRAME_BYTES_RGB565;
+        if (content_len > (int)max_buf) {
+            mbx_http.end();
+            state.tls_in_flight = false;
+            return false;
+        }
+
+        WiFiClient* stream = mbx_http.getStreamPtr();
+        size_t total_read = 0;
+        uint32_t start_ms = millis();
+        size_t target_len = (content_len > 0) ? (size_t)content_len : max_buf;
+
+        while (mbx_http.connected() && total_read < target_len && (millis() - start_ms < 10000)) {
+            size_t avail = stream->available();
+            if (avail > 0) {
+                size_t to_read = min(avail, target_len - total_read);
+                int r = stream->readBytes(state.psram_anim_buf + total_read, to_read);
+                if (r > 0) total_read += r;
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+            if (content_len > 0 && total_read >= (size_t)content_len) break;
+        }
+
+        mbx_http.end();
+        state.tls_in_flight = false;
+
+        if (total_read >= sizeof(MbxHeader)) {
+            MbxHeader* hdr = (MbxHeader*)state.psram_anim_buf;
+            if (memcmp(hdr->magic, "MBX5", 4) == 0 && hdr->num_frames > 0) {
+                state.activateCustomAnimation(hdr->num_frames, hdr->fps, hdr->ambi_r, hdr->ambi_g, hdr->ambi_b, 15000);
+
+                if (is_saver && storage_srv && state.psram_saver_buf) {
+                    // Зберігаємо постійну заставку у LittleFS
+                    storage_srv->saveSaverFile(state.psram_anim_buf, total_read);
+                    storage_srv->setSaverCrc(hdr->crc32);
+
+                    size_t cpy_len = min(total_read, (size_t)(18 * Config::FRAME_BYTES_RGB565));
+                    memcpy(state.psram_saver_buf, state.psram_anim_buf, cpy_len);
+                    state.saver_num_frames = hdr->num_frames;
+                    state.saver_fps        = hdr->fps;
+                    state.saver_crc        = hdr->crc32;
+                    state.saver_buf_size   = cpy_len;
+                    state.saver_loaded     = true;
+                    state.screen_mode      = SCREEN_LIVING_GIF;
+                    state.ui_force_dirty   = true;
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool downloadSpotifyVinylArt() {
+        if (!display_srv || !state.wifi_connected || base_server_url.length() == 0) return false;
+        String url = base_server_url + "/api/v5/spotify/vinyl.rgb565";
+
+        HTTPClient v_http;
+        WiFiClient v_client;
+        WiFiClientSecure v_sec;
+
+        v_http.setConnectTimeout(3000);
+        v_http.setTimeout(5000);
+
+        state.tls_in_flight = true;
+        bool begun = url.startsWith("https://")
+                     ? (v_sec.setInsecure(), v_sec.setNoDelay(true), v_http.begin(v_sec, url))
+                     : (v_client.setNoDelay(true), v_http.begin(v_client, url));
+
+        if (!begun) {
+            state.tls_in_flight = false;
+            return false;
+        }
+
+        int code = v_http.GET();
+        int content_len = v_http.getSize();
+        if (code != HTTP_CODE_OK || (content_len > 0 && content_len != (int)Config::VINYL_BYTES_RGB565)) {
+            v_http.end();
+            state.tls_in_flight = false;
+            return false;
+        }
+
+        uint8_t* vinyl_buf = (uint8_t*)display_srv->getVinylSprite().getBuffer();
+        if (!vinyl_buf) {
+            v_http.end();
+            state.tls_in_flight = false;
+            return false;
+        }
+
+        WiFiClient* stream = v_http.getStreamPtr();
+        size_t total_read = 0;
+        uint32_t start_ms = millis();
+
+        while (v_http.connected() && total_read < Config::VINYL_BYTES_RGB565 && (millis() - start_ms < 5000)) {
+            size_t avail = stream->available();
+            if (avail > 0) {
+                size_t to_read = min(avail, Config::VINYL_BYTES_RGB565 - total_read);
+                int r = stream->readBytes(vinyl_buf + total_read, to_read);
+                if (r > 0) total_read += r;
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+        }
+
+        v_http.end();
+        state.tls_in_flight = false;
+
+        if (total_read == Config::VINYL_BYTES_RGB565) {
+            state.spotify.vinyl_ready = true;
+            state.ui_force_dirty = true;
+            return true;
+        }
+        return false;
+    }
+
     void processServerResponse(const String& json) {
         state.oracle_manages_bot  = (json.indexOf("\"bot_managed\":true") != -1);
         state.has_more_cloud_cmds = (json.indexOf("\"has_more\":true") != -1);
+
+        // Обробка Spotify стану від сервера (якщо передано)
+        int sp_idx = json.indexOf("\"spotify\":{");
+        if (sp_idx != -1) {
+            int sp_end = json.indexOf("}", sp_idx);
+            if (sp_end != -1) {
+                String sp_block = json.substring(sp_idx, sp_end + 1);
+                bool playing = (sp_block.indexOf("\"playing\":true") != -1);
+                state.spotify.playing = playing;
+
+                String tr_id = TgJsonUtils::extractString(sp_block, "track_id");
+                bool track_changed = (tr_id.length() > 0 && strcmp(state.spotify.track_id, tr_id.c_str()) != 0);
+
+                if (track_changed) {
+                    strncpy(state.spotify.track_id, tr_id.c_str(), sizeof(state.spotify.track_id) - 1);
+                    state.spotify.vinyl_ready = false;
+                    state.spotify_vinyl_needed = true;
+                }
+
+                String title = TgJsonUtils::extractString(sp_block, "title");
+                if (title.length() > 0) {
+                    TgJsonUtils::decodeJsonString(title, state.spotify.title, sizeof(state.spotify.title));
+                }
+
+                String artist = TgJsonUtils::extractString(sp_block, "artist");
+                if (artist.length() > 0) {
+                    TgJsonUtils::decodeJsonString(artist, state.spotify.artist, sizeof(state.spotify.artist));
+                }
+
+                String prog_str = TgJsonUtils::extractIntStr(sp_block, "progress_ms");
+                if (prog_str.length() > 0) state.spotify.progress_ms = (uint32_t)prog_str.toInt();
+
+                String dur_str = TgJsonUtils::extractIntStr(sp_block, "duration_ms");
+                if (dur_str.length() > 0) state.spotify.duration_ms = (uint32_t)dur_str.toInt();
+
+                state.spotify.last_sync_ms = millis();
+            }
+        }
 
         if (json.indexOf("\"has_cmd\":true") == -1) return;
         state.registerNetActivity();
@@ -157,6 +343,7 @@ private:
             uint8_t r = (uint8_t)react_str.toInt();
             if (r >= NOTIFY_FIRE && r <= NOTIFY_CROWN) {
                 CommandRouter::triggerReaction(state, (NotifyLedType)r, "Oracle Cloud", "CLOUD VIBE!");
+                state.trig_reaction_synth = r;
             }
         }
 
@@ -168,6 +355,7 @@ private:
             TgJsonUtils::decodeJsonString(sender, s_utf8, sizeof(s_utf8));
             TgJsonUtils::decodeJsonString(msg, m_utf8, sizeof(m_utf8));
             CommandRouter::pushMessage(state, s_utf8, m_utf8);
+            state.trig_notify_bell = true;
         }
 
         String play_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "play_url"));
@@ -175,14 +363,24 @@ private:
             state.setPendingAudioUrl(play_url.c_str());
         }
 
-        String img_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "img_url"));
-        if (img_url.length() > 8) {
-            state.setPendingImageUrl(img_url.c_str());
+        bool is_saver = (json.indexOf("\"set_saver\":true") != -1);
+        String media_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "media_url"));
+        String media_name = TgJsonUtils::extractString(json, "media_name");
+        String media_crc = TgJsonUtils::extractString(json, "media_crc");
+
+        if (media_url.length() > 8) {
+            state.setPendingMedia(media_url.c_str(), media_name.c_str(), media_crc.c_str(), is_saver);
+        } else {
+            String img_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "img_url"));
+            if (img_url.length() > 8) {
+                state.setPendingImageUrl(img_url.c_str());
+            }
         }
 
         String ota_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "ota_url"));
+        String ota_sha = TgJsonUtils::extractString(json, "ota_sha256");
         if (ota_url.length() > 10) {
-            state.setPendingOtaUrl(ota_url.c_str());
+            state.setPendingOtaUrl(ota_url.c_str(), ota_sha.c_str());
         }
     }
 
@@ -190,6 +388,14 @@ public:
     OracleCloudService(AppState& st) : state(st) {}
 
     const char* getName() const override { return "OracleCloud"; }
+
+    void setDisplayService(DisplayService* ds) {
+        display_srv = ds;
+    }
+
+    void setStorageService(StorageService* ss) {
+        storage_srv = ss;
+    }
 
     bool isEnabled() const override {
         char u_buf[128];
@@ -221,11 +427,12 @@ public:
     void update() override {
         if (!state.wifi_connected || state.ap_mode_active || state.ota_in_progress) return;
 
-        // Виконуємо відкладене хмарне OTA-оновлення незалежно від TelegramService
+        // Хмарне OTA-оновлення
         char ota_url_buf[160];
-        if (state.popPendingOtaUrl(ota_url_buf, sizeof(ota_url_buf))) {
+        char ota_sha_buf[65];
+        if (state.popPendingOtaUrl(ota_url_buf, sizeof(ota_url_buf), ota_sha_buf, sizeof(ota_sha_buf))) {
             String err = "";
-            if (CloudOtaService::flashFromUrl(state, String(ota_url_buf), err)) {
+            if (CloudOtaService::flashFromUrl(state, String(ota_url_buf), err, ota_sha_buf)) {
                 vTaskDelay(pdMS_TO_TICKS(500));
                 ESP.restart();
             }
@@ -234,17 +441,29 @@ public:
         refreshConfig();
         if (sync_endpoint.length() == 0) return;
 
-        char img_url_buf[160];
-        if (state.popPendingImageUrl(img_url_buf, sizeof(img_url_buf))) {
-            downloadRgb565ToCanvas(String(img_url_buf));
+        // Завантаження мультикадрового .mbx або статичного кадру
+        char med_url[160], med_name[32], med_crc[16];
+        bool is_sav = false;
+        if (state.popPendingMedia(med_url, sizeof(med_url), med_name, sizeof(med_name), med_crc, sizeof(med_crc), is_sav)) {
+            if (String(med_url).endsWith(".mbx")) {
+                downloadMbxAnimation(String(med_url), is_sav);
+            } else {
+                downloadRgb565ToCanvas(String(med_url));
+            }
         }
 
-        // Якщо зараз грає аудіо по I2S і немає термінового пінга з кнопок — не навантажуємо канал
+        // Завантаження нової обкладинки вінілу для Spotify
+        if (state.spotify_vinyl_needed && !state.audio_playing) {
+            state.spotify_vinyl_needed = false;
+            downloadSpotifyVinylArt();
+        }
+
+        // Захист від навантаження каналу під час I2S аудіо
         if (state.audio_playing && !state.cmd_send_tg_ack && state.cmd_send_meme_ping == 0 && !state.has_more_cloud_cmds) {
             return;
         }
 
-        char status_json[460];
+        char status_json[480];
         CommandRouter::buildStatusJson(state, status_json, sizeof(status_json));
 
         state.tls_in_flight = true;

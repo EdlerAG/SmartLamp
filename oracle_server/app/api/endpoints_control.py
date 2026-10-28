@@ -1,13 +1,19 @@
 # Файл: oracle_server/app/api/endpoints_control.py
 import os
 import secrets
-from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
 from app.core.config import settings
 from app.core.security import verify_access
 from app.core.memory_guard import memory_guard
-from app.domain.schemas import CommandPayload, AiPersonaConfigRequest, AiAskRequest, LoginRequest
+from app.domain.schemas import (
+    CommandPayload,
+    AiPersonaConfigRequest,
+    AiAskRequest,
+    LoginRequest,
+    SpotifyActionRequest,
+)
 from app.services.database_service import db_service
 from app.services.state_service import state_service
 from app.services.blackout_service import blackout_service
@@ -15,6 +21,7 @@ from app.services.ota_service import ota_service
 from app.services.media_service import media_service
 from app.services.weather_ai_service import weather_ai_service
 from app.services.audio_service import audio_service
+from app.services.spotify_service import spotify_service
 from app.web.portal_html import PORTAL_HTML
 
 router = APIRouter(tags=["Web Studio & Remote Control v5.0"])
@@ -46,12 +53,12 @@ async def get_full_cloud_state(hours: int = 24, _: str = Depends(verify_access))
         "climate_history": db_service.get_climate_series(hours=hours),
         "blackout": blackout_service.get_status(),
         "custom_media": db_service.list_custom_media(),
+        "spotify": spotify_service.get_cached_state(),
         "ai_persona": {
             "name": state_service.ai_persona_name,
             "prompt": state_service.ai_system_prompt,
             "temperature": state_service.ai_temperature,
         },
-        "quantcore": state_service.get_quantcore_summary(),
         "resources": memory_guard.get_telemetry(),
     }
 
@@ -85,17 +92,29 @@ async def upload_custom_media(
     request: Request,
     save_name: str = "",
     reaction_slot: int = 0,
+    set_as_saver: bool = False,
     file: UploadFile = File(...),
     _: str = Depends(verify_access),
 ):
-    meta = await media_service.handle_upload(file, str(request.base_url), save_name=save_name, reaction_slot=reaction_slot)
+    meta = await media_service.handle_upload(
+        file,
+        str(request.base_url),
+        save_name=save_name,
+        reaction_slot=reaction_slot,
+        set_as_saver=set_as_saver,
+    )
     return {"ok": True, **meta}
 
 
 @router.post("/api/v1/media/sticker/{name}")
 @router.post("/api/v5/media/trigger/{name}")
-async def trigger_saved_media(name: str, request: Request, _: str = Depends(verify_access)):
-    return media_service.trigger_saved_media(name, str(request.base_url))
+async def trigger_saved_media(
+    name: str,
+    request: Request,
+    saver: bool = Query(False, description="Встановити як постійну заставку (Вікно 2)"),
+    _: str = Depends(verify_access),
+):
+    return media_service.trigger_saved_media(name, str(request.base_url), set_as_saver=saver)
 
 
 @router.post("/api/v5/media/bind")
@@ -114,6 +133,43 @@ async def delete_custom_media(name: str, _: str = Depends(verify_access)):
             pass
     memory_guard.recalculate_disk_usage()
     return {"ok": True, "deleted": name}
+
+
+@router.get("/api/v5/spotify/login")
+async def get_spotify_login(request: Request, _: str = Depends(verify_access)):
+    url = spotify_service.get_authorize_url(str(request.base_url))
+    return {"ok": True, "auth_url": url}
+
+
+@router.get("/api/v5/spotify/callback", response_class=HTMLResponse)
+async def spotify_oauth_callback(code: str, request: Request):
+    ok = await spotify_service.handle_callback(code, str(request.base_url))
+    if ok:
+        return HTMLResponse(
+            "<html><body style='background:#08090C;color:#52B788;font-family:sans-serif;text-align:center;padding:50px;'>"
+            "<h2>✨ Spotify успішно підключено!</h2>"
+            "<p>Тепер альбомні обкладинки транслюються на вінілову заставку шкатулки.</p>"
+            "<script>setTimeout(() => window.location.href='/', 1500);</script>"
+            "</body></html>"
+        )
+    return HTMLResponse(
+        "<html><body style='background:#08090C;color:#E63946;font-family:sans-serif;text-align:center;padding:50px;'>"
+        "<h2>❌ Помилка авторизації Spotify</h2>"
+        "<p>Перевірте Client ID та Client Secret у налаштуваннях.</p>"
+        "</body></html>",
+        status_code=400,
+    )
+
+
+@router.post("/api/v5/spotify/action")
+async def spotify_action(req: SpotifyActionRequest, _: str = Depends(verify_access)):
+    ok = await spotify_service.player_action(req.action)
+    return {"ok": ok, "state": spotify_service.get_cached_state()}
+
+
+@router.get("/api/v5/spotify/state")
+async def get_spotify_state(_: str = Depends(verify_access)):
+    return {"ok": True, "spotify": spotify_service.get_cached_state()}
 
 
 @router.post("/api/v1/audio/upload-sound")

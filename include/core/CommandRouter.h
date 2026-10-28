@@ -16,12 +16,12 @@ private:
     }
 
 public:
-    static const char* getModeNameAscii(uint8_t mode) {
+    static const char* getModeNameShortUa(uint8_t mode) {
         static const char* const names[TOTAL_LIGHT_MODES] = {
-            "WARM COZY",   "CANDLE LIGHT", "AMBER EMBER",
-            "FIREPLACE",   "SUNSET VIBE",  "SAKURA NEON",
-            "AURORA WAVE", "OCEAN BREEZE", "CYBER RUNNER",
-            "RAINBOW FLOW","LIGHT OFF"
+            "Теплий затишок", "Жива свічка",     "Бурштин",
+            "Камін з іскрами","Захід сонця",     "Сакура Неон",
+            "Північне сяйво", "Океанський бриз", "Кібер-комета",
+            "Веселка",        "Вимкнено",        "Spotify Ambi"
         };
         return names[mode % TOTAL_LIGHT_MODES];
     }
@@ -38,7 +38,8 @@ public:
             "🌊 Океанський бриз",
             "⚡ Кібер-комета",
             "🌈 Веселка",
-            "🌑 Вимкнено"
+            "🌑 Вимкнено",
+            "🎵 Spotify AmbiLight"
         };
         return names_ua[mode % TOTAL_LIGHT_MODES];
     }
@@ -130,7 +131,7 @@ public:
 
     static void pushMessage(AppState& state, const char* sender, const char* text) {
         state.setTelegramData(sender, text);
-        state.screen_mode = SCREEN_TELEGRAM;
+        state.screen_mode = SCREEN_SMART_HUB;
         state.triggerLedNotification(NOTIFY_CYAN_WAVE, false);
     }
 
@@ -140,19 +141,27 @@ public:
 
         bool ack_flag = false;
         uint8_t ping_val = 0;
+        int8_t sp_act = 0;
+
+        portENTER_CRITICAL(&state.mux);
         if (state.oracle_online && state.oracle_manages_bot) {
             ack_flag = state.cmd_send_tg_ack;
             ping_val = state.cmd_send_meme_ping;
             state.cmd_send_tg_ack    = false;
             state.cmd_send_meme_ping = 0;
         }
+        sp_act = state.cmd_spotify_action;
+        state.cmd_spotify_action = 0;
+        portEXIT_CRITICAL(&state.mux);
 
         snprintf(out, max_len,
                  "{\"fw\":\"%s\",\"t\":%.1f,\"h\":%.0f,\"p\":%.0f,\"p_diff\":%.1f,\"l\":%d,"
                  "\"m\":%d,\"m_name\":\"%s\","
                  "\"auto_b\":%s,\"b_idx\":%d,\"b_pct\":%d,"
                  "\"sleep_m\":%u,\"scr\":%d,\"rssi\":%d,\"time\":\"%s\","
-                 "\"unread\":%s,\"inbox_cnt\":%u,\"oracle\":%s,\"heap\":%lu,"
+                 "\"unread\":%s,\"inbox_cnt\":%u,\"oracle\":%s,"
+                 "\"sp_act\":%d,\"sp_playing\":%s,"
+                 "\"heap\":%lu,\"psram_free\":%lu,"
                  "\"ack\":%s,\"ping\":%u}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
@@ -160,21 +169,23 @@ public:
                  state.auto_brt ? "true" : "false", state.manual_brt_idx, state.getLedBrightnessPercent(),
                  state.getSleepTimerRemainingMin(), state.screen_mode, (int)state.wifi_rssi, t_str,
                  state.tg_unread ? "true" : "false", state.inbox_count,
-                 state.oracle_online ? "true" : "false", (unsigned long)ESP.getFreeHeap(),
+                 state.oracle_online ? "true" : "false",
+                 (int)sp_act, state.spotify.playing ? "true" : "false",
+                 (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
                  ack_flag ? "true" : "false", ping_val);
     }
 
     static void buildInboxJson(AppState& state, char* out, size_t max_len) {
         size_t pos = snprintf(out, max_len, "{\"unread\":%s,\"messages\":[", state.tg_unread ? "true" : "false");
         for (uint8_t i = 0; i < state.inbox_count; i++) {
-            char raw_s[28], raw_m[64], tm[8];
+            char raw_s[36], raw_m[128], tm[8];
             portENTER_CRITICAL(&state.mux);
             strncpy(raw_s, state.inbox[i].sender, sizeof(raw_s) - 1); raw_s[sizeof(raw_s) - 1] = '\0';
             strncpy(raw_m, state.inbox[i].text, sizeof(raw_m) - 1);   raw_m[sizeof(raw_m) - 1] = '\0';
             strncpy(tm, state.inbox[i].time_received, sizeof(tm) - 1); tm[sizeof(tm) - 1] = '\0';
             portEXIT_CRITICAL(&state.mux);
 
-            char safe_s[28], safe_m[64];
+            char safe_s[36], safe_m[128];
             sanitizeJsonStr(raw_s, safe_s, sizeof(safe_s));
             sanitizeJsonStr(raw_m, safe_m, sizeof(safe_m));
 

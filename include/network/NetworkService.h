@@ -92,7 +92,7 @@ private:
         state.ap_clients     = 0;
         state.wifi_sleeping  = false;
         state.setNetworkInfo(Config::AP_SSID, WiFi.softAPIP().toString().c_str());
-        state.screen_mode = SCREEN_NETWORK;
+        state.sys_ui_state = SystemUiState::SYS_ONBOARDING_WIZARD;
         state.registerActivity();
         net_mode = NetMode::AP_PORTAL;
     }

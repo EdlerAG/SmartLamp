@@ -9,6 +9,7 @@ from app.services.weather_ai_service import weather_ai_service
 from app.services.audio_service import audio_service
 from app.services.ota_service import ota_service
 from app.services.media_service import media_service
+from app.services.spotify_service import spotify_service
 
 ADMIN_KB = {
     "keyboard": [
@@ -112,9 +113,10 @@ class TelegramBotService:
 
     @staticmethod
     def _bind_slot_inline_kb(media_name: str) -> Dict[str, Any]:
-        """Інлайн-меню для миттєвого закріплення надісланої гіфки/наліпки за кнопкою реакції."""
+        """Інлайн-меню для закріплення надісланої гіфки/наліпки або встановлення заставкою."""
         return {
             "inline_keyboard": [
+                [{"text": "🖼 Зробити постійною Заставкою (Вікно 2)", "callback_data": f"saver:{media_name}"}],
                 [
                     {"text": "📌 На 🔥 Вогник", "callback_data": f"bind:{media_name}:2"},
                     {"text": "📌 На ⚡ Блискавку", "callback_data": f"bind:{media_name}:3"},
@@ -165,15 +167,10 @@ class TelegramBotService:
         ram_mb = memory_guard.get_rss_mb()
         status_icon = "🟢 ОНЛАЙН" if online else "🌙 ОФЛАЙН (Блекаут / Черга активна)"
 
-        qc = state_service.get_quantcore_summary()
-        qc_line = ""
-        if qc and qc.get("online"):
-            qc_line = f"\n📈 QuantCore V23: ${qc['total_equity']:,.2f} ({qc['unrealized_pnl']:+.2f}$) | {qc['top_leader']}"
-
         if not d:
             return (
                 f"🪄 MagicBox Sovereign Cloud v5.0\n"
-                f"Статус: {status_icon} | RAM сервера: {ram_mb:.1f} MB{qc_line}\n"
+                f"Статус: {status_icon} | RAM сервера: {ram_mb:.1f} MB\n"
                 f"Очікую підключення шкатулки..."
             )
 
@@ -188,7 +185,7 @@ class TelegramBotService:
             f"🧭 Барометр: {d.get('p', 0):.0f} мм ({d.get('p_diff', 0):+.1f})\n"
             f"🧠 Дух ШІ: {state_service.ai_persona_name}\n"
             f"⚙️ FW: {d.get('fw', '--')} | 📶 {d.get('rssi', 0)} dBm | Server RAM: {ram_mb:.1f} MB"
-            f"{qc_line}\n"
+            f"\n"
             f"💬 Надішли будь-який GIF, наліпку, фото, голосове або /persona [опис]!"
         )
 
@@ -220,6 +217,55 @@ class TelegramBotService:
 
         state_service.enqueue_raw(cmd_data)
         return custom_note
+
+    @staticmethod
+    def _build_spotify_view(base_url: str = "") -> tuple[str, Dict[str, Any]]:
+        sp = spotify_service.get_cached_state()
+        auth_url = spotify_service.get_authorize_url(base_url)
+
+        if not db_service.get_setting("spotify_refresh_token", ""):
+            text = (
+                "🎵 <b>SPOTIFY VINYL HUB</b>\n\n"
+                "Spotify акаунт ще не підключено.\n"
+                "Натисніть кнопку нижче, щоб авторизуватися через Spotify:"
+            )
+            kb = {
+                "inline_keyboard": [
+                    [{"text": "🔗 Підключити Spotify", "url": auth_url or "https://accounts.spotify.com"}],
+                    [{"text": "🔄 Перевірити статус", "callback_data": "spotify:refresh"}],
+                ]
+            }
+            return text, kb
+
+        playing = sp.get("playing", False)
+        title = sp.get("title", "Невідомий трек")
+        artist = sp.get("artist", "Невідомий виконавець")
+        prog_s = sp.get("progress_ms", 0) // 1000
+        dur_s = sp.get("duration_ms", 0) // 1000
+
+        status_sym = "▶️ Грає" if playing else "⏸ На паузі"
+        text = (
+            f"🎵 <b>SPOTIFY VINYL HUB</b>\n\n"
+            f"Статус: {status_sym}\n"
+            f"Трек: <b>{title}</b>\n"
+            f"Виконавець: <i>{artist}</i>\n"
+            f"Час: {prog_s//60:02d}:{prog_s%60:02d} / {dur_s//60:02d}:{dur_s%60:02d}\n"
+        )
+        toggle_lbl = "⏸ Пауза" if playing else "▶️ Пуск"
+        kb = {
+            "inline_keyboard": [
+                [
+                    {"text": "⏮ Назад", "callback_data": "spotify:previous"},
+                    {"text": toggle_lbl, "callback_data": "spotify:toggle"},
+                    {"text": "⏭ Далі", "callback_data": "spotify:next"},
+                ],
+                [
+                    {"text": "🔄 Оновити", "callback_data": "spotify:refresh"},
+                    {"text": "🔗 Перепідключити", "url": auth_url or "https://accounts.spotify.com"},
+                ],
+            ]
+        }
+        return text, kb
 
     async def _handle_callback(self, cb: Dict[str, Any]) -> None:
         cb_id = cb.get("id", "")
@@ -283,6 +329,37 @@ class TelegramBotService:
                 "message_id": msg_id,
                 "text": f"✅ Кастомну анімацію «{m_name}» тепер прив'язано до реакції {slot_names.get(slot)}!",
                 "reply_markup": self._gallery_inline_kb(),
+            })
+
+        elif data.startswith("saver:"):
+            m_name = data.split(":", 1)[1]
+            try:
+                res = media_service.trigger_saved_media(m_name, settings.PUBLIC_SERVER_URL, set_as_saver=True)
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🖼 Збережено як заставку (Вікно 2)!"})
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": f"🖼 Анімацію «{m_name}» встановлено як постійну заставку (Вікно 2)!\nШкатулка збереже її у LittleFS.",
+                })
+            except Exception:
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "❌ Файл не знайдено"})
+
+        elif data.startswith("spotify:"):
+            act = data.split(":", 1)[1]
+            if act == "refresh":
+                pass
+            elif act == "toggle":
+                cur_p = spotify_service.get_cached_state().get("playing", False)
+                await spotify_service.player_action("pause" if cur_p else "play")
+            else:
+                await spotify_service.player_action(act)
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🎵 Spotify оновлено"})
+            sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": sp_t,
+                "parse_mode": "HTML",
+                "reply_markup": sp_k,
             })
 
         elif data.startswith("play_mbx:"):
@@ -503,6 +580,25 @@ class TelegramBotService:
             await self._api("sendMessage", {"chat_id": chat_id, "text": self._build_status_text(), "reply_markup": active_kb})
             return
 
+        if text.startswith("/ota_status") or text.startswith("/ota"):
+            meta = ota_service.get_metadata(settings.PUBLIC_SERVER_URL)
+            if meta["available"]:
+                import datetime
+                dt_str = datetime.datetime.fromtimestamp(meta["uploaded_at"]).strftime("%Y-%m-%d %H:%M:%S")
+                txt = (
+                    f"🚀 СТАН СИСТЕМИ ОНОВЛЕНЬ (OTA v3.8)\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📦 Розмір: {meta['size']} байт ({meta['size'] / 1024:.1f} KB)\n"
+                    f"🔑 SHA256: `{meta['sha256']}`\n"
+                    f"🕒 Завантажено: {dt_str}\n"
+                    f"🌐 URL: `{meta['download_url']}`\n\n"
+                    f"💡 Щоб прошити лампу: надішли .bin файл у цей чат."
+                )
+            else:
+                txt = "🚀 OTA СТАН: На сервері немає завантаженої прошивки.\nНадішли .bin файл прямо у цей чат!"
+            await self._api("sendMessage", {"chat_id": chat_id, "text": txt, "reply_markup": active_kb})
+            return
+
         if text.startswith("/status") or "Стан" in text:
             await self._api("sendMessage", {"chat_id": chat_id, "text": self._build_status_text(), "reply_markup": self._ai_personas_inline_kb()})
             return
@@ -530,6 +626,16 @@ class TelegramBotService:
                     "text": f"🧠 Поточна персона: {state_service.ai_persona_name}\nОбери готову або напиши `/persona [твій промпт]`:",
                     "reply_markup": self._ai_personas_inline_kb(),
                 })
+            return
+
+        if text.startswith("/spotify") or "spotify" in text.lower():
+            sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": sp_t,
+                "parse_mode": "HTML",
+                "reply_markup": sp_k,
+            })
             return
 
         if text.startswith("/modes") or "Режими" in text or "Свічка" in text:

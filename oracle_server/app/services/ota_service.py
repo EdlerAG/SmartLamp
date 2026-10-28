@@ -47,14 +47,14 @@ class OtaService:
 
         host = state_service.resolve_public_url(base_url)
         ota_url = f"{host}/api/v1/ota/firmware.bin?sha={self.last_sha256[:10]}"
-        state_service.enqueue_raw({"ota_url": ota_url})
+        state_service.enqueue_raw({"ota_url": ota_url, "ota_sha256": self.last_sha256})
 
         return {
             "ok": True,
             "size": self.last_size,
             "sha256": self.last_sha256,
             "ota_url": ota_url,
-            "status": "Queued for MagicBox v5.0",
+            "status": "Queued for MagicBox v3.8",
         }
 
     async def save_and_queue_firmware(self, file: UploadFile, base_url: str) -> Dict[str, Any]:
