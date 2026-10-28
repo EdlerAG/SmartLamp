@@ -204,37 +204,37 @@ class NastyaRoutineService:
         from app.services.weather_ai_service import weather_ai_service
         try:
             weather = await weather_ai_service.get_combined_weather()
-            outdoor = weather.get("outdoor", {})
-            temp = outdoor.get("temperature", 15.0)
-            desc = outdoor.get("weather_desc", "ясно")
-            is_rain = outdoor.get("is_rain", False)
-            wind = outdoor.get("windspeed", 10.0)
+            temp = float(weather.get("outdoor_temp", 15.0))
+            desc = weather.get("weather_desc", "ясно")
+            rain_prob = int(weather.get("rain_prob_6h", 0))
+            is_rain = rain_prob >= 45 or weather.get("weather_code", 0) >= 51
+            wind = float(weather.get("wind_kmh", 5.0))
 
-            # Формуємо теплу та турботливу пораду
+            # Формуємо практичну пораду щодо одягу
             clothes = ""
             if temp < 5:
-                clothes = "Одягай найтепліше зимове пальто або пуховик, шапку і шарф ❄️"
+                clothes = "Одягай найтепліше пальто або пуховик, шапку і шарф ❄️"
             elif temp < 12:
                 clothes = "Сьогодні прохолодно — чудово підійде тепле пальто або куртка з шарфом 🧥"
             elif temp < 18:
-                clothes = "Погода приємна: легка куртка, улюблений светр або тренч будуть ідеальними ✨"
+                clothes = "Погода комфортна: куртка, светр або тренч будуть якраз доречними ✨"
             else:
-                clothes = "На вулиці справжнє тепло! Можна сміливо вдягати футболку, сорочку чи кардиган ☀️"
+                clothes = "На вулиці тепло! Можна сміливо вдягати легкий одяг ☀️"
 
-            umbrella = " Обов'язково візьми парасольку — обіцяють дощ! ☂️" if is_rain else " Дощу не очікується, парасольку можна залишити вдома 😊"
-            wind_tip = " На вулиці досить вітряно, застібайся щільніше 💨" if wind > 25 else ""
+            umbrella = " Обов'язково візьми парасольку — висока ймовірність дощу ☂️" if is_rain else " Дощу не очікується, парасолька не знадобиться."
+            wind_tip = f" Вітряно ({wind:.0f} км/год), застібайся щільніше 💨" if wind > 20 else ""
 
             text = (
                 f"☀️ <b>Доброго ранку, Настю!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"За вікном зараз: <b>{temp:+.1f}°C</b>, {desc}.\n"
                 f"{clothes}{umbrella}{wind_tip}\n\n"
-                f"Чудового та натхненного тобі дня! 🪄"
+                f"Продуктивного та гарного тобі дня!"
             )
             return text
         except Exception as e:
             logger.warning("Morning brief generation error: %s", e)
-            return "☀️ Доброго ранку, Настю! Затишного і чудового тобі дня! 🪄"
+            return "☀️ Доброго ранку, Настю! Продуктивного та гарного тобі дня!"
 
 
 nastya_routine_service = NastyaRoutineService()

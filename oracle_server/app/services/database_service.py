@@ -98,6 +98,18 @@ class DatabaseService:
                 expires_at FLOAT NOT NULL
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS calendar_events (
+                id VARCHAR(64) PRIMARY KEY,
+                summary TEXT NOT NULL,
+                start_ts FLOAT NOT NULL,
+                end_ts FLOAT DEFAULT 0,
+                time_str VARCHAR(16) NOT NULL,
+                date_str VARCHAR(16) NOT NULL,
+                source VARCHAR(16) DEFAULT 'manual',
+                created_at FLOAT NOT NULL
+            );
+        """)
         conn.commit()
 
     # --- СЕСІЇ ТА АВТОРИЗАЦІЯ ---
@@ -341,6 +353,114 @@ class DatabaseService:
             return str(row["file_path"])
         except Exception as e:
             logger.error("delete_custom_media error: %s", e)
+            return None
+
+    # --- КАЛЕНДАР ТА РОЗКЛАД НАСТІ (УНІФІКОВАНА СИНХРОНІЗАЦІЯ) ---
+    def save_calendar_event(
+        self,
+        event_id: str,
+        summary: str,
+        start_ts: float,
+        end_ts: float = 0.0,
+        time_str: str = "--:--",
+        date_str: str = "",
+        source: str = "manual",
+    ) -> Dict[str, Any]:
+        now = time.time()
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                """
+                INSERT INTO calendar_events (id, summary, start_ts, end_ts, time_str, date_str, source, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    summary = excluded.summary,
+                    start_ts = excluded.start_ts,
+                    end_ts = excluded.end_ts,
+                    time_str = excluded.time_str,
+                    date_str = excluded.date_str,
+                    source = excluded.source
+                """,
+                (event_id, summary, start_ts, end_ts, time_str, date_str, source, now),
+            )
+            conn.commit()
+            return {
+                "id": event_id,
+                "summary": summary,
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+                "time_str": time_str,
+                "date_str": date_str,
+                "source": source,
+            }
+        except Exception as e:
+            logger.error("save_calendar_event error: %s", e)
+            return {"id": event_id, "summary": summary}
+
+    def delete_calendar_event(self, event_id: str) -> bool:
+        try:
+            conn = self._get_conn()
+            cur = conn.execute("DELETE FROM calendar_events WHERE id = ?", (event_id,))
+            conn.commit()
+            return cur.rowcount > 0
+        except Exception as e:
+            logger.error("delete_calendar_event error: %s", e)
+            return False
+
+    def list_upcoming_calendar_events(self, limit: int = 20) -> List[Dict[str, Any]]:
+        now = time.time()
+        # Показуємо події, які ще не завершились (з запасом 30 хвилин після початку)
+        cutoff = now - 1800.0
+        try:
+            conn = self._get_conn()
+            rows = conn.execute(
+                """
+                SELECT id, summary, start_ts, end_ts, time_str, date_str, source
+                FROM calendar_events
+                WHERE start_ts >= ?
+                ORDER BY start_ts ASC
+                LIMIT ?
+                """,
+                (cutoff, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception as e:
+            logger.warning("list_upcoming_calendar_events error: %s", e)
+            return []
+
+    def get_next_calendar_event(self) -> Optional[Dict[str, Any]]:
+        now = time.time()
+        cutoff = now - 600.0  # подія ще активна протягом 10 хв після старту
+        try:
+            conn = self._get_conn()
+            row = conn.execute(
+                """
+                SELECT id, summary, start_ts, end_ts, time_str, date_str, source
+                FROM calendar_events
+                WHERE start_ts >= ?
+                ORDER BY start_ts ASC
+                LIMIT 1
+                """,
+                (cutoff,),
+            ).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            diff_sec = d["start_ts"] - now
+            min_until = int(diff_sec // 60)
+            return {
+                "id": d["id"],
+                "summary": d["summary"][:32],
+                "time": d["time_str"],
+                "date": d["date_str"],
+                "start_ts": d["start_ts"],
+                "is_today": True,
+                "is_soon": (0 <= diff_sec <= 900),  # <= 15 хвилин
+                "min_until": max(0, min_until),
+                "source": d["source"],
+            }
+        except Exception as e:
+            logger.warning("get_next_calendar_event error: %s", e)
             return None
 
 

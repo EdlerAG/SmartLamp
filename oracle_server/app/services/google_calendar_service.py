@@ -2,6 +2,7 @@
 import time
 import datetime
 import urllib.parse
+import secrets
 from typing import Dict, Any, Optional, List
 import httpx
 
@@ -13,10 +14,10 @@ from app.services.state_service import state_service
 
 class GoogleCalendarService:
     """
-    Zero-Knowledge особистий Google Календар для Насті:
-    - OAuth2 Code Flow (авторизація з правами readonly до подій).
-    - Отримує виключно найближчу 1 подію для виведення на картку Smart Hub лампи.
-    - Повна ізоляція: список усіх подій календаря не зберігається і недоступний в адмін-панелі.
+    Уніфікований сервіс Календаря Насті (v5.3):
+    - Підтримка Google Calendar OAuth2 (читання + запис подій).
+    - Вбудована SQLite база подій для швидкого додавання через Telegram-бота / окремого бота календаря.
+    - Автоматичне злиття та дедуплікація подій: найближча подія миттєво з'являється на лампі (Smart Hub).
     """
 
     __slots__ = ("_access_token", "_token_expires_at", "_cached_event", "_last_poll_time")
@@ -24,7 +25,7 @@ class GoogleCalendarService:
     AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
     TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
     CALENDAR_API = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
-    SCOPES = "https://www.googleapis.com/auth/calendar.events.readonly"
+    SCOPES = "https://www.googleapis.com/auth/calendar.events"
 
     def __init__(self) -> None:
         self._access_token: Optional[str] = None
@@ -82,6 +83,7 @@ class GoogleCalendarService:
                 saved = db_service.get_setting("google_calendar_tokens", {})
                 saved["refresh_token"] = payload.get("refresh_token", saved.get("refresh_token", ""))
                 db_service.set_setting("google_calendar_tokens", saved)
+                self._cached_event = None
                 logger.info("Google Calendar successfully linked for Nastya!")
                 return True
         except Exception as e:
@@ -121,18 +123,12 @@ class GoogleCalendarService:
             logger.warning("Google token refresh exception: %s", e)
             return False
 
-    async def get_next_event(self) -> Optional[Dict[str, Any]]:
-        """
-        Отримує виключно 1 найближчу подію для Smart Hub картки на лампі.
-        Кешується на 5 хвилин для мінімізації навантаження та повної приватності.
-        """
+    async def _fetch_google_next_event(self) -> Optional[Dict[str, Any]]:
+        """Отримує найближчу подію з Google Calendar API."""
         if not self.is_linked():
             return None
 
         now = time.time()
-        if self._cached_event and (now - self._last_poll_time < 300.0):
-            return self._cached_event
-
         if not self._access_token or now >= self._token_expires_at:
             ok = await self._refresh_access_token()
             if not ok:
@@ -152,11 +148,8 @@ class GoogleCalendarService:
                 res = await client.get(self.CALENDAR_API, params=params, headers=headers)
                 if res.status_code != 200:
                     return None
-                data = res.json()
-                items = data.get("items", [])
+                items = res.json().get("items", [])
                 if not items:
-                    self._cached_event = None
-                    self._last_poll_time = now
                     return None
 
                 item = items[0]
@@ -165,12 +158,13 @@ class GoogleCalendarService:
 
                 start_ts = now
                 time_display = "--:--"
+                date_display = ""
                 if start_raw:
                     try:
-                        # Обробка формату ISO 8601 (з часовим поясом або UTC Z)
-                        dt = datetime.datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+                        dt = datetime.datetime.fromisoformat(str(start_raw).replace("Z", "+00:00"))
                         start_ts = dt.timestamp()
                         time_display = dt.strftime("%H:%M")
+                        date_display = dt.strftime("%d.%m")
                     except Exception:
                         if "T" in str(start_raw):
                             time_display = str(start_raw).split("T")[1][:5]
@@ -178,73 +172,199 @@ class GoogleCalendarService:
                 diff_sec = start_ts - now
                 min_until = int(diff_sec // 60)
 
-                self._cached_event = {
+                return {
+                    "id": item.get("id", f"g_{int(start_ts)}"),
                     "summary": summary[:32],
                     "time": time_display,
+                    "date": date_display,
+                    "start_ts": start_ts,
                     "is_today": True,
-                    "is_soon": (0 <= diff_sec <= 15 * 60),
+                    "is_soon": (0 <= diff_sec <= 900),  # <= 15 хвилин
                     "min_until": max(0, min_until),
+                    "source": "google",
                 }
-                self._last_poll_time = now
-                return self._cached_event
         except Exception as e:
             logger.warning("Google Calendar fetch error: %s", e)
             return None
 
-    async def get_upcoming_events(self, max_results: int = 10) -> List[Dict[str, Any]]:
+    async def get_next_event(self) -> Optional[Dict[str, Any]]:
         """
-        Отримує розклад подій для адміністратора (Ярослава).
-        Використовує збережений refresh_token Насті.
+        Уніфікований пошук найближчої події:
+        Порівнює події з Google Calendar та локальної SQLite бази, повертаючи найбільш актуальну.
+        Кешується на 90 секунд.
         """
-        if not self.is_linked():
-            return []
-
         now = time.time()
-        if not self._access_token or now >= self._token_expires_at:
-            ok = await self._refresh_access_token()
-            if not ok:
-                return []
+        if self._cached_event and (now - self._last_poll_time < 90.0):
+            # Перераховуємо динамічні прапорці diff_sec та is_soon
+            diff_sec = self._cached_event.get("start_ts", now) - now
+            self._cached_event["is_soon"] = (0 <= diff_sec <= 900)
+            self._cached_event["min_until"] = max(0, int(diff_sec // 60))
+            return self._cached_event
 
-        now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
-        params = {
-            "timeMin": now_iso,
-            "maxResults": str(min(50, max(1, max_results))),
-            "singleEvents": "true",
-            "orderBy": "startTime",
-        }
-        headers = {"Authorization": f"Bearer {self._access_token}"}
+        google_ev = await self._fetch_google_next_event() if self.is_linked() else None
+        db_ev = db_service.get_next_calendar_event()
 
-        try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                res = await client.get(self.CALENDAR_API, params=params, headers=headers)
-                if res.status_code != 200:
-                    return []
-                data = res.json()
-                items = data.get("items", [])
-                result = []
-                for item in items:
-                    summary = item.get("summary", "Без назви")
-                    start_raw = item.get("start", {}).get("dateTime") or item.get("start", {}).get("date")
-                    time_display = "--:--"
-                    date_display = ""
-                    if start_raw:
-                        try:
-                            dt = datetime.datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
-                            time_display = dt.strftime("%H:%M")
-                            date_display = dt.strftime("%d.%m")
-                        except Exception:
-                            if "T" in str(start_raw):
-                                time_display = str(start_raw).split("T")[1][:5]
-                    result.append({
-                        "summary": summary,
-                        "date": date_display,
-                        "time": time_display,
-                        "start_raw": start_raw,
-                    })
-                return result
-        except Exception as e:
-            logger.warning("Error fetching upcoming calendar events: %s", e)
-            return []
+        chosen = None
+        if google_ev and db_ev:
+            chosen = google_ev if google_ev["start_ts"] <= db_ev["start_ts"] else db_ev
+        elif google_ev:
+            chosen = google_ev
+        elif db_ev:
+            chosen = db_ev
+
+        self._cached_event = chosen
+        self._last_poll_time = now
+        return chosen
+
+    async def create_event(
+        self,
+        summary: str,
+        start_dt: datetime.datetime,
+        end_dt: Optional[datetime.datetime] = None,
+        description: str = "",
+        source: str = "manual",
+    ) -> Dict[str, Any]:
+        """
+        Створює подію:
+        1. Зберігає у локальну SQLite базу (для миттєвої синхронізації з лампою).
+        2. Якщо Google Calendar підключено — синхронізує її в офіційний Google Calendar.
+        """
+        if end_dt is None:
+            end_dt = start_dt + datetime.timedelta(hours=1)
+
+        start_ts = start_dt.timestamp()
+        end_ts = end_dt.timestamp()
+        time_str = start_dt.strftime("%H:%M")
+        date_str = start_dt.strftime("%Y-%m-%d")
+        event_id = f"ev_{int(start_ts)}_{secrets.token_hex(4)}"
+
+        # 1. Запис у Google Calendar (якщо прив'язано)
+        if self.is_linked():
+            now = time.time()
+            if not self._access_token or now >= self._token_expires_at:
+                await self._refresh_access_token()
+
+            if self._access_token:
+                body = {
+                    "summary": summary,
+                    "description": description or "Додано через SmartLamp Workspace",
+                    "start": {"dateTime": start_dt.isoformat()},
+                    "end": {"dateTime": end_dt.isoformat()},
+                }
+                headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
+                try:
+                    async with httpx.AsyncClient(timeout=8.0) as client:
+                        res = await client.post(self.CALENDAR_API, json=body, headers=headers)
+                        if res.status_code in (200, 201):
+                            g_data = res.json()
+                            event_id = g_data.get("id", event_id)
+                            source = "google"
+                            logger.info("Event successfully created in Google Calendar: %s", summary)
+                except Exception as e:
+                    logger.warning("Failed to push event to Google Calendar: %s", e)
+
+        # 2. Збереження у локальну SQLite базу
+        saved = db_service.save_calendar_event(
+            event_id=event_id,
+            summary=summary,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            time_str=time_str,
+            date_str=date_str,
+            source=source,
+        )
+
+        # Очищуємо кеш найближчої події для миттєвого відображення на лампі
+        self._cached_event = None
+        return saved
+
+    async def delete_event(self, event_id: str) -> bool:
+        """Видаляє подію з бази та Google Calendar."""
+        db_service.delete_calendar_event(event_id)
+        if self.is_linked() and self._access_token and not event_id.startswith("ev_"):
+            try:
+                headers = {"Authorization": f"Bearer {self._access_token}"}
+                url = f"{self.CALENDAR_API}/{event_id}"
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    await client.delete(url, headers=headers)
+            except Exception as e:
+                logger.warning("Failed to delete event from Google Calendar: %s", e)
+
+        self._cached_event = None
+        return True
+
+    async def get_upcoming_events(self, max_results: int = 15) -> List[Dict[str, Any]]:
+        """Повертає об'єднаний список майбутніх подій із сортуванням за часом."""
+        events: List[Dict[str, Any]] = []
+
+        # 1. Події з Google Calendar
+        if self.is_linked():
+            now = time.time()
+            if not self._access_token or now >= self._token_expires_at:
+                await self._refresh_access_token()
+
+            if self._access_token:
+                now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+                params = {
+                    "timeMin": now_iso,
+                    "maxResults": str(min(30, max_results)),
+                    "singleEvents": "true",
+                    "orderBy": "startTime",
+                }
+                headers = {"Authorization": f"Bearer {self._access_token}"}
+                try:
+                    async with httpx.AsyncClient(timeout=8.0) as client:
+                        res = await client.get(self.CALENDAR_API, params=params, headers=headers)
+                        if res.status_code == 200:
+                            for item in res.json().get("items", []):
+                                summary = item.get("summary", "Без назви")
+                                start_raw = item.get("start", {}).get("dateTime") or item.get("start", {}).get("date")
+                                time_display = "--:--"
+                                date_display = ""
+                                start_ts = now
+                                if start_raw:
+                                    try:
+                                        dt = datetime.datetime.fromisoformat(str(start_raw).replace("Z", "+00:00"))
+                                        start_ts = dt.timestamp()
+                                        time_display = dt.strftime("%H:%M")
+                                        date_display = dt.strftime("%d.%m")
+                                    except Exception:
+                                        pass
+                                events.append({
+                                    "id": item.get("id", ""),
+                                    "summary": summary,
+                                    "date": date_display,
+                                    "time": time_display,
+                                    "start_ts": start_ts,
+                                    "source": "google",
+                                })
+                except Exception as e:
+                    logger.warning("Error fetching upcoming Google events: %s", e)
+
+        # 2. Події з локальної SQLite бази (додані з Telegram / окремого бота)
+        db_events = db_service.list_upcoming_calendar_events(limit=max_results)
+        for ev in db_events:
+            events.append({
+                "id": ev["id"],
+                "summary": ev["summary"],
+                "date": ev.get("date_str", ""),
+                "time": ev.get("time_str", "--:--"),
+                "start_ts": ev["start_ts"],
+                "source": ev.get("source", "manual"),
+            })
+
+        # Дедуплікація за однаковою назвою та початковим часом (в межах 60 секунд)
+        seen = set()
+        deduped = []
+        # Сортуємо хронологічно
+        events.sort(key=lambda x: x.get("start_ts", 0))
+        for ev in events:
+            key = f"{ev['summary'].lower().strip()}_{int(ev.get('start_ts', 0) // 60)}"
+            if key not in seen:
+                seen.add(key)
+                deduped.append(ev)
+
+        return deduped[:max_results]
 
 
 google_calendar_service = GoogleCalendarService()

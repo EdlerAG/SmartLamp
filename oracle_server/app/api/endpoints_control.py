@@ -21,6 +21,7 @@ from app.domain.schemas import (
     SpotifyActionRequest,
     VolumeControlRequest,
     VoiceConfigRequest,
+    CreateCalendarEventRequest,
 )
 from app.services.database_service import db_service
 from app.services.state_service import state_service
@@ -373,7 +374,7 @@ async def get_google_status(_: str = Depends(verify_access)):
     return {
         "ok": True,
         "is_linked": google_calendar_service.is_linked(),
-        "next_event": await google_calendar_service.get_next_event() if google_calendar_service.is_linked() else None,
+        "next_event": await google_calendar_service.get_next_event(),
     }
 
 
@@ -381,6 +382,88 @@ async def get_google_status(_: str = Depends(verify_access)):
 async def disconnect_google(_: str = Depends(verify_access)):
     google_calendar_service.disconnect()
     return {"ok": True}
+
+
+# ====================================================================
+# УНІФІКОВАНИЙ КАЛЕНДАР ТА СИНХРОНІЗАЦІЯ ДЛЯ ЗОВНІШНІХ БОТІВ
+# ====================================================================
+
+@router.get("/api/v5/calendar/events")
+async def list_calendar_events(limit: int = Query(15, ge=1, le=50), _: str = Depends(verify_access)):
+    """Отримати об'єднаний список майбутніх подій (Google Calendar + Telegram бот)."""
+    events = await google_calendar_service.get_upcoming_events(max_results=limit)
+    next_ev = await google_calendar_service.get_next_event()
+    return {
+        "ok": True,
+        "is_linked": google_calendar_service.is_linked(),
+        "next_event": next_ev,
+        "events": events,
+    }
+
+
+@router.post("/api/v5/calendar/events")
+async def create_calendar_event(req: CreateCalendarEventRequest, _: str = Depends(verify_access)):
+    """
+    Додати нову подію в календар (з Google Calendar або окремого бота):
+    - Зберігає в базу.
+    - Синхронізує з Google Calendar (якщо підключено).
+    - Миттєво виводить на Smart Hub екран лампи, якщо подія найближча.
+    """
+    import datetime
+    now_dt = nastya_routine_service.get_kyiv_now()
+
+    # Парсинг дати та часу
+    target_date = req.date_str or now_dt.strftime("%Y-%m-%d")
+    try:
+        if "T" in req.time_str:
+            start_dt = datetime.datetime.fromisoformat(req.time_str.replace("Z", "+00:00"))
+        else:
+            parts = req.time_str.strip().split(":")
+            h, m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+            d_parts = list(map(int, target_date.split("-")))
+            start_dt = datetime.datetime(d_parts[0], d_parts[1], d_parts[2], h, m, tzinfo=now_dt.tzinfo)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Некоректний формат часу: {e}")
+
+    end_dt = start_dt + datetime.timedelta(minutes=req.duration_min or 60)
+    saved = await google_calendar_service.create_event(
+        summary=req.summary,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        description=req.description or "",
+        source=req.source or "api",
+    )
+    return {"ok": True, "event": saved}
+
+
+@router.delete("/api/v5/calendar/events/{event_id}")
+async def delete_calendar_event(event_id: str, _: str = Depends(verify_access)):
+    """Видалити подію за її ідентифікатором."""
+    ok = await google_calendar_service.delete_event(event_id)
+    return {"ok": ok}
+
+
+@router.post("/api/v5/calendar/sync")
+async def force_calendar_sync(_: str = Depends(verify_access)):
+    """Примусово оновити події з Google Calendar та оновити стан лампи."""
+    google_calendar_service._cached_event = None
+    next_ev = await google_calendar_service.get_next_event()
+    return {"ok": True, "next_event": next_ev}
+
+
+@router.post("/api/v5/dnd/toggle")
+async def toggle_dnd(enabled: Optional[bool] = None, _: str = Depends(verify_access)):
+    """Перемкнути режим DND (Не турбувати) зі збереженням та синхронізацією."""
+    cur_dnd = state_service.latest_telemetry.get("dnd", False)
+    new_dnd = not cur_dnd if enabled is None else bool(enabled)
+    state_service.enqueue_raw({
+        "dnd": new_dnd,
+        "muted": new_dnd,
+        "set_brt": "0" if new_dnd else "auto",
+        "sender": "DND",
+        "msg": "Режим DND увімкнено" if new_dnd else "Режим DND вимкнено",
+    })
+    return {"ok": True, "dnd": new_dnd}
 
 
 # ====================================================================

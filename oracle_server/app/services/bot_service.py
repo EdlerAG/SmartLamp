@@ -1,12 +1,15 @@
 import os
 import time
+import datetime
 import orjson
 import asyncio
-from typing import Optional, Dict, Any, List
+import re
+from typing import Optional, Dict, Any, List, Tuple
 
 from app.core.config import settings
 from app.core.http_client import http_pool
 from app.core.memory_guard import memory_guard
+from app.domain.schemas import CommandPayload
 from app.services.database_service import db_service
 from app.services.state_service import state_service, MODES_UA
 from app.services.weather_ai_service import weather_ai_service
@@ -21,19 +24,18 @@ from app.services.google_calendar_service import google_calendar_service
 
 ADMIN_KB = {
     "keyboard": [
-        [{"text": "🎨 Світло & Свічка"}, {"text": "🖼 Заставка & Гіфки"}, {"text": "🎵 Spotify Плеєр"}],
-        [{"text": "🔊 Гучність & Звук"}, {"text": "📊 Інфографіка & Стан"}, {"text": "📅 Розклад Насті"}],
-        [{"text": "🎂 Привітати з ДР"}, {"text": "📚 Фокус Pomodoro"}, {"text": "🩺 Здоров'я Лампи"}],
-        [{"text": "📦 Бекап БД"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
+        [{"text": "💡 Освітлення"}, {"text": "⏱ Фокус Pomodoro"}, {"text": "🎵 Spotify"}],
+        [{"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}, {"text": "🌙 Режим DND"}],
+        [{"text": "🔊 Гучність & Звук"}, {"text": "🩺 Діагностика лампи"}, {"text": "📦 Бекап БД"}],
     ],
     "resize_keyboard": True,
 }
 
 GIRL_KB = {
     "keyboard": [
-        [{"text": "🎨 Світло & Свічка"}, {"text": "🖼 Заставка & Гіфки"}, {"text": "🎵 Spotify Плеєр"}],
-        [{"text": "📚 Фокус Pomodoro"}, {"text": "🌅 Ранковий Гід"}, {"text": "🔊 Гучність & Звук"}],
-        [{"text": "📊 Інфографіка & Стан"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
+        [{"text": "💡 Освітлення"}, {"text": "⏱ Фокус Pomodoro"}, {"text": "🎵 Spotify"}],
+        [{"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}, {"text": "🌙 Режим DND"}],
+        [{"text": "🔊 Гучність & Звук"}, {"text": "🖼 Екран & Заставка"}, {"text": "🌤 Прогноз погоди"}],
     ],
     "resize_keyboard": True,
 }
@@ -113,10 +115,10 @@ class TelegramBotService:
                     {"text": f"{'✅ ' if not auto_b and b_idx == 1 else ''}☕ 35% М'яко", "callback_data": "brt:1"},
                 ],
                 [
-                    {"text": f"{'✅ ' if not auto_b and b_idx == 2 else ''}✨ 65% Комфорт", "callback_data": "brt:2"},
-                    {"text": f"{'✅ ' if not auto_b and b_idx == 3 else ''}☀️ 100% Макс", "callback_data": "brt:3"},
+                    {"text": f"{'✅ ' if not auto_b and b_idx == 2 else ''}✨ 65% Робота", "callback_data": "brt:2"},
+                    {"text": f"{'✅ ' if not auto_b and b_idx == 3 else ''}☀️ 100% Максимум", "callback_data": "brt:3"},
                 ],
-                [{"text": "🎨 До списку режимів...", "callback_data": "menu:modes"}],
+                [{"text": "💡 До вибору режимів...", "callback_data": "menu:modes"}],
             ]
         }
 
@@ -134,27 +136,7 @@ class TelegramBotService:
                     {"text": "⏳ 90 хв", "callback_data": "sleep:90"},
                     {"text": "❌ Скасувати", "callback_data": "sleep:0"},
                 ],
-                [{"text": "🎨 До списку режимів...", "callback_data": "menu:modes"}],
-            ]
-        }
-
-    @staticmethod
-    def _media_control_inline_kb(media_name: str) -> Dict[str, Any]:
-        return {
-            "inline_keyboard": [
-                [
-                    {"text": "♾ Крутиться постійно", "callback_data": "med_timer:0"},
-                    {"text": "⏹ Зупинити показ", "callback_data": "med_stop"},
-                ],
-                [
-                    {"text": "⏱ На 15 хв", "callback_data": "med_timer:15"},
-                    {"text": "⏱ На 1 год", "callback_data": "med_timer:60"},
-                    {"text": "⏱ На 3 год", "callback_data": "med_timer:180"},
-                ],
-                [
-                    {"text": "📌 Зробити заставкою (LittleFS)", "callback_data": f"med_saver:{media_name}"},
-                    {"text": "🎭 Галерея", "callback_data": "menu:gallery"},
-                ],
+                [{"text": "💡 До вибору режимів...", "callback_data": "menu:modes"}],
             ]
         }
 
@@ -165,7 +147,7 @@ class TelegramBotService:
         muted = d.get("muted", False)
         t_beep = d.get("t_beep", True)
         mute_lbl = "🔊 Увімкнути звук" if muted else "🔇 Без звуку (Mute)"
-        beep_lbl = f"🔘 Кліки: {'ВКЛ' if t_beep else 'ВИКЛ'}"
+        beep_lbl = f"🔘 Кліки кнопок: {'ВКЛ' if t_beep else 'ВИКЛ'}"
         return {
             "inline_keyboard": [
                 [
@@ -174,7 +156,7 @@ class TelegramBotService:
                 ],
                 [
                     {"text": f"{'✅ ' if not muted and 10 <= vol <= 14 else ''}☕ Комфорт (55%)", "callback_data": "vol:12"},
-                    {"text": f"{'✅ ' if not muted and vol >= 19 else ''}🔊 Гучно (95%)", "callback_data": "vol:20"},
+                    {"text": f"{'✅ ' if not muted and vol >= 19 else ''}🔊 Гучно (90%)", "callback_data": "vol:20"},
                 ],
                 [
                     {"text": "🔉 -10%", "callback_data": "vol:down"},
@@ -185,94 +167,102 @@ class TelegramBotService:
         }
 
     @staticmethod
-    def _reactions_quick_inline_kb() -> Dict[str, Any]:
-        return {
-            "inline_keyboard": [
-                [
-                    {"text": "🔥 Вогник", "callback_data": "react:2"},
-                    {"text": "⚡ Блискавка", "callback_data": "react:3"},
-                    {"text": "🐱 Мем-Кіт", "callback_data": "react:4"},
-                ],
-                [
-                    {"text": "👽 Пороблено", "callback_data": "react:5"},
-                    {"text": "👑 Корона", "callback_data": "react:6"},
-                ],
-            ]
-        }
-
-    @staticmethod
-    def _voice_config_inline_kb() -> Dict[str, Any]:
-        prov = audio_service.get_configured_tts_provider()
-        edge_v = audio_service.get_configured_edge_voice()
-        return {
-            "inline_keyboard": [
-                [
-                    {"text": f"{'✅ ' if prov == 'edge' and 'Ostap' in edge_v else ''}👨 Ostap (Чоловічий)", "callback_data": "voice_sel:uk-UA-OstapNeural"},
-                    {"text": f"{'✅ ' if prov == 'edge' and 'Polina' in edge_v else ''}👩 Polina (Жіночий)", "callback_data": "voice_sel:uk-UA-PolinaNeural"},
-                ],
-                [
-                    {"text": f"{'✅ ' if prov in ('elevenlabs', 'fish_audio') else ''}🎙 Клонований Голос Ярослава (API)", "callback_data": "voice_sel:clone"},
-                ],
-                [
-                    {"text": "🗣 Озвучити тестове вітання", "callback_data": "voice:test"},
-                ],
-            ]
-        }
-
-    @staticmethod
-    def _gallery_inline_kb() -> Dict[str, Any]:
-        media_list = db_service.list_custom_media()
-        visual_media = [m for m in media_list if m.get("media_type") != "sound" and not m.get("name", "").startswith("voice_")]
-        if not visual_media:
-            return {"inline_keyboard": [[{"text": "📭 Галерея порожня. Надішли гіфку!", "callback_data": "noop"}]]}
+    def _pomodoro_inline_kb() -> Dict[str, Any]:
+        st = nastya_routine_service.get_pomodoro_status()
+        active = st.get("active", False)
+        mode = st.get("mode", "idle")
+        rem_min = st.get("remaining_min", 0)
 
         rows = []
-        for i in range(0, min(len(visual_media), 10), 2):
-            m1 = visual_media[i]
-            r = [{"text": f"🎬 {m1['name'][:14]}", "callback_data": f"play_media:{m1['name']}"}]
-            if i + 1 < len(visual_media):
-                m2 = visual_media[i + 1]
-                r.append({"text": f"🎬 {m2['name'][:14]}", "callback_data": f"play_media:{m2['name']}"})
-            rows.append(r)
-
-        rows.append([
-            {"text": "⏹ Зупинити показ", "callback_data": "med_stop"},
-            {"text": "🖼 Постійна Заставка", "callback_data": "menu:saver_help"},
-        ])
+        if active:
+            status_txt = f"Активний ({mode.upper()}): залишилось {rem_min} хв"
+            rows.append([{"text": f"🛑 Зупинити ({status_txt})", "callback_data": "pomo:stop"}])
+        else:
+            rows.append([
+                {"text": "⏱ 15 хв (Короткий)", "callback_data": "pomo:15"},
+                {"text": "⏱ 25 хв (Класичний)", "callback_data": "pomo:25"},
+            ])
+            rows.append([
+                {"text": "⏱ 45 хв (Глибокий)", "callback_data": "pomo:45"},
+                {"text": "⏱ 60 хв (Сесія)", "callback_data": "pomo:60"},
+            ])
         return {"inline_keyboard": rows}
 
     @staticmethod
-    def _ai_personas_inline_kb() -> Dict[str, Any]:
-        p_name = state_service.ai_persona_name
+    def _dnd_inline_kb() -> Dict[str, Any]:
+        d = state_service.latest_telemetry
+        dnd = d.get("dnd", False)
+        qh = nastya_routine_service.get_quiet_hours()
+        toggle_txt = "☀️ Вимкнути режим DND" if dnd else "🌙 Увімкнути режим DND (Тиша + нічник)"
+        qh_txt = f"Тихі години: {qh['start']} - {qh['end']} ({'ВКЛ' if qh['enabled'] else 'ВИКЛ'})"
         return {
             "inline_keyboard": [
-                [
-                    {"text": f"{'✅ ' if 'Дух' in p_name else ''}✨ Затишний Дух", "callback_data": "persona:cozy"},
-                    {"text": f"{'✅ ' if 'Саркастич' in p_name else ''}😼 Саркастичний Кіт", "callback_data": "persona:cat"},
-                ],
-                [
-                    {"text": f"{'✅ ' if 'Синоптик' in p_name else ''}🧭 Синоптик Braun", "callback_data": "persona:braun"},
-                    {"text": f"{'✅ ' if 'Кібер' in p_name else ''}🤖 Кіберпанк AI", "callback_data": "persona:cyber"},
-                ],
-                [
-                    {"text": "🔊 Озвучити зведення зараз", "callback_data": "ai:speak"},
-                    {"text": "📊 Оновити інфографіку", "callback_data": "menu:infographic"},
-                ],
+                [{"text": toggle_txt, "callback_data": "dnd:toggle"}],
+                [{"text": f"⏰ {qh_txt}", "callback_data": "dnd:quiet_info"}],
             ]
         }
+
+    @staticmethod
+    async def _calendar_view(base_url: str = "") -> Tuple[str, Dict[str, Any]]:
+        is_linked = google_calendar_service.is_linked()
+        next_ev = await google_calendar_service.get_next_event()
+        events = await google_calendar_service.get_upcoming_events(max_results=8)
+
+        link_status = "Google Календар: <b>Підключено ✅</b>" if is_linked else "Google Календар: <b>Не підключено ❌</b>"
+
+        next_txt = "<i>Немає запланованих подій на найближчий час</i>"
+        if next_ev:
+            soon_badge = " 🔥 <b>(Скоро!)</b>" if next_ev.get("is_soon") else ""
+            min_txt = f" (через {next_ev['min_until']} хв)" if next_ev.get("min_until", 0) > 0 else ""
+            next_txt = f"• <b>{next_ev['time']}</b> — {next_ev['summary']}{min_txt}{soon_badge}"
+
+        ev_lines = []
+        for ev in events:
+            d_str = f" ({ev['date']})" if ev.get("date") else ""
+            src_sym = "🇬" if ev.get("source") == "google" else "📝"
+            ev_lines.append(f"{src_sym} <b>{ev['time']}{d_str}</b> — {ev['summary']}")
+
+        ev_block = "\n".join(ev_lines) if ev_lines else "<i>Список подій порожній</i>"
+
+        text = (
+            f"📅 <b>КАЛЕНДАР ТА РОЗКЛАД</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"{link_status}\n\n"
+            f"📌 <b>Найближча подія на екрані лампи:</b>\n{next_txt}\n\n"
+            f"📋 <b>Майбутні події:</b>\n{ev_block}\n\n"
+            f"💡 <i>Щоб додати подію, напишіть у чат повідомлення у форматі:\n<code>15:30 Зустріч</code> або <code>Завтра 11:00 Семінар</code></i>"
+        )
+
+        buttons = [
+            [{"text": "🔄 Оновити дані", "callback_data": "cal_act:refresh"}],
+        ]
+        if not is_linked:
+            auth_url = google_calendar_service.get_authorize_url(base_url)
+            if auth_url:
+                buttons.append([{"text": "🔗 Підключити Google Календар", "url": auth_url}])
+
+        return text, {"inline_keyboard": buttons}
 
     @staticmethod
     def _build_status_text() -> str:
         d = state_service.latest_telemetry
         is_on = state_service.is_online()
         sec = state_service.seconds_since_seen()
-        status_line = "🟢 В МЕРЕЖІ (ONLINE)" if is_on else f"🔴 ВІДСУТНІЙ ЗВ'ЯЗОК ({sec or '?'} с тому)"
+        status_line = "🟢 В мережі" if is_on else f"🔴 Офлайн ({sec or '?'} с тому)"
 
         t_val = d.get("t", 22.0)
         h_val = d.get("h", 50.0)
         p_val = d.get("p", 750.0)
         p_diff = d.get("p_diff", 0.0)
-        trend_sym = "→" if abs(p_diff) < 0.7 else ("↑" if p_diff > 0 else "↓")
+        trend_sym = "→ стабільно" if abs(p_diff) < 0.7 else ("↑ зростає" if p_diff > 0 else "↓ падає")
+
+        # Оцінка мікроклімату
+        hum_eval = "Комфортно"
+        if h_val < 40:
+            hum_eval = "Сухе повітря"
+        elif h_val > 65:
+            hum_eval = "Висока вологість"
+
         l_pct = d.get("l", 50)
         m_idx = d.get("m", 0)
         m_name = MODES_UA[m_idx % len(MODES_UA)]
@@ -283,27 +273,30 @@ class TelegramBotService:
         muted = d.get("muted", False)
         t_beep = d.get("t_beep", True)
         rssi = d.get("rssi", -60)
-        sleep_m = d.get("sleep_m", 0)
-        media_m = d.get("media_m", 0)
+        dnd = d.get("dnd", False)
+
+        pomo_st = nastya_routine_service.get_pomodoro_status()
+        pomo_line = f"⏱ Фокус Pomodoro: <b>{pomo_st['remaining_min']} хв ({pomo_st['mode'].upper()})</b>" if pomo_st["active"] else "⏱ Фокус Pomodoro: <b>Вимкнено</b>"
 
         vol_str = "🔇 MUTE" if muted or vol == 0 else f"{int(vol * 100 / 21)}% ({vol}/21)"
-        sleep_line = f"\n⏳ Таймер сну: {sleep_m} хв" if sleep_m > 0 else ""
-        media_line = f"\n⏱ Таймер медіа: {media_m} хв" if media_m > 0 else ""
+        brt_str = "Авто" if auto_b else f"Ручна ({b_pct}%)"
+
+        sp_st = spotify_service.get_cached_state()
+        sp_line = f"🎵 Spotify: {sp_st['title']} — {sp_st['artist']}" if sp_st.get("playing") else "🎵 Spotify: Пауза / Не активний"
 
         return (
-            f"🪄 MAGICBOX SOVEREIGN ATELIER (v4.5)\n"
+            f"🏠 <b>SMARTLAMP · СТАТУС ТА МІКРОКЛІМАТ</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"📡 Стан: {status_line}\n"
-            f"🌡 Температура: {t_val:.1f}°C\n"
-            f"💧 Вологість: {h_val:.0f}%\n"
-            f"🧭 Барометр: {p_val:.0f} mmHg ({trend_sym} {p_diff:+.1f})\n"
-            f"☀️ Освітленість: {l_pct}%\n"
-            f"🎨 Світло: {m_name}\n"
-            f"🔆 Яскравість: {'АВТО' if auto_b else f'РУЧН ({b_pct}%)'}\n"
-            f"🔊 Звук: {vol_str} (Кліки: {'ВКЛ' if t_beep else 'ВИКЛ'})\n"
-            f"📶 Wi-Fi Сигнал: {rssi} dBm"
-            f"{sleep_line}{media_line}\n\n"
-            f"🧠 Дух: {state_service.ai_persona_name}"
+            f"📡 Зв'язок: {status_line} (Wi-Fi: {rssi} dBm)\n"
+            f"🌡 Температура: <b>{t_val:.1f}°C</b>\n"
+            f"💧 Вологість: <b>{h_val:.0f}%</b> ({hum_eval})\n"
+            f"🧭 Атмосферний тиск: <b>{p_val:.0f} мм рт. ст.</b> ({trend_sym})\n"
+            f"☀️ Освітленість у кімнаті: <b>{l_pct}%</b>\n\n"
+            f"💡 Освітлення: <b>{m_name}</b> ({brt_str})\n"
+            f"{pomo_line}\n"
+            f"🌙 Режим DND: <b>{'Увімкнено 🌙' if dnd else 'Вимкнено'}</b>\n"
+            f"🔊 Гучність: <b>{vol_str}</b> (Кліки: {'ВКЛ' if t_beep else 'ВИКЛ'})\n"
+            f"{sp_line}"
         )
 
     @staticmethod
@@ -323,25 +316,25 @@ class TelegramBotService:
             auth_url = spotify_service.get_authorize_url(base_url)
             text = (
                 "🎵 <b>SPOTIFY VINYL HUB · НЕ ПІДКЛЮЧЕНО</b>\n\n"
-                "Для синхронізації вінілового плеєра 136×136, підсвітки AmbiLight та відображення треків — "
-                "авторизуй свій акаунт через офіційний OAuth2:"
+                "Для синхронізації вінілового плеєра на дисплеї лампи, динамічної підсвітки AmbiLight "
+                "та відображення назв треків — підключіть Spotify акаунт через OAuth2:"
             )
             kb = {
                 "inline_keyboard": [
-                    [{"text": "🔗 Авторизувати Spotify", "url": auth_url if auth_url else "http://127.0.0.1:8000"}],
-                    [{"text": "🔄 Перевірити підключення", "callback_data": "spotify:refresh"}],
+                    [{"text": "🔗 Підключити Spotify", "url": auth_url if auth_url else "http://127.0.0.1:8000"}],
+                    [{"text": "🔄 Перевірити статус", "callback_data": "spotify:refresh"}],
                 ]
             }
             return text, kb
 
-        status_str = "▶️ ВІДТВОРЮЄТЬСЯ" if playing else "⏸ ПАУЗА"
-        track_info = f"<b>{title}</b>\n👤 {artist}\n⏱ {time_str}" if title else "<i>Очікування відтворення...</i>"
+        status_str = "▶️ Грає" if playing else "⏸ Пауза"
+        track_info = f"<b>{title}</b>\n👤 {artist}\n⏱ {time_str}" if title else "<i>Очікування початку треку...</i>"
         text = (
-            f"🎵 <b>SPOTIFY VINYL DECK (v4.5)</b>\n"
+            f"🎵 <b>SPOTIFY ПЛЕЄР</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"Статус: {status_str}\n\n"
             f"{track_info}\n\n"
-            f"💡 Платівка автоматично обертається на екрані (Вікно 3) та живить стрічку SK6812 (Режим 11)!"
+            f"💡 Вінілова платівка обертається на екрані лампи (Вікно 3) та живить AmbiLight підсвітку."
         )
 
         kb = {
@@ -359,35 +352,44 @@ class TelegramBotService:
         }
         return text, kb
 
-    def _trigger_reaction_with_custom_media(self, react_code: int, sender: str, screen_text: str) -> str:
-        state_service.enqueue_raw({"react": react_code, "sender": sender[:28], "msg": screen_text[:90]})
-        custom_info = ""
-        media_item = db_service.get_media_by_slot(react_code)
-        if media_item and media_item.get("media_type") != "sound":
-            try:
-                media_service.trigger_saved_media(media_item["name"], settings.PUBLIC_SERVER_URL)
-                custom_info = f" + кастомна анімація '{media_item['name']}'"
-            except Exception:
-                pass
-        sound_url = audio_service.get_reaction_sound_url(react_code, settings.PUBLIC_SERVER_URL)
-        if sound_url:
-            state_service.enqueue_raw({"play_url": sound_url})
-        return custom_info
+    @staticmethod
+    def _gallery_inline_kb() -> Dict[str, Any]:
+        media_list = db_service.list_custom_media()
+        visual_media = [m for m in media_list if m.get("media_type") != "sound" and not m.get("name", "").startswith("voice_")]
+        if not visual_media:
+            return {"inline_keyboard": [[{"text": "📭 Галерея порожня. Надішліть гіфку!", "callback_data": "noop"}]]}
 
-    def _pomodoro_inline_kb(self) -> Dict[str, Any]:
+        rows = []
+        for i in range(0, min(len(visual_media), 10), 2):
+            m1 = visual_media[i]
+            r = [{"text": f"🎬 {m1['name'][:14]}", "callback_data": f"play_media:{m1['name']}"}]
+            if i + 1 < len(visual_media):
+                m2 = visual_media[i + 1]
+                r.append({"text": f"🎬 {m2['name'][:14]}", "callback_data": f"play_media:{m2['name']}"})
+            rows.append(r)
+
+        rows.append([
+            {"text": "⏹ Зупинити показ (Годинник)", "callback_data": "med_stop"},
+        ])
+        return {"inline_keyboard": rows}
+
+    @staticmethod
+    def _media_control_inline_kb(media_name: str) -> Dict[str, Any]:
         return {
             "inline_keyboard": [
                 [
-                    {"text": "⏱ 15 хв", "callback_data": "pomo:15"},
-                    {"text": "⏱ 25 хв", "callback_data": "pomo:25"},
+                    {"text": "♾ Постійний показ", "callback_data": "med_timer:0"},
+                    {"text": "⏹ Зупинити показ", "callback_data": "med_stop"},
                 ],
                 [
-                    {"text": "⏱ 45 хв", "callback_data": "pomo:45"},
-                    {"text": "⏱ 60 хв", "callback_data": "pomo:60"},
+                    {"text": "⏱ 15 хв", "callback_data": "med_timer:15"},
+                    {"text": "⏱ 1 год", "callback_data": "med_timer:60"},
+                    {"text": "⏱ 3 год", "callback_data": "med_timer:180"},
                 ],
                 [
-                    {"text": "🛑 Зупинити Pomodoro", "callback_data": "pomo:stop"},
-                ]
+                    {"text": "📌 Встановити заставкою", "callback_data": f"med_saver:{media_name}"},
+                    {"text": "🎭 До галереї", "callback_data": "menu:gallery"},
+                ],
             ]
         }
 
@@ -421,11 +423,10 @@ class TelegramBotService:
             await self._api("editMessageText", {
                 "chat_id": chat_id,
                 "message_id": msg_id,
-                "text": f"⏳ Таймер сну «Захід сонця» встановлено на {dur} хв!" if dur > 0 else "⏳ Таймер сну скасовано.",
+                "text": f"⏳ Таймер сну встановлено на {dur} хв." if dur > 0 else "⏳ Таймер сну скасовано.",
                 "reply_markup": self._modes_inline_kb(),
             })
 
-        # Керування гучністю та MUTE
         elif data.startswith("vol:"):
             v_arg = data.split(":")[1]
             d = state_service.latest_telemetry
@@ -457,17 +458,6 @@ class TelegramBotService:
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans})
             await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._volume_inline_kb()})
 
-        # Керування медіа-показом та таймерами
-        elif data.startswith("med_timer:"):
-            t_min = int(data.split(":")[1])
-            media_service.set_timer(t_min)
-            msg_t = f"⏱ Таймер показу: {t_min} хв!" if t_min > 0 else "♾ Анімація крутиться постійно до скасування!"
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": msg_t})
-
-        elif data == "med_stop":
-            media_service.stop_media()
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⏹ Показ зупинено! Екран повернуто"})
-
         elif data.startswith("pomo:"):
             act = data.split(":", 1)[1]
             if act == "stop":
@@ -477,8 +467,9 @@ class TelegramBotService:
                 await self._api("editMessageText", {
                     "chat_id": chat_id,
                     "message_id": msg_id,
-                    "text": "🛑 <b>Фокус Pomodoro зупинено</b>. Шкатулка повернулась до звичайного режиму.",
+                    "text": "🛑 <b>Фокус Pomodoro зупинено</b>. Лампа повернулась до звичайного режиму.",
                     "parse_mode": "HTML",
+                    "reply_markup": self._pomodoro_inline_kb(),
                 })
             else:
                 try:
@@ -491,24 +482,46 @@ class TelegramBotService:
                 await self._api("editMessageText", {
                     "chat_id": chat_id,
                     "message_id": msg_id,
-                    "text": f"📚 <b>РЕЖИМ ФОКУСУ ТА НАВЧАННЯ (POMODORO)</b>\n━━━━━━━━━━━━━━━━━━\nШкатулка перейшла на спокійне бурштинове світло на <b>{dur} хв</b>. Не відволікайся, продуктивного фокусу! ✨",
+                    "text": (
+                        f"⏱ <b>ФОКУС POMODORO · АКТИВНО</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"Тривалість: <b>{dur} хвилин</b>\n"
+                        f"На лампі увімкнено хорологічний циферблат відліку та спокійне бурштинове світло."
+                    ),
                     "parse_mode": "HTML",
+                    "reply_markup": self._pomodoro_inline_kb(),
                 })
 
-        elif data.startswith("med_saver:"):
-            s_name = data.split(":", 1)[1]
-            try:
-                media_service.trigger_saved_media(s_name, settings.PUBLIC_SERVER_URL, set_as_saver=True)
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"📌 '{s_name}' записано як постійну заставку LittleFS!"})
-            except Exception as e:
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Помилка: {e}"})
+        elif data == "dnd:toggle":
+            d = state_service.latest_telemetry
+            cur_dnd = d.get("dnd", False)
+            new_dnd = not cur_dnd
+            state_service.enqueue_raw({
+                "dnd": new_dnd,
+                "muted": new_dnd,
+                "set_brt": "0" if new_dnd else "auto",
+                "sender": "DND",
+                "msg": "DND Увімкнено" if new_dnd else "DND Вимкнено",
+            })
+            ans = "🌙 Режим DND увімкнено (Нічник + MUTE)" if new_dnd else "☀️ Режим DND вимкнено"
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans})
+            await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._dnd_inline_kb()})
 
-        # Швидкі реакції з інлайн-меню
-        elif data.startswith("react:"):
-            r_code = int(data.split(":")[1])
-            r_names = {2: "🔥 Вогник", 3: "⚡ Блискавка", 4: "🐱 Мем-Кіт", 5: "👽 Пороблено", 6: "👑 Корона"}
-            self._trigger_reaction_with_custom_media(r_code, "Telegram", r_names.get(r_code, "VIBE"))
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"{r_names.get(r_code, 'Реакція')} запущена!"})
+        elif data == "dnd:quiet_info":
+            qh = nastya_routine_service.get_quiet_hours()
+            await self._api("answerCallbackQuery", {
+                "callback_query_id": cb_id,
+                "text": f"Тихі години: щодня з {qh['start']} до {qh['end']}. Звук вимикається автоматично.",
+                "show_alert": True,
+            })
+
+        elif data.startswith("cal_act:"):
+            sub = data.split(":", 1)[1]
+            if sub == "refresh":
+                google_calendar_service._cached_event = None
+                cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Розклад оновлено!"})
+                await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": cal_t, "parse_mode": "HTML", "reply_markup": cal_k})
 
         elif data.startswith("sp_act:"):
             action = data.split(":")[1]
@@ -536,63 +549,62 @@ class TelegramBotService:
             except Exception as e:
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Помилка: {e}"})
 
-        elif data.startswith("voice_sel:"):
-            choice = data.split(":", 1)[1]
-            if choice == "clone":
-                db_service.set_setting("tts_provider", "elevenlabs")
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Увімкнено Клонований Голос (ElevenLabs)!"})
-            else:
-                db_service.set_setting("tts_provider", "edge")
-                db_service.set_setting("tts_edge_voice", choice)
-                name_ua = "Ostap (Чоловічий)" if "Ostap" in choice else "Polina (Жіночий)"
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Голос Edge-TTS: {name_ua}"})
-            await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._voice_config_inline_kb()})
+        elif data.startswith("med_timer:"):
+            t_min = int(data.split(":")[1])
+            media_service.set_timer(t_min)
+            msg_t = f"⏱ Таймер показу: {t_min} хв!" if t_min > 0 else "♾ Анімація крутиться постійно!"
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": msg_t})
 
-        elif data == "voice:test":
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Озвучую тестове вітання на шкатулці..."})
-            await audio_service.speak_text("Привіт! Шкатулка MagicBox v4.5 працює бездоганно. Звук чистий та об'ємний!", settings.PUBLIC_SERVER_URL)
+        elif data == "med_stop":
+            media_service.stop_media()
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⏹ Показ зупинено! Екран повернуто"})
 
-        elif data.startswith("play_voice:"):
-            v_name = data.split(":", 1)[1]
-            ok = await audio_service.play_voice_preset(v_name, settings.PUBLIC_SERVER_URL)
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Відтворюю голос на шкатулці!" if ok else "Запис не знайдено"})
-
-        elif data.startswith("persona:"):
-            p_type = data.split(":")[1]
-            presets = {
-                "cozy": ("Затишний Дух MagicBox", "Ти теплий, домашній, турботливий дух дерев'яної шкатулки з вогником. Говори лагідно, затишно і з любов'ю."),
-                "cat": ("Саркастичний Кіт", "Ти хитрий, розумний кіт, що живе всередині шкатулки. Твій тон іронічний, дотепний, ти любиш жартувати про сон і їжу."),
-                "braun": ("Синоптик Braun", "Ти точний німецький прилад хорології у стилі Дітера Рамса. Говори лаконічно, чітко, професійно."),
-                "cyber": ("Кіберпанк AI", "Ти ШІ з неонового 2077 року. Говори стильно, технічно та впевнено."),
-            }
-            if p_type in presets:
-                p_name, p_prompt = presets[p_type]
-                state_service.save_ai_persona(p_name, p_prompt)
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Персона: {p_name}"})
-                await self._api("editMessageText", {
-                    "chat_id": chat_id,
-                    "message_id": msg_id,
-                    "text": f"🧠 АКТИВНА ПЕРСОНА ШІ: {p_name}\n\nПромпт: «{p_prompt}»",
-                    "reply_markup": self._ai_personas_inline_kb(),
-                })
-
-        elif data == "menu:infographic":
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Генерую свіжу інфографіку..."})
-            png_bytes = infographic_service.generate_status_infographic()
-            await self._send_photo_bytes(
-                chat_id,
-                png_bytes,
-                caption=self._build_status_text(),
-                reply_markup=self._ai_personas_inline_kb(),
-            )
+        elif data.startswith("med_saver:"):
+            s_name = data.split(":", 1)[1]
+            try:
+                media_service.trigger_saved_media(s_name, settings.PUBLIC_SERVER_URL, set_as_saver=True)
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"📌 '{s_name}' встановлено заставкою!"})
+            except Exception as e:
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Помилка: {e}"})
 
         elif data == "menu:gallery":
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
             await self._api("editMessageText", {
                 "chat_id": chat_id,
                 "message_id": msg_id,
-                "text": "🎭 ГАЛЕРЕЯ КАСТОМНИХ ГІФОК ТА НАЛІПОК:\nНатисни на будь-яку, щоб вивести її на круглий дисплей:",
+                "text": "🖼 <b>ГАЛЕРЕЯ АНІМАЦІЙ ТА ЗАСТАВОК:</b>\nОберіть елемент для виведення на круглий дисплей:",
+                "parse_mode": "HTML",
                 "reply_markup": self._gallery_inline_kb(),
+            })
+
+        elif data == "menu:modes":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "💡 <b>ВИБІР РЕЖИМУ ОСВІТЛЕННЯ:</b>",
+                "parse_mode": "HTML",
+                "reply_markup": self._modes_inline_kb(),
+            })
+
+        elif data == "menu:brt":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "🔆 <b>РЕГУЛЮВАННЯ ЯСКРАВОСТІ СВІТЛА:</b>",
+                "parse_mode": "HTML",
+                "reply_markup": self._brt_inline_kb(),
+            })
+
+        elif data == "menu:sleep":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "⏳ <b>ТАЙМЕР СНУ:</b>\nОберіть тривалість автоматичного вимкнення світла:",
+                "parse_mode": "HTML",
+                "reply_markup": self._sleep_inline_kb(),
             })
 
     async def _handle_message(self, msg: Dict[str, Any]) -> None:
@@ -600,80 +612,70 @@ class TelegramBotService:
         sender = (msg.get("from") or {}).get("first_name", "Telegram")
         text = (msg.get("text") or msg.get("caption") or "").strip()
 
+        # Авторизація ролей
         if text.lower() == "/iam_admin":
             if not state_service.admin_id or chat_id == state_service.admin_id:
                 state_service.save_auth_ids(admin_id=chat_id)
-                await self._api("sendMessage", {"chat_id": chat_id, "text": "👑 Акаунт Адміністратора підтверджено у v4.5!", "reply_markup": ADMIN_KB})
+                await self._api("sendMessage", {"chat_id": chat_id, "text": "👑 Акаунт адміністратора підтверджено.", "reply_markup": ADMIN_KB})
             else:
-                await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Адміністратор вже прив'язаний."})
+                await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Адміністратор вже зареєстрований."})
             return
 
         if text.lower() in ("/iam_nastia", "/iam_girl"):
             if not state_service.girl_id or chat_id in (state_service.girl_id, state_service.admin_id):
                 state_service.save_auth_ids(girl_id=chat_id)
-                await self._api("sendMessage", {"chat_id": chat_id, "text": "🌸 Акаунт власниці шкатулки прив'язано!", "reply_markup": GIRL_KB})
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "✅ Вітаю, Настю! Пульт керування SmartLamp активовано.",
+                    "reply_markup": GIRL_KB,
+                })
             else:
-                await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Акаунт власниці вже захищено."})
+                await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Акаунт власниці вже налаштовано."})
             return
 
         is_admin = (chat_id == state_service.admin_id)
         is_girl = (chat_id == state_service.girl_id)
 
         if not is_admin and not is_girl:
-            await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Приватна шкатулка MagicBox v4.5."})
+            await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Доступ обмежено. Приватна система SmartLamp."})
             return
 
         active_kb = ADMIN_KB if is_admin else GIRL_KB
-        online_note = "" if state_service.is_online() else "\n🌙 (Шкатулка офлайн — команда в черзі й миттєво спрацює при появі світла!)"
+        online_note = "" if state_service.is_online() else "\n🌙 (Лампа офлайн — команду збережено, спрацює при появі живлення)"
 
-        # 1. Прийом НАЛІПОК (Stickers)
-        if "sticker" in msg:
-            st = msg["sticker"]
-            is_video_or_tgs = bool(st.get("is_animated") or st.get("is_video"))
-            thumb_obj = st.get("thumbnail") or st.get("thumb") or {}
-            file_id = thumb_obj.get("file_id") if is_video_or_tgs else st.get("file_id")
+        # 1. Прийом GIF-анімацій
+        if "animation" in msg or ("document" in msg and str(msg["document"].get("file_name", "")).lower().endswith(".gif")):
+            anim = msg.get("animation") or msg.get("document")
+            file_id = anim.get("file_id")
             if file_id:
                 raw_bytes = await self._download_tg_file(file_id)
                 if raw_bytes:
-                    save_tag = text or f"stk_{st.get('file_unique_id', 'custom')[:6]}"
+                    save_tag = text or f"gif_{int(time.time())}"
                     meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
                     await self._api("sendMessage", {
                         "chat_id": chat_id,
-                        "text": (
-                            f"✨ Наліпку «{meta['name']}» запущено на екрані шкатулки!{online_note}\n\n"
-                            f"Керування показом (крутиться постійно або за таймером):"
-                        ),
+                        "text": f"🎞 Анімацію «{meta['name']}» запущено на екрані лампи!{online_note}",
                         "reply_markup": self._media_control_inline_kb(meta["name"]),
                     })
                     return
 
-        # 2. Прийом СПРАВЖНІХ GIF-анімацій (animation)
-        if "animation" in msg:
-            anim = msg["animation"]
-            mime = str(anim.get("mime_type") or "")
-            file_id = anim.get("file_id") if ("gif" in mime or int(anim.get("file_size", 0)) < 2500000) else None
-            if not file_id:
-                thumb_obj = anim.get("thumbnail") or anim.get("thumb") or {}
-                file_id = thumb_obj.get("file_id") or anim.get("file_id")
-            if file_id:
-                raw_bytes = await self._download_tg_file(file_id)
-                if raw_bytes:
-                    save_tag = text or f"gif_{anim.get('file_unique_id', 'anim')[:6]}"
-                    meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
-                    await self._api("sendMessage", {
-                        "chat_id": chat_id,
-                        "text": (
-                            f"🎞 Живу анімацію «{meta['name']}» ({meta['frames']} к. @ {meta['fps']} FPS, AmbiLight RGB {meta['ambi_rgb']}) запущено на екрані!{online_note}\n\n"
-                            f"Обери тривалість показу або залиш постійно:"
-                        ),
-                        "reply_markup": self._media_control_inline_kb(meta["name"]),
-                    })
-                    return
+        # 2. Прийом фотографій
+        if "photo" in msg and msg["photo"]:
+            best_photo = msg["photo"][-1]
+            raw_bytes = await self._download_tg_file(best_photo["file_id"])
+            if raw_bytes:
+                save_tag = text or f"pic_{int(time.time())}"
+                meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": f"🖼 Зображення виведено на дисплей лампи!{online_note}",
+                    "reply_markup": self._media_control_inline_kb(meta["name"]),
+                })
+                return
 
         # 3. Прийом голосових повідомлень (Voice)
         if "voice" in msg:
             if is_girl:
-                # Голосові повідомлення від Насті пересилаються Ярославу в Telegram, а не грають на самій лампі
                 if state_service.admin_id:
                     await self._api("sendVoice", {
                         "chat_id": state_service.admin_id,
@@ -683,128 +685,94 @@ class TelegramBotService:
                     })
                 await self._api("sendMessage", {
                     "chat_id": chat_id,
-                    "text": "🎙 Твоє голосове повідомлення надіслано Ярославу в Telegram!",
+                    "text": "🎙 Голосове повідомлення передано Ярославу в Telegram.",
                     "reply_markup": GIRL_KB,
                 })
                 return
-
-            voice_id = msg["voice"].get("file_id")
-            if voice_id:
-                raw_voice = await self._download_tg_file(voice_id)
-                if raw_voice:
-                    if text.startswith("/save_voice ") or (text and not text.startswith("/")):
-                        p_name = text.replace("/save_voice", "").strip() or f"v_{int(time.time())}"
-                        await audio_service.save_voice_preset(p_name, raw_voice, base_url=settings.PUBLIC_SERVER_URL)
-                        await self._api("sendMessage", {
-                            "chat_id": chat_id,
-                            "text": f"🎙 Голосову замітку «{p_name}» збережено у банк звуків шкатулки!",
-                            "reply_markup": {"inline_keyboard": [[{"text": "🔊 Відтворити зараз на шкатулці", "callback_data": f"play_voice:{p_name}"}]]},
-                        })
-                    else:
+            else:
+                voice_id = msg["voice"].get("file_id")
+                if voice_id:
+                    raw_voice = await self._download_tg_file(voice_id)
+                    if raw_voice:
                         await audio_service.save_voice_stream(raw_voice, sender=sender, base_url=settings.PUBLIC_SERVER_URL)
                         await self._api("sendMessage", {
                             "chat_id": chat_id,
-                            "text": f"🎙 Голосове повідомлення передано в динамік шкатулки!{online_note}",
+                            "text": f"🎙 Голосове повідомлення відправлено на динамік лампи.{online_note}",
                             "reply_markup": active_kb,
                         })
-                    return
-
-        # 4. Прийом ФОТОГРАФІЙ
-        if "photo" in msg and msg["photo"]:
-            best_photo = msg["photo"][-1]
-            raw_bytes = await self._download_tg_file(best_photo["file_id"])
-            if raw_bytes:
-                save_tag = text or f"pic_{best_photo.get('file_unique_id', 'img')[:6]}"
-                meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": f"🖼 Фото оброблено (240×240 RGB565 TrueColor Bayer, Ambi {meta['ambi_rgb']}) та виведено на дисплей!{online_note}",
-                    "reply_markup": self._media_control_inline_kb(meta["name"]),
-                })
-            return
-
-        # 5. Прийом документів (.bin прошивки, .gif або .mp3 звуки)
-        if "document" in msg or "audio" in msg:
-            doc = msg.get("document") or msg.get("audio") or {}
-            fname = str(doc.get("file_name") or "file").lower()
-            if fname.endswith(".bin"):
-                if not is_admin:
-                    await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Тільки адміністратор може оновлювати прошивку."})
-                    return
-                raw_bin = await self._download_tg_file(doc["file_id"])
-                if raw_bin:
-                    res = ota_service.save_binary_bytes(raw_bin, state_service.resolve_public_url(settings.PUBLIC_SERVER_URL))
-                    await self._api("sendMessage", {
-                        "chat_id": chat_id,
-                        "text": f"🚀 Прошивку `{fname}` ({res['size']} байт, SHA256: `{res['sha256'][:10]}...`) поставлено в чергу OTA!{online_note}",
-                        "reply_markup": active_kb,
-                    })
-                return
-            elif fname.endswith((".gif", ".webp", ".png", ".jpg", ".jpeg")):
-                raw_img = await self._download_tg_file(doc["file_id"])
-                if raw_img:
-                    save_tag = text or fname.rsplit(".", 1)[0]
-                    meta = await media_service.process_and_enqueue(raw_img, settings.PUBLIC_SERVER_URL, save_name=save_tag)
-                    await self._api("sendMessage", {
-                        "chat_id": chat_id,
-                        "text": f"🎞 Анімацію «{meta['name']}» запущено на екрані шкатулки!{online_note}",
-                        "reply_markup": self._media_control_inline_kb(meta["name"]),
-                    })
-                return
-            elif fname.endswith(".mp3") or "audio" in msg:
-                raw_mp3 = await self._download_tg_file(doc["file_id"])
-                if raw_mp3:
-                    sound_tag = text or fname[:-4]
-                    await audio_service.save_and_play_mp3_bytes(raw_mp3, name=sound_tag, sender=sender, base_url=settings.PUBLIC_SERVER_URL)
-                    await self._api("sendMessage", {
-                        "chat_id": chat_id,
-                        "text": f"🎵 Звук `{sound_tag}` збережено та відправлено на динамік шкатулки!{online_note}",
-                        "reply_markup": active_kb,
-                    })
                 return
 
         if not text:
             return
 
+        # Навігаційне меню
         if text in ("/start", "/help", "/menu"):
-            await self._api("sendMessage", {"chat_id": chat_id, "text": self._build_status_text(), "reply_markup": active_kb})
+            await self._api("sendMessage", {"chat_id": chat_id, "text": self._build_status_text(), "parse_mode": "HTML", "reply_markup": active_kb})
             return
 
-        # 6. Обробка текстових кнопок нової клавіатури v4.5
-        if text.startswith("/status") or text.startswith("/blackout") or "Інфографіка" in text or "Стан" in text:
+        # 4. Обробка текстових команд
+        if text.startswith("/status") or text.startswith("/climate") or "Клімат" in text:
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": self._build_status_text(),
+                "parse_mode": "HTML",
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [{"text": "📈 Графік за 24 години", "callback_data": "menu:infographic_get"}],
+                    ]
+                },
+            })
+            return
+
+        if text.startswith("/infographic") or text == "menu:infographic_get":
             png_bytes = infographic_service.generate_status_infographic()
-            await self._send_photo_bytes(
-                chat_id,
-                png_bytes,
-                caption=self._build_status_text(),
-                reply_markup=self._ai_personas_inline_kb(),
-            )
+            await self._send_photo_bytes(chat_id, png_bytes, caption="📊 Мікроклімат за останні 24 години.")
             return
 
-        if text.startswith("/volume") or "Гучність" in text or "Звук" in text:
+        if text.startswith("/modes") or text.startswith("/light") or "Освітлення" in text:
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": "🔊 <b>КЕРУВАННЯ ГУЧНІСТЮ ТА ЗВУКОВИМИ РЕЖИМАМИ</b>\nОберіть комфортний рівень або вимкніть звук повністю:",
+                "text": "💡 <b>КЕРУВАННЯ ОСВІТЛЕННЯМ:</b>\nОберіть бажану колірну схему чи свічку:",
                 "parse_mode": "HTML",
-                "reply_markup": self._volume_inline_kb(),
+                "reply_markup": self._modes_inline_kb(),
             })
             return
 
-        if text.startswith("/stop") or "Скинути екран" in text or "Стоп Гіф" in text:
-            media_service.stop_media()
+        if text.startswith("/pomodoro") or text.startswith("/focus") or "Pomodoro" in text or "Фокус" in text:
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": "⏹ Показ медіа зупинено, екран шкатулки повернуто до хорологічного годинника та погоди!",
-                "reply_markup": active_kb,
+                "text": (
+                    "⏱ <b>ФОКУС ТА НАВЧАННЯ (POMODORO)</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    "Оберіть тривалість сесії концентрації:\n"
+                    "Лампа перейде на хорологічний циферблат відліку та тепле спокійне світло."
+                ),
+                "parse_mode": "HTML",
+                "reply_markup": self._pomodoro_inline_kb(),
             })
             return
 
-        if "Швидка Реакція" in text:
+        if text.startswith("/dnd") or "Режим DND" in text:
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": "🎭 <b>ШВИДКІ МЕМ-РЕАКЦІЇ:</b>\nТоркніться реакції для миттєвого показу на екрані з фірмовим процедурним звуком:",
+                "text": (
+                    "🌙 <b>РЕЖИМ «НЕ ТУРБУВАТИ» (DND)</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    "У цьому режимі звук лампи повністю вимикається (MUTE), а світло переходить у м'який мінімум. "
+                    "Усі вхідні повідомлення зберігаються без звукових сигналів."
+                ),
                 "parse_mode": "HTML",
-                "reply_markup": self._reactions_quick_inline_kb(),
+                "reply_markup": self._dnd_inline_kb(),
+            })
+            return
+
+        if text.startswith("/calendar") or text.startswith("/schedule") or "Календар" in text or "Розклад" in text:
+            cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": cal_t,
+                "parse_mode": "HTML",
+                "reply_markup": cal_k,
             })
             return
 
@@ -818,189 +786,102 @@ class TelegramBotService:
             })
             return
 
-        if text.startswith("/voice"):
-            prov = audio_service.get_configured_tts_provider()
-            v_name = audio_service.get_configured_edge_voice()
+        if text.startswith("/volume") or "Гучність" in text or "Звук" in text:
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": (
-                    f"🎙 <b>НАЛАШТУВАННЯ ГОЛОСУ ОЗВУЧКИ (v4.5)</b>\n"
-                    f"━━━━━━━━━━━━━━━━━━\n"
-                    f"Поточний провайдер: <code>{prov}</code>\n"
-                    f"Активний голос: <code>{v_name}</code>\n\n"
-                    f"💡 Щоб зберегти власну голосову замітку для шкатулки: надішли голосове повідомлення із текстом <code>/save_voice [назва]</code>."
-                ),
+                "text": "🔊 <b>КЕРУВАННЯ ГУЧНІСТЮ ТА ЗВУКОМ</b>\nОберіть рівень або вимкніть звук:",
                 "parse_mode": "HTML",
-                "reply_markup": self._voice_config_inline_kb(),
+                "reply_markup": self._volume_inline_kb(),
             })
             return
 
-        if text.startswith("/modes") or "Світло" in text or "Свічка" in text:
-            await self._api("sendMessage", {"chat_id": chat_id, "text": "🎨 ВИБІР РЕЖИМУ СВІТЛА ТА СВІЧКИ:", "reply_markup": self._modes_inline_kb()})
-            return
-
-        if text.startswith("/gallery") or "Заставка" in text or "Гіфки" in text:
+        if text.startswith("/gallery") or "Заставка" in text or "Екран" in text:
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": "🎭 ГАЛЕРЕЯ КАСТОМНИХ ГІФОК ТА НАЛІПОК:\nОбери анімацію або просто надішли будь-яку гіфку/стікер сюди:",
+                "text": "🖼 <b>ГАЛЕРЕЯ АНІМАЦІЙ ТА ЗАСТАВОК:</b>\nОберіть анімацію для виведення на круглий екран лампи:",
+                "parse_mode": "HTML",
                 "reply_markup": self._gallery_inline_kb(),
             })
             return
 
-        if text.startswith("/weather") or text.startswith("/ai") or "Погода" in text:
-            note_arg = text.split(" ", 1)[1].strip() if (text.startswith("/ai ") and " " in text) else ""
-            res = await weather_ai_service.generate_smart_briefing(custom_note=note_arg)
-            await self._api("sendMessage", {
-                "chat_id": chat_id,
-                "text": f"🌤 МЕТЕОСТАНЦІЯ & {res['persona'].upper()}\n━━━━━━━━━━━━━━━━━━\n{res['ai_forecast']}{online_note}",
-                "reply_markup": self._ai_personas_inline_kb(),
-            })
-            return
-
-        if text.startswith("/say "):
-            phrase = text[5:].strip()
-            await audio_service.speak_text(phrase, settings.PUBLIC_SERVER_URL)
-            await self._api("sendMessage", {"chat_id": chat_id, "text": f"🔊 Озвучую на шкатулці:\n«{phrase}»{online_note}", "reply_markup": active_kb})
-            return
-
-        if text.startswith("/silent "):
-            clean_txt = text[8:].strip()
-            if clean_txt:
-                cmd = CommandPayload(
-                    msg=clean_txt,
-                    sender=sender[:20],
-                    silent=True,
-                )
-                state_service.enqueue_command(cmd)
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": f"🤫 <b>Тихе повідомлення надіслано на екран лампи:</b>\n«{clean_txt}»\n<i>(Без звукового сигналу та без різких спалахів світла)</i>",
-                    "parse_mode": "HTML",
-                    "reply_markup": active_kb,
-                })
-                return
-
-        if (text.startswith("/birthday") or "Привітати з ДР" in text) and is_admin:
-            db_service.set_setting("birthday_greeted", True)
-            cmd = CommandPayload(
-                birthday_celebrate=True,
-                set_mode=4,
-                set_brt="3",
-                msg="🎂 З ДНЕМ НАРОДЖЕННЯ, НАСТЮ! ✨",
-                play_url=f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3" if settings.PUBLIC_SERVER_URL else None,
+        if text.startswith("/weather") or "Погода" in text:
+            res = await weather_ai_service.generate_smart_briefing()
+            w = res["weather"]
+            rain_tip = "Варто взяти парасольку ☂️" if w.get("rain_prob_6h", 0) >= 45 else "Опадів найближчим часом не очікується"
+            w_msg = (
+                f"🌤 <b>ПОГОДА ТА ПРОГНОЗ ДЛЯ КИЄВА</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"• На вулиці: <b>{w.get('weather_desc', 'Ясно')}</b>, {w.get('outdoor_temp', 15.0):+.1f}°C\n"
+                f"• Вітер: {w.get('wind_kmh', 5.0)} км/год, ймовірність опадів: {w.get('rain_prob_6h', 0)}%\n"
+                f"• Барометр: {w.get('pressure_mm', 750.0):.0f} мм рт. ст. ({w.get('baro_verdict', 'стабільно')})\n\n"
+                f"💡 Рекомендація: {rain_tip}."
             )
-            state_service.enqueue_command(cmd)
-            if state_service.girl_id:
-                await self._api("sendMessage", {
-                    "chat_id": state_service.girl_id,
-                    "text": "🎂 <b>З ДНЕМ НАРОДЖЕННЯ, НАСТЮ!</b> 🎉✨\n\nНехай кожен твій день буде сповнений тепла, затишку, радості та натхнення! Твоя SmartLamp завжди поруч, щоб світити для тебе! 💖🎁",
-                    "parse_mode": "HTML",
-                    "reply_markup": GIRL_KB,
-                })
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": "🎉 <b>Привітання з Днем Народження активовано!</b>\nНа лампі увімкнено святкову листівку, анімацію та надіслано привітання Насті в Telegram.",
-                "parse_mode": "HTML",
-                "reply_markup": ADMIN_KB,
-            })
-            return
-
-        if text.startswith("/pomodoro") or "Фокус" in text:
-            parts = text.split()
-            if len(parts) > 1 and parts[1].isdigit():
-                dur = max(5, min(120, int(parts[1])))
-                nastya_routine_service.start_pomodoro(dur)
-                state_service.enqueue_raw({"pomo_action": "start", "pomo_min": dur})
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": f"📚 <b>РЕЖИМ ФОКУСУ ТА НАВЧАННЯ (POMODORO)</b>\n━━━━━━━━━━━━━━━━━━\nШкатулка перейшла на спокійне бурштинове світло на <b>{dur} хвилин</b>. Не відволікайся, продуктивного фокусу! ✨",
-                    "parse_mode": "HTML",
-                    "reply_markup": active_kb,
-                })
-            else:
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": "📚 <b>РЕЖИМ ФОКУСУ ТА НАВЧАННЯ (POMODORO)</b>\n━━━━━━━━━━━━━━━━━━\nОбери бажану тривалість фокусу для Насті або відправ <code>/pomodoro [хвилини]</code>:",
-                    "parse_mode": "HTML",
-                    "reply_markup": self._pomodoro_inline_kb(),
-                })
-            return
-
-        if text.startswith("/morning") or "Ранковий Гід" in text or "Ранок" in text:
-            brief = await nastya_routine_service.generate_morning_brief_for_nastya()
-            await self._api("sendMessage", {
-                "chat_id": chat_id,
-                "text": brief,
+                "text": w_msg,
                 "parse_mode": "HTML",
                 "reply_markup": active_kb,
             })
             return
 
-        if (text.startswith("/health") or "Здоров'я" in text) and is_admin:
+        if (text.startswith("/health") or "Діагностика" in text) and is_admin:
             rep = maintenance_service.get_health_report()
             box = rep["box"]
             srv = rep["server"]["resources"]
             t_msg = (
-                f"🩺 <b>ЗДОРОВ'Я СИСТЕМИ MAGICBOX</b>\n"
+                f"🩺 <b>ДІАГНОСТИКА СИСТЕМИ SMARTLAMP</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
-                f"📡 Шкатулка: <b>{'🟢 ОНЛАЙН' if box['is_online'] else '🔴 ОФЛАЙН'}</b> (RSSI: {box['wifi_rssi_dbm']} dBm)\n"
-                f"🌡 Кімната Насті: {box['room_temperature']}°C, {box['room_humidity']}%, {box['room_pressure_mm']} мм\n"
+                f"📡 Лампа: <b>{'🟢 Онлайн' if box['is_online'] else '🔴 Офлайн'}</b> (RSSI: {box['wifi_rssi_dbm']} dBm)\n"
+                f"🌡 Кімната: {box['room_temperature']}°C, {box['room_humidity']}%, {box['room_pressure_mm']} мм\n"
                 f"🔋 Вільна PSRAM: {box['psram_free_bytes'] // (1024*1024)} MB | Heap: {box['heap_free_bytes'] // 1024} KB\n"
-                f"🖥 Сервер RAM RSS: {srv.get('ram_rss_mb', 0):.1f} MB | Диск: {srv.get('storage_used_mb', 0):.1f} MB\n"
+                f"🖥 Сервер RAM: {srv.get('ram_rss_mb', 0):.1f} MB | Диск: {srv.get('storage_used_mb', 0):.1f} MB\n"
                 f"🎵 Spotify: {'Підключено ✅' if rep['integrations']['spotify_linked'] else 'Не підключено ❌'}\n"
-                f"📅 Google Календар: {'Підключено ✅' if rep['integrations']['google_calendar_linked'] else 'Не підключено ❌'}\n"
-                f"🔌 Блекаутів за 7 днів: {rep['power_analytics']['recent_outages_count']} (загалом {rep['power_analytics']['total_outage_time_min']} хв)"
+                f"📅 Google Календар: {'Підключено ✅' if rep['integrations']['google_calendar_linked'] else 'Не підключено ❌'}"
             )
-            await self._api("sendMessage", {
-                "chat_id": chat_id,
-                "text": t_msg,
-                "parse_mode": "HTML",
-                "reply_markup": ADMIN_KB,
-            })
+            await self._api("sendMessage", {"chat_id": chat_id, "text": t_msg, "parse_mode": "HTML", "reply_markup": ADMIN_KB})
             return
 
         if (text.startswith("/backup") or "Бекап" in text) and is_admin:
-            await self._api("sendMessage", {"chat_id": chat_id, "text": "⏳ Створюю SQLite бекап бази даних..."})
+            await self._api("sendMessage", {"chat_id": chat_id, "text": "⏳ Створюю резервну копію SQLite бази даних..."})
             ok = await maintenance_service.send_weekly_backup_to_admin()
             if not ok:
-                await self._api("sendMessage", {"chat_id": chat_id, "text": "❌ Помилка створення чи відправки бекапу."})
+                await self._api("sendMessage", {"chat_id": chat_id, "text": "❌ Помилка створення бекапу."})
             return
 
-        if (text.startswith("/schedule") or "Розклад Насті" in text or "Розклад" in text) and is_admin:
-            if not google_calendar_service.is_linked():
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": "📅 Google Календар Насті ще не підключено у Web Studio.",
-                    "reply_markup": ADMIN_KB,
-                })
-                return
+        # 5. Швидке додавання подій календаря з тексту (наприклад: "14:30 Семінар" або "Завтра 10:00 Іспит")
+        cal_match = re.search(r"(\d{1,2}:\d{2})\s+(.+)", text)
+        if cal_match:
+            t_str = cal_match.group(1)
+            summary_txt = cal_match.group(2).strip()
+            now_dt = nastya_routine_service.get_kyiv_now()
 
-            events = await google_calendar_service.get_upcoming_events(max_results=10)
-            if not events:
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": "📅 У календарі Насті на найближчий час немає запланованих подій.",
-                    "reply_markup": ADMIN_KB,
-                })
-                return
+            # Перевіряємо чи є слово 'завтра'
+            is_tomorrow = "завтра" in text.lower()
+            if is_tomorrow:
+                summary_txt = re.sub(r"(?i)\bзавтра\b", "", summary_txt).strip()
+                target_dt = now_dt + datetime.timedelta(days=1)
+            else:
+                target_dt = now_dt
 
-            lines = ["📅 <b>Найближчий розклад Насті:</b>\n━━━━━━━━━━━━━━━━━━"]
-            for ev in events:
-                d_str = f" ({ev['date']})" if ev.get('date') else ""
-                lines.append(f"• <b>{ev['time']}{d_str}</b> — {ev['summary']}")
+            h, m = map(int, t_str.split(":"))
+            event_dt = datetime.datetime(target_dt.year, target_dt.month, target_dt.day, h, m, tzinfo=now_dt.tzinfo)
 
+            saved = await google_calendar_service.create_event(
+                summary=summary_txt,
+                start_dt=event_dt,
+                source="tg_bot",
+            )
+            cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": "\n".join(lines),
+                "text": f"✅ <b>Подію додано до розкладу:</b>\n• <b>{t_str} ({event_dt.strftime('%d.%m')})</b> — {summary_txt}\n\nПодія автоматично синхронізована з екраном лампи!",
                 "parse_mode": "HTML",
-                "reply_markup": ADMIN_KB,
+                "reply_markup": cal_k,
             })
             return
 
-        # 7. Звичайні текстові повідомлення від Насті чи Ярослава
+        # 6. Звичайні текстові повідомлення
         if is_girl:
-            # Повідомлення від Насті НЕ повинно запускати мем кота!
-            # Воно надсилається Ярославу в Telegram і з'являється у картці Inbox на шкатулці
             state_service.enqueue_raw({"sender": "Настя", "msg": text[:110]})
             if state_service.admin_id:
                 await self._api("sendMessage", {
@@ -1011,7 +892,7 @@ class TelegramBotService:
                 })
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": f"📨 Повідомлення доставлено на екран шкатулки та надіслано Ярославу!{online_note}",
+                "text": f"📩 Повідомлення виведено на екран лампи та передано Ярославу.{online_note}",
                 "reply_markup": GIRL_KB,
             })
         else:
@@ -1019,13 +900,13 @@ class TelegramBotService:
             if state_service.girl_id:
                 await self._api("sendMessage", {
                     "chat_id": state_service.girl_id,
-                    "text": f"✨ <b>Повідомлення на шкатулці від {sender}:</b>\n«{text}»",
+                    "text": f"💬 <b>Повідомлення від {sender}:</b>\n«{text}»",
                     "parse_mode": "HTML",
                     "reply_markup": GIRL_KB,
                 })
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": f"📩 Повідомлення виведено на екран шкатулки!{online_note}",
+                "text": f"📩 Повідомлення виведено на екран лампи.{online_note}",
                 "reply_markup": ADMIN_KB,
             })
 

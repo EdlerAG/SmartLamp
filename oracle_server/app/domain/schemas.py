@@ -62,6 +62,16 @@ class CommandPayload(BaseModel):
     pomo_action: Optional[str] = None
     pomo_min: Optional[int] = None
     silent: Optional[bool] = None
+    dnd: Optional[bool] = None
+
+
+class CreateCalendarEventRequest(BaseModel):
+    summary: str = Field(..., min_length=1, max_length=120)
+    time_str: str = Field(..., description="Час початку '14:30' або ISO рядок")
+    date_str: Optional[str] = Field(None, description="Дата 'YYYY-MM-DD' (якщо не вказано — сьогодні)")
+    duration_min: Optional[int] = Field(60, ge=5, le=1440)
+    description: Optional[str] = Field("", max_length=500)
+    source: Optional[str] = Field("manual", description="'manual', 'bot', 'external'")
 
 
 class SpotifyActionRequest(BaseModel):
