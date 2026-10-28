@@ -1,3 +1,4 @@
+import time
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
@@ -9,14 +10,14 @@ class BoxTelemetryPayload(BaseModel):
     h: float
     p: float
     p_diff: float = 0.0
-    l: int = 50
+    l: int = 0
     m: int = 0
-    auto_b: bool = True
-    b_idx: int = 2
-    b_pct: int = 65
+    m_name: str = ""
+    b_pct: int = 0
+    b_lvl: int = 0
     vol: int = 12
-    muted: bool = False
-    t_beep: bool = True
+    muted: int = 0
+    t_beep: int = 1
     sleep_m: int = 0
     media_m: int = 0
     scr: int = 0
@@ -31,7 +32,9 @@ class BoxTelemetryPayload(BaseModel):
 
 
 class CommandPayload(BaseModel):
-    """Команда для постановки в чергу шкатулки."""
+    """Команда для постановки в чергу шкатулки з підтримкою TTL."""
+    created_at: float = Field(default_factory=time.time)
+    ttl_sec: float = Field(default=86400.0, description="Час життя команди в секундах")
     set_mode: Optional[int] = Field(None, ge=0, le=11)
     set_brt: Optional[str] = Field(None, description="'auto' або '0'..'3'")
     sleep: Optional[int] = Field(None, ge=0, le=180)

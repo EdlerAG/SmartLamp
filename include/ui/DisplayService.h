@@ -109,8 +109,22 @@ public:
                state.btn_l_pressed || state.btn_t_pressed || state.btn_r_pressed;
     }
 
+    void updateCpuPerformance(bool high_perf) {
+        static bool is_high = true;
+        if (high_perf && !is_high) {
+            setCpuFrequencyMhz(240);
+            is_high = true;
+        } else if (!high_perf && is_high) {
+            setCpuFrequencyMhz(80);
+            is_high = false;
+        }
+    }
+
     void update() override {
         uint32_t now = millis();
+
+        bool high_perf = isHighFpsNeeded() || state.audio_playing || state.ota_in_progress;
+        updateCpuPerformance(high_perf);
 
         if (applied_lcd_brt != state.current_lcd_brt) {
             applied_lcd_brt = state.current_lcd_brt;

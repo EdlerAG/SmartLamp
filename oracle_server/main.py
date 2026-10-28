@@ -11,7 +11,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import ORJSONResponse
 
-from app.core.config import settings
+from app.core.config import settings, validate_security_keys
+from app.core.logger import logger
 from app.core.http_client import http_pool
 from app.core.memory_guard import memory_guard
 from app.api.router import api_router
@@ -21,13 +22,31 @@ from app.services.blackout_service import blackout_service
 from app.services.bot_service import bot_service
 
 
+async def _supervised_bot_loop() -> None:
+    """Супервізор фонового циклу Telegram-бота з експоненційним backoff при збоях."""
+    backoff = 3.0
+    while True:
+        try:
+            await bot_service.polling_loop()
+            backoff = 3.0
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error("Telegram bot task crashed: %s. Restarting in %.1fs...", e, backoff)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2.0, 60.0)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Валідація ключів безпеки при старті
+    validate_security_keys()
+    db_service.cleanup_expired_sessions()
     memory_guard.recalculate_disk_usage()
     memory_guard.trim_ram()
 
-    # Єдиний фоновий слухач — Telegram Long-Polling, який спить на сервері Telegram по 25 с з 0% CPU
-    bot_task = asyncio.create_task(bot_service.polling_loop(), name="tg_bot_polling")
+    # Запуск супервізора Telegram бота
+    bot_task = asyncio.create_task(_supervised_bot_loop(), name="tg_bot_supervisor")
 
     yield
 

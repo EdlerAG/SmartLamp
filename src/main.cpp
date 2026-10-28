@@ -195,7 +195,13 @@ void processEvents() {
                 break;
 
             case EventType::BTN_TOP_LONG:
-                CommandRouter::togglePower(appState);
+                // Якщо світло ввімкнено — вимикаємо його; якщо вже вимкнено — тривале утримання вмикає/вимикає DND «Не турбувати»
+                if (appState.light_mode != MODE_LIGHT_OFF) {
+                    CommandRouter::togglePower(appState);
+                } else {
+                    appState.setDnd(!appState.dnd_mode);
+                    audioService.playTouchClick();
+                }
                 break;
 
             case EventType::BTN_RIGHT_SHORT:

@@ -6,6 +6,7 @@ import orjson
 
 from app.core.config import settings
 from app.core.events import realtime_hub
+from app.core.logger import logger
 from app.domain.schemas import BoxTelemetryPayload, CommandPayload
 from app.services.database_service import db_service
 
@@ -110,10 +111,23 @@ class StateService:
         return len(self.command_queue)
 
     def enqueue_raw(self, data: Dict[str, Any]) -> int:
-        """Розумна черга: об'єднує однотипні налаштування (режим/яскравість/таймер), щоб уникнути заторів."""
+        """
+        Розумна черга з контролем TTL:
+        - Зливає однотипні команди налаштувань світла/яскравості.
+        - Автоматично призначає TTL (для звуків/повідомлень: 180с, для світла: 86400с).
+        """
+        now = time.time()
+        if "created_at" not in data:
+            data["created_at"] = now
+        if "ttl_sec" not in data:
+            # Для звуків, повідомлень і реакцій TTL = 180 секунд (захист від нічного раптового звуку)
+            if any(k in data for k in ("play_url", "msg", "react")):
+                data["ttl_sec"] = 180.0
+            else:
+                data["ttl_sec"] = 86400.0
+
         if self.command_queue:
             last = self.command_queue[-1]
-            # Якщо в останній команді ще немає медіа чи тексту, можемо злити зміни світла/яскравості в один пакет
             if not any(k in data for k in ("msg", "media_url", "play_url", "ota_url", "stop_media")):
                 if not any(k in last for k in ("msg", "media_url", "play_url", "ota_url", "stop_media")):
                     last.update(data)
@@ -125,15 +139,36 @@ class StateService:
         return len(self.command_queue)
 
     def pop_next_sync_response(self) -> Dict[str, Any]:
+        """
+        Витягує наступну активну команду.
+        Автоматично відкидає прострочені команди (Anti-Zombie Guard).
+        """
         bot_active = settings.SERVER_MANAGES_BOT and len(settings.TG_BOT_TOKEN) > 15
-        if not self.command_queue:
-            return {"bot_managed": bot_active, "has_cmd": False, "has_more": False}
+        now = time.time()
 
-        cmd = dict(self.command_queue.popleft())
-        cmd["bot_managed"] = bot_active
-        cmd["has_cmd"] = True
-        cmd["has_more"] = len(self.command_queue) > 0
-        return cmd
+        while self.command_queue:
+            cmd = dict(self.command_queue.popleft())
+            created = cmd.get("created_at", now)
+            ttl = cmd.get("ttl_sec", 86400.0)
+
+            if (now - created) > ttl:
+                logger.info(
+                    "Anti-Zombie: пропущено застарілу команду (вік: %.1fс > TTL: %.1fс). Msg: '%s'",
+                    now - created,
+                    ttl,
+                    cmd.get("msg") or cmd.get("play_url") or "settings",
+                )
+                continue
+
+            # Очищуємо внутрішні службові поля перед відправкою на ESP32-S3
+            cmd.pop("created_at", None)
+            cmd.pop("ttl_sec", None)
+            cmd["bot_managed"] = bot_active
+            cmd["has_cmd"] = True
+            cmd["has_more"] = len(self.command_queue) > 0
+            return cmd
+
+        return {"bot_managed": bot_active, "has_cmd": False, "has_more": False}
 
     def is_online(self) -> bool:
         return self.last_seen > 0 and (time.time() - self.last_seen) < settings.BLACKOUT_TIMEOUT_SEC

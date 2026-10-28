@@ -37,6 +37,7 @@ class Settings:
     VERSION: str = "4.5.0-Hallmark"
 
     # Безпека та мережа
+    APP_ENV: str = os.getenv("APP_ENV", "development").lower()
     API_KEY: str = os.getenv("MAGICBOX_KEY", "smartlamp-secret-key")
     DASHBOARD_PASSWORD: str = os.getenv("DASHBOARD_PASSWORD", os.getenv("MAGICBOX_KEY", "0511"))
     PUBLIC_SERVER_URL: str = os.getenv("PUBLIC_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -97,3 +98,22 @@ for _folder in (
     settings.RAM_MEDIA_DIR,
 ):
     os.makedirs(_folder, exist_ok=True)
+
+
+def validate_security_keys() -> None:
+    """Zero-Default Invariant: перевірка безпеки ключів доступу."""
+    is_default_key = settings.API_KEY == "smartlamp-secret-key"
+    is_default_pwd = settings.DASHBOARD_PASSWORD == "0511"
+
+    if settings.APP_ENV == "production" and (is_default_key or is_default_pwd):
+        raise RuntimeError(
+            "CRITICAL SECURITY: Запуск у PRODUCTION режимі з дефолтним MAGICBOX_KEY або DASHBOARD_PASSWORD заборонено! "
+            "Вкажіть власні надійні ключі у файлі .env або змінних середовища."
+        )
+
+    if is_default_key or is_default_pwd:
+        import sys
+        sys.stderr.write(
+            "\n⚠️  [УВАГА] MagicBox працює з ДЕФОЛТНИМИ ключами безпеки (MAGICBOX_KEY/DASHBOARD_PASSWORD)! "
+            "Перед розміщенням у віддаленій мережі обов'язково замініть їх у .env\n\n"
+        )

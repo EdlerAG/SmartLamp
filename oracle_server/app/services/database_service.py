@@ -2,10 +2,12 @@
 import os
 import time
 import sqlite3
+import hashlib
 from typing import Dict, Any, List, Optional
 import orjson
 
 from app.core.config import settings
+from app.core.logger import logger
 
 
 class DatabaseService:
@@ -13,6 +15,7 @@ class DatabaseService:
     Zero-I/O SQLite WAL сервіс:
     - Тримає єдине відкрите з'єднання (жодних витрат на перевідкриття файлу та PRAGMA).
     - Кешує каталог кастомних гіфок/наліпок та налаштування в RAM (читання за 0.001 мс без диска).
+    - Підтримка таблиці безпечних криптографічних сесій web_sessions.
     """
 
     __slots__ = ("_db_path", "_conn", "_media_cache", "_kv_cache")
@@ -42,8 +45,8 @@ class DatabaseService:
             try:
                 self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
                 self._conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("DB close warning: %s", e)
             self._conn = None
 
     def _init_schema(self) -> None:
@@ -87,8 +90,72 @@ class DatabaseService:
                 created_at INTEGER DEFAULT 0
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS web_sessions (
+                token_hash VARCHAR(64) PRIMARY KEY,
+                role VARCHAR(16) NOT NULL,
+                created_at FLOAT NOT NULL,
+                expires_at FLOAT NOT NULL
+            );
+        """)
         conn.commit()
 
+    # --- СЕСІЇ ТА АВТОРИЗАЦІЯ ---
+    def create_session(self, token: str, role: str = "admin", duration_sec: float = 86400 * 14) -> str:
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        now = time.time()
+        expires = now + duration_sec
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                "INSERT INTO web_sessions (token_hash, role, created_at, expires_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(token_hash) DO UPDATE SET role=excluded.role, expires_at=excluded.expires_at",
+                (token_hash, role, now, expires),
+            )
+            conn.commit()
+            return token
+        except Exception as e:
+            logger.error("Failed to create session: %s", e)
+            return token
+
+    def validate_session(self, token: str) -> Optional[str]:
+        if not token:
+            return None
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        now = time.time()
+        try:
+            row = self._get_conn().execute(
+                "SELECT role, expires_at FROM web_sessions WHERE token_hash = ?",
+                (token_hash,),
+            ).fetchone()
+            if row and row["expires_at"] > now:
+                return str(row["role"])
+            if row:
+                self.delete_session(token)
+            return None
+        except Exception as e:
+            logger.warning("Session validation error: %s", e)
+            return None
+
+    def delete_session(self, token: str) -> None:
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        try:
+            conn = self._get_conn()
+            conn.execute("DELETE FROM web_sessions WHERE token_hash = ?", (token_hash,))
+            conn.commit()
+        except Exception as e:
+            logger.warning("Session delete error: %s", e)
+
+    def cleanup_expired_sessions(self) -> None:
+        now = time.time()
+        try:
+            conn = self._get_conn()
+            conn.execute("DELETE FROM web_sessions WHERE expires_at < ?", (now,))
+            conn.commit()
+        except Exception:
+            pass
+
+    # --- KV НАЛАШТУВАННЯ ---
     def get_setting(self, key: str, default: Any = None) -> Any:
         if key in self._kv_cache:
             return self._kv_cache[key]
@@ -97,7 +164,8 @@ class DatabaseService:
             val = orjson.loads(row["value"]) if row else default
             self._kv_cache[key] = val
             return val
-        except Exception:
+        except Exception as e:
+            logger.warning("get_setting error for '%s': %s", key, e)
             return default
 
     def set_setting(self, key: str, value: Any) -> None:
@@ -111,9 +179,10 @@ class DatabaseService:
                 (key, raw),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("set_setting error for '%s': %s", key, e)
 
+    # --- КЛІМАТ ТА БЛЕКАУТИ ---
     def add_climate_sample(self, temp: float, hum: float, pres: float, light: int) -> None:
         now_ts = int(time.time())
         cutoff = now_ts - (30 * 86400)
@@ -126,8 +195,8 @@ class DatabaseService:
             if now_ts % 3600 < 300:
                 conn.execute("DELETE FROM climate_history WHERE ts < ?", (cutoff,))
             conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("add_climate_sample error: %s", e)
 
     def get_climate_series(self, hours: int = 24) -> List[Dict[str, Any]]:
         cutoff = int(time.time()) - (hours * 3600)
@@ -138,7 +207,8 @@ class DatabaseService:
                 (cutoff,),
             ).fetchall()
             return [dict(r) for r in rows]
-        except Exception:
+        except Exception as e:
+            logger.warning("get_climate_series error: %s", e)
             return []
 
     def record_outage(self, disconnected_at: float, restored_at: float, duration_sec: float) -> None:
@@ -149,8 +219,8 @@ class DatabaseService:
                 (round(disconnected_at, 1), round(restored_at, 1), round(duration_sec, 1)),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("record_outage error: %s", e)
 
     def get_recent_outages(self, limit: int = 30) -> List[Dict[str, Any]]:
         try:
@@ -160,9 +230,11 @@ class DatabaseService:
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
-        except Exception:
+        except Exception as e:
+            logger.warning("get_recent_outages error: %s", e)
             return []
 
+    # --- МЕДІА ТА АНІМАЦІЇ ---
     def upsert_custom_media(
         self,
         name: str,
@@ -208,8 +280,8 @@ class DatabaseService:
             )
             conn.commit()
             self._media_cache = None
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("upsert_custom_media error: %s", e)
 
     def bind_media_to_reaction_slot(self, name: str, slot: int) -> bool:
         try:
@@ -219,14 +291,16 @@ class DatabaseService:
             conn.commit()
             self._media_cache = None
             return cur.rowcount > 0
-        except Exception:
+        except Exception as e:
+            logger.error("bind_media_to_reaction_slot error: %s", e)
             return False
 
     def get_media_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         try:
             row = self._get_conn().execute("SELECT * FROM custom_media WHERE name = ?", (name,)).fetchone()
             return dict(row) if row else None
-        except Exception:
+        except Exception as e:
+            logger.warning("get_media_by_name error: %s", e)
             return None
 
     def get_media_for_reaction_slot(self, slot: int) -> Optional[Dict[str, Any]]:
@@ -236,7 +310,8 @@ class DatabaseService:
                 (slot,),
             ).fetchone()
             return dict(row) if row else None
-        except Exception:
+        except Exception as e:
+            logger.warning("get_media_for_reaction_slot error: %s", e)
             return None
 
     def list_custom_media(self) -> List[Dict[str, Any]]:
@@ -250,7 +325,8 @@ class DatabaseService:
             ).fetchall()
             self._media_cache = [dict(r) for r in rows]
             return self._media_cache
-        except Exception:
+        except Exception as e:
+            logger.warning("list_custom_media error: %s", e)
             return []
 
     def delete_custom_media(self, name: str) -> Optional[str]:
@@ -263,7 +339,8 @@ class DatabaseService:
             conn.commit()
             self._media_cache = None
             return str(row["file_path"])
-        except Exception:
+        except Exception as e:
+            logger.error("delete_custom_media error: %s", e)
             return None
 
 

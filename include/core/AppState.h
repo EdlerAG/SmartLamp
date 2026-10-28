@@ -93,6 +93,7 @@ struct AppState {
     volatile bool     audio_muted           = false; // Повне відключення звуку (100% тиша)
     volatile bool     touch_beep_enabled    = true;  // Тактильні кліки сенсорних кнопок
     volatile bool     audio_settings_dirty  = false;
+    volatile bool     dnd_mode              = false; // Режим "Не турбувати" (DND)
 
     // Процедурні тригери синтезатора
     volatile bool     trig_touch_click      = false;
@@ -553,5 +554,14 @@ struct AppState {
             time_out[t_len - 1] = '\0';
         }
         portEXIT_CRITICAL(&mux);
+    }
+
+    void setDnd(bool active) {
+        portENTER_CRITICAL(&mux);
+        dnd_mode = active;
+        audio_muted = active;
+        ui_force_dirty = true;
+        portEXIT_CRITICAL(&mux);
+        registerActivity();
     }
 };

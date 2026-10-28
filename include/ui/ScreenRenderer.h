@@ -516,7 +516,7 @@ namespace ScreenRenderer {
         snprintf(brt_info, sizeof(brt_info), "%s • Світ %d%% • Звук %s%d%%",
                  state.auto_brt ? "АВТО" : "РУЧН",
                  brt_pct,
-                 state.audio_muted ? "🔇" : "",
+                 state.dnd_mode ? "🌙DND " : (state.audio_muted ? "🔇" : ""),
                  state.audio_muted ? 0 : (state.audio_volume * 100) / 21);
         canvas.drawString(brt_info, 120, 168);
 
@@ -813,7 +813,7 @@ namespace ScreenRenderer {
         canvas.setFont(&fonts::Font0);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("ЕКР", 82, 219);
-        canvas.drawString(state.audio_muted ? "ТИША" : "СВІТ", 120, 219);
+        canvas.drawString(state.dnd_mode ? "DND" : (state.audio_muted ? "ТИША" : "СВІТ"), 120, 219);
 
         const char* r_lbl = "ЯСК";
         if (state.screen_mode == SCREEN_LIVING_GIF) r_lbl = "ГОД";

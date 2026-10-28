@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTT
 from fastapi.responses import HTMLResponse, FileResponse
 
 from app.core.config import settings
-from app.core.security import verify_access
+from app.core.security import (
+    verify_access,
+    verify_admin_access,
+    check_login_rate_limit,
+    record_login_failure,
+    clear_login_failures,
+)
 from app.core.memory_guard import memory_guard
 from app.domain.schemas import (
     CommandPayload,
@@ -37,11 +43,41 @@ async def serve_web_studio():
 
 
 @router.post("/api/v5/auth/login")
-async def login_dashboard(req: LoginRequest, response: Response):
-    if secrets.compare_digest(req.password, settings.DASHBOARD_PASSWORD) or secrets.compare_digest(req.password, settings.API_KEY):
-        response.set_cookie(key="mb_session", value=settings.DASHBOARD_PASSWORD, httponly=True, max_age=86400 * 30, samesite="lax")
-        return {"ok": True, "token": settings.DASHBOARD_PASSWORD}
+async def login_dashboard(req: LoginRequest, request: Request, response: Response):
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_login_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Забагато невдалих спроб входу. Зачекайте 15 хвилин.",
+        )
+
+    is_admin = secrets.compare_digest(req.password, settings.DASHBOARD_PASSWORD) or secrets.compare_digest(req.password, settings.API_KEY)
+    if is_admin:
+        clear_login_failures(client_ip)
+        session_token = secrets.token_urlsafe(36)
+        db_service.create_session(session_token, role="admin", duration_sec=86400 * 14)
+
+        is_https = request.url.scheme == "https"
+        response.set_cookie(
+            key="mb_session",
+            value=session_token,
+            httponly=True,
+            secure=is_https,
+            max_age=86400 * 14,
+            samesite="lax",
+        )
+        return {"ok": True, "token": session_token, "role": "admin"}
+
+    record_login_failure(client_ip)
     raise HTTPException(status_code=401, detail="Невірний пароль")
+
+
+@router.post("/api/v5/auth/logout")
+async def logout_dashboard(response: Response, mb_session: Optional[str] = Cookie(None)):
+    if mb_session:
+        db_service.delete_session(mb_session)
+    response.delete_cookie(key="mb_session")
+    return {"ok": True}
 
 
 @router.get("/api/v1/box/state")
@@ -205,7 +241,7 @@ async def trigger_tts_speech(text: str, request: Request, _: str = Depends(verif
 
 
 @router.post("/api/v1/ota/upload")
-async def upload_ota_binary(request: Request, file: UploadFile = File(...), _: str = Depends(verify_access)):
+async def upload_ota_binary(request: Request, file: UploadFile = File(...), _: str = Depends(verify_admin_access)):
     return await ota_service.save_and_queue_firmware(file, str(request.base_url))
 
 

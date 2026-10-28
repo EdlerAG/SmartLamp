@@ -624,6 +624,22 @@ class TelegramBotService:
 
         # 3. Прийом голосових повідомлень (Voice)
         if "voice" in msg:
+            if is_girl:
+                # Голосові повідомлення від Насті пересилаються Ярославу в Telegram, а не грають на самій лампі
+                if state_service.admin_id:
+                    await self._api("sendVoice", {
+                        "chat_id": state_service.admin_id,
+                        "voice": msg["voice"].get("file_id"),
+                        "caption": "🎙 <b>Голосове повідомлення від Насті</b>",
+                        "parse_mode": "HTML",
+                    })
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "🎙 Твоє голосове повідомлення надіслано Ярославу в Telegram!",
+                    "reply_markup": GIRL_KB,
+                })
+                return
+
             voice_id = msg["voice"].get("file_id")
             if voice_id:
                 raw_voice = await self._download_tg_file(voice_id)

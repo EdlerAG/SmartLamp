@@ -307,6 +307,7 @@ input::placeholder, textarea::placeholder {
       <a href="/api/v5/infographic/png" target="_blank" class="btn btn-cool" style="text-decoration:none;display:flex;align-items:center;gap:6px">
         📊 800x500 Інфографіка
       </a>
+      <button onclick="doLogout()" class="btn" style="padding:6px 12px;font-size:11px">🚪 Вийти</button>
     </div>
   </div>
 
@@ -526,6 +527,13 @@ function doLogin(){
     } else {
       alert('Невірний пароль!');
     }
+  });
+}
+
+function doLogout(){
+  fetch('/api/v5/auth/logout', {method:'POST'}).then(() => {
+    document.getElementById('loginModal').style.display = 'flex';
+    toast('Сесію завершено');
   });
 }
 
