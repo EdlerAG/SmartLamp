@@ -17,6 +17,7 @@ private:
     uint32_t last_ldr_ms      = 0;
     uint32_t last_hist_ms     = 0;
     bool     first_hist_saved = false;
+    float    led_heat_accumulator = 0.0f;
 
     bool probeSht31(uint8_t addr) {
         Wire.beginTransmission(addr);
@@ -90,7 +91,8 @@ public:
                     uint16_t rawT = ((uint16_t)buf[0] << 8) | buf[1];
                     uint16_t rawH = ((uint16_t)buf[3] << 8) | buf[4];
 
-                    float t = (-45.0f + 175.0f * ((float)rawT / 65535.0f)) + Config::TEMP_OFFSET_C;
+                    float dynamic_offset = Config::TEMP_OFFSET_C - (led_heat_accumulator * 1.5f);
+                    float t = (-45.0f + 175.0f * ((float)rawT / 65535.0f)) + dynamic_offset;
                     float h = 100.0f * ((float)rawH / 65535.0f);
 
                     if (t > -40.0f && t < 85.0f && fabs(t - state.temperature) >= 0.05f) {
@@ -107,6 +109,12 @@ public:
 
         if (now - last_climate_ms >= 2500) {
             last_climate_ms = now;
+
+            // Динамічна компенсація теплового розігріву корпусу від світлодіодів
+            float target_heat = (state.light_mode != MODE_LIGHT_OFF)
+                                ? ((float)state.current_led_brt / (float)Config::MAX_SAFE_BRT)
+                                : 0.0f;
+            led_heat_accumulator = (led_heat_accumulator * 0.985f) + (target_heat * 0.015f);
 
             if (state.sht_connected && !sht_waiting_data) {
                 Wire.beginTransmission(sht_addr);

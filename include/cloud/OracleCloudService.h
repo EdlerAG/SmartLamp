@@ -287,11 +287,15 @@ private:
             state.sp_linked = false;
         }
 
-        // Обробка тихих годин для Насті (v5.0)
-        if (json.indexOf("\"quiet_hours\":true") != -1) {
+        // Обробка тихих годин та режиму DND для Насті (v5.0-v5.3)
+        if (json.indexOf("\"quiet_hours\":true") != -1 || json.indexOf("\"dnd\":true") != -1) {
             state.setQuietHours(true);
-        } else if (json.indexOf("\"quiet_hours\":false") != -1) {
+            state.dnd_mode = true;
+            state.audio_muted = true;
+        } else if (json.indexOf("\"quiet_hours\":false") != -1 || json.indexOf("\"dnd\":false") != -1) {
             state.setQuietHours(false);
+            state.dnd_mode = false;
+            state.audio_muted = false;
         }
 
         // Обробка найближчої події Google Календаря Насті (Zero-Knowledge Smart Hub)
@@ -344,6 +348,24 @@ private:
 
                 String dur_str = TgJsonUtils::extractIntStr(sp_block, "duration_ms");
                 if (dur_str.length() > 0) state.spotify.duration_ms = (uint32_t)dur_str.toInt();
+
+                int ambi_idx = sp_block.indexOf("\"ambi_rgb\":[");
+                if (ambi_idx != -1) {
+                    int c1 = sp_block.indexOf(',', ambi_idx + 12);
+                    int c2 = (c1 != -1) ? sp_block.indexOf(',', c1 + 1) : -1;
+                    int end_brk = (c2 != -1) ? sp_block.indexOf(']', c2 + 1) : -1;
+                    if (c1 != -1 && c2 != -1 && end_brk != -1) {
+                        uint8_t r = (uint8_t)sp_block.substring(ambi_idx + 12, c1).toInt();
+                        uint8_t g = (uint8_t)sp_block.substring(c1 + 1, c2).toInt();
+                        uint8_t b = (uint8_t)sp_block.substring(c2 + 1, end_brk).toInt();
+                        state.spotify.ambi_r = r;
+                        state.spotify.ambi_g = g;
+                        state.spotify.ambi_b = b;
+                        state.ambi_r = r;
+                        state.ambi_g = g;
+                        state.ambi_b = b;
+                    }
+                }
 
                 state.spotify.last_sync_ms = millis();
             }
@@ -549,12 +571,15 @@ public:
             return;
         }
 
-        char status_json[480];
+        char status_json[576];
         CommandRouter::buildStatusJson(state, status_json, sizeof(status_json));
 
         String req_url = sync_endpoint;
         if (!state.has_more_cloud_cmds && !state.audio_playing) {
-            req_url += (req_url.indexOf('?') == -1 ? "?wait=6.0" : "&wait=6.0");
+            float wait_sec = (state.cmd_spotify_action != 0 || state.btn_l_pressed || state.btn_r_pressed || state.btn_t_pressed) ? 1.0f : 6.0f;
+            char wait_param[16];
+            snprintf(wait_param, sizeof(wait_param), "?wait=%.1f", wait_sec);
+            req_url += (req_url.indexOf('?') == -1 ? wait_param : String("&") + (wait_param + 1));
         }
 
         state.tls_in_flight = true;

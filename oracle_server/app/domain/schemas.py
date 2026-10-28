@@ -16,8 +16,13 @@ class BoxTelemetryPayload(BaseModel):
     b_pct: int = 0
     b_lvl: int = 0
     vol: int = 12
-    muted: int = 0
-    t_beep: int = 1
+    muted: bool = False
+    t_beep: bool = True
+    dnd: bool = False
+    pomo: bool = False
+    pomo_rem: int = 0
+    pomo_brk: bool = False
+    pomo_dur: int = 25
     sleep_m: int = 0
     media_m: int = 0
     scr: int = 0

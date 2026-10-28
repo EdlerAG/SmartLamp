@@ -43,6 +43,15 @@ async def sync_box(
             cur_p = spotify_service.get_cached_state().get("playing", False)
             await spotify_service.player_action("pause" if cur_p else "play")
 
+    # Двостороння синхронізація режиму Pomodoro з екрана 5 / кнопок лампи
+    if payload.pomo or payload.pomo_rem > 0:
+        nastya_routine_service.sync_pomodoro_from_box(
+            active=payload.pomo,
+            remaining_sec=payload.pomo_rem,
+            is_break=payload.pomo_brk,
+            duration_min=payload.pomo_dur,
+        )
+
     # Demand-driven опитування Spotify (0.00 мс якщо не відкритий Хаб)
     sp_data = await spotify_service.get_sync_state(
         box_screen=payload.scr,

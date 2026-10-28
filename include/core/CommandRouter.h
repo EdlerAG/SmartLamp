@@ -178,7 +178,8 @@ public:
                  "{\"fw\":\"%s\",\"t\":%.1f,\"h\":%.0f,\"p\":%.0f,\"p_diff\":%.1f,\"l\":%d,"
                  "\"m\":%d,\"m_name\":\"%s\","
                  "\"auto_b\":%s,\"b_idx\":%d,\"b_pct\":%d,"
-                 "\"vol\":%u,\"muted\":%s,\"t_beep\":%s,"
+                 "\"vol\":%u,\"muted\":%s,\"t_beep\":%s,\"dnd\":%s,"
+                 "\"pomo\":%s,\"pomo_rem\":%u,\"pomo_brk\":%s,\"pomo_dur\":%u,"
                  "\"sleep_m\":%u,\"media_m\":%u,\"scr\":%d,\"rssi\":%d,\"time\":\"%s\","
                  "\"unread\":%s,\"inbox_cnt\":%u,\"oracle\":%s,"
                  "\"sp_act\":%d,\"sp_playing\":%s,"
@@ -189,6 +190,9 @@ public:
                  state.light_mode, getModeNameUa(state.light_mode),
                  state.auto_brt ? "true" : "false", state.manual_brt_idx, state.getLedBrightnessPercent(),
                  state.audio_volume, state.audio_muted ? "true" : "false", state.touch_beep_enabled ? "true" : "false",
+                 state.dnd_mode ? "true" : "false",
+                 state.pomo_active ? "true" : "false", state.getPomoRemainingSeconds(),
+                 state.pomo_is_break ? "true" : "false", (unsigned int)state.pomo_duration_min,
                  state.getSleepTimerRemainingMin(), state.getMediaRemainingMin(), state.screen_mode, (int)state.wifi_rssi, t_str,
                  state.tg_unread ? "true" : "false", state.inbox_count,
                  state.oracle_online ? "true" : "false",

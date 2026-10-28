@@ -199,6 +199,17 @@ class NastyaRoutineService:
             "pct": min(100, pct),
         }
 
+    def sync_pomodoro_from_box(self, active: bool, remaining_sec: int, is_break: bool, duration_min: int = 25) -> None:
+        """Синхронізація стану Pomodoro при зміні/запуску з фізичних кнопок шкатулки."""
+        self._pomodoro_active = active
+        if active:
+            self._pomodoro_mode = "break" if is_break else "work"
+            self._pomodoro_duration_min = max(5, duration_min)
+            self._pomodoro_end_time = time.time() + max(1, remaining_sec)
+        else:
+            self._pomodoro_mode = "idle"
+            self._pomodoro_end_time = 0.0
+
     # --- 4. РАНКОВИЙ МЕТЕО-ГІД «ЩО ОДЯГНУТИ» ДЛЯ НАСТІ ---
     async def generate_morning_brief_for_nastya(self) -> str:
         from app.services.weather_ai_service import weather_ai_service

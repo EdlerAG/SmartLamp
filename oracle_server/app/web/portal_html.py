@@ -305,6 +305,7 @@ input::placeholder, textarea::placeholder {
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <span id="roleBadge" class="mono" style="font-size:11px;padding:5px 10px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-hairline);color:var(--accent-warm)">🌸 НАСТЯ</span>
+      <button id="dndTopBtn" class="btn" style="padding:6px 12px;font-size:11px" onclick="toggleDnd()">🌙 DND: ВИКЛ</button>
       <a href="/api/v5/infographic/png" target="_blank" class="btn btn-cool" style="text-decoration:none;display:flex;align-items:center;gap:6px">
         📊 800x500 Інфографіка
       </a>
@@ -420,21 +421,35 @@ input::placeholder, textarea::placeholder {
         </div>
       </div>
 
-      <!-- Zero-Knowledge Google Календар -->
+      <!-- Zero-Knowledge Google Календар & Розклад Подій -->
       <div style="background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">GOOGLE КАЛЕНДАР (ZERO-KNOWLEDGE):</span>
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">📅 РОЗКЛАД ТА КАЛЕНДАР:</span>
           <span id="calStatusBadge" class="mono" style="font-size:11px;color:var(--text-muted)">НЕ ПІДКЛЮЧЕНО</span>
         </div>
         <div id="calNextEvent" class="mono" style="font-size:12px;color:var(--accent-cool);margin-bottom:8px">
           📅 Найближча подія: --
         </div>
+
+        <!-- Швидке додавання події -->
+        <div style="display:grid;grid-template-columns:85px 1fr auto;gap:6px;align-items:center;margin-bottom:10px">
+          <input type="text" id="calTimeInput" placeholder="14:30" class="mono" style="margin:0;padding:6px 8px;font-size:12px">
+          <input type="text" id="calSummaryInput" placeholder="Назва події (напр. Семінар)..." style="margin:0;padding:6px 10px;font-size:12px">
+          <button class="btn btn-emerald" style="padding:6px 12px;font-size:11px" onclick="addCalendarEvent()">+ Додати</button>
+        </div>
+
+        <!-- Список подій -->
+        <div id="calEventList" style="max-height:150px;overflow-y:auto;margin-bottom:8px;font-size:12px">
+          <div style="color:var(--text-muted);font-size:11px">Завантаження розкладу...</div>
+        </div>
+
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-cool" id="calLoginBtn" style="padding:6px 12px" onclick="loginGoogle()">🔗 Підключити Google Календар</button>
-          <button class="btn btn-danger" id="calDisconnectBtn" style="padding:6px 12px;display:none" onclick="disconnectGoogle()">✕ Відключити</button>
+          <button class="btn" style="padding:6px 12px;font-size:11px" onclick="loadCalendarEvents()">🔄 Оновити</button>
+          <button class="btn btn-cool" id="calLoginBtn" style="padding:6px 12px;font-size:11px" onclick="loginGoogle()">🔗 Підключити Google</button>
+          <button class="btn btn-danger" id="calDisconnectBtn" style="padding:6px 12px;font-size:11px;display:none" onclick="disconnectGoogle()">✕ Відключити</button>
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
-          Шкатулка бере лише одну найближчу подію за 15 хв до початку для нагадування на екрані.
+          Шкатулка бере найближчу подію та виводить нагадування на дисплей Smart Hub (Вікно 3).
         </div>
       </div>
     </div>
@@ -1152,6 +1167,94 @@ function updateGoogleUI(linked, nextEvt) {
   }
 }
 
+function toggleDnd() {
+  fetch('/api/v5/dnd/toggle', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      updateDndUI(d.dnd);
+      toast(d.dnd ? '🌙 Режим DND увімкнено (Нічник + MUTE)' : '☀️ Режим DND вимкнено');
+    });
+}
+
+function updateDndUI(isDnd) {
+  const btn = document.getElementById('dndTopBtn');
+  if (btn) {
+    btn.innerText = isDnd ? '🌙 DND: АКТИВНО' : '🌙 DND: ВИКЛ';
+    btn.className = isDnd ? 'btn btn-emerald' : 'btn';
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>'"]/g, tag => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  }[tag] || tag));
+}
+
+function loadCalendarEvents() {
+  fetch('/api/v5/calendar/events')
+    .then(r => r.json())
+    .then(d => {
+      const container = document.getElementById('calEventList');
+      if (!container) return;
+      if (!d.events || d.events.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-muted);font-size:11px;padding:4px 0">Подій немає. Додайте подію вище або через Telegram-бота.</div>';
+        return;
+      }
+      container.innerHTML = d.events.map(ev => {
+        const srcIcon = ev.source === 'google' ? '🇬' : '📝';
+        const dStr = ev.date ? ` (${ev.date})` : '';
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border-hairline)">
+            <div>
+              <span>${srcIcon}</span>
+              <b class="mono" style="color:var(--accent-warm);margin-left:4px">${ev.time}${dStr}</b>
+              <span style="margin-left:6px">${escapeHtml(ev.summary)}</span>
+            </div>
+            <button class="btn btn-danger" style="padding:2px 8px;font-size:10px" onclick="deleteCalendarEvent('${ev.id}')">🗑</button>
+          </div>
+        `;
+      }).join('');
+    }).catch(() => {});
+}
+
+function addCalendarEvent() {
+  const tEl = document.getElementById('calTimeInput');
+  const sEl = document.getElementById('calSummaryInput');
+  const timeStr = tEl.value.trim();
+  const summary = sEl.value.trim();
+  if (!timeStr || !summary) {
+    toast('Вкажіть час та назву події');
+    return;
+  }
+  fetch('/api/v5/calendar/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ time_str: timeStr, summary: summary, source: 'manual' })
+  }).then(r => r.json()).then(d => {
+    toast('📅 Подію додано та синхронізовано!');
+    tEl.value = '';
+    sEl.value = '';
+    loadCalendarEvents();
+    pollState();
+  });
+}
+
+function deleteCalendarEvent(id) {
+  if (!confirm('Видалити подію з календаря?')) return;
+  fetch('/api/v5/calendar/events/' + encodeURIComponent(id), { method: 'DELETE' })
+    .then(r => r.json())
+    .then(() => {
+      toast('Подію видалено');
+      loadCalendarEvents();
+      pollState();
+    });
+}
+
 let personaLoaded = false;
 let configLoaded = false;
 let pollTickCount = 0;
@@ -1221,6 +1324,9 @@ function pollState(forceFull = false){
         currentTouchBeep = Boolean(t.t_beep);
         updateTouchBeepUI(currentTouchBeep);
       }
+      if(t.dnd !== undefined){
+        updateDndUI(Boolean(t.dnd));
+      }
     }
 
     if(!personaLoaded && d.ai_persona){
@@ -1284,7 +1390,9 @@ function pollState(forceFull = false){
 }
 
 pollState();
+loadCalendarEvents();
 setInterval(pollState, 3000);
+setInterval(loadCalendarEvents, 30000);
 </script>
 </body>
 </html>

@@ -186,6 +186,8 @@ class TelegramBotService:
                 {"text": "⏱ 45 хв (Глибокий)", "callback_data": "pomo:45"},
                 {"text": "⏱ 60 хв (Сесія)", "callback_data": "pomo:60"},
             ])
+        if spotify_service.is_linked():
+            rows.append([{"text": "🎧 Фокус-музика у Spotify (Play/Pause)", "callback_data": "pomo:spotify_lofi"}])
         return {"inline_keyboard": rows}
 
     @staticmethod
@@ -233,9 +235,10 @@ class TelegramBotService:
             f"💡 <i>Щоб додати подію, напишіть у чат повідомлення у форматі:\n<code>15:30 Зустріч</code> або <code>Завтра 11:00 Семінар</code></i>"
         )
 
-        buttons = [
-            [{"text": "🔄 Оновити дані", "callback_data": "cal_act:refresh"}],
-        ]
+        buttons = []
+        for ev in events[:4]:
+            buttons.append([{"text": f"🗑 {ev['time']} {ev['summary'][:18]}", "callback_data": f"cal_act:del_{ev['id']}"}])
+        buttons.append([{"text": "🔄 Оновити розклад", "callback_data": "cal_act:refresh"}])
         if not is_linked:
             auth_url = google_calendar_service.get_authorize_url(base_url)
             if auth_url:
@@ -471,6 +474,15 @@ class TelegramBotService:
                     "parse_mode": "HTML",
                     "reply_markup": self._pomodoro_inline_kb(),
                 })
+            elif act == "spotify_lofi":
+                cur_p = spotify_service.get_cached_state().get("playing", False)
+                await spotify_service.player_action("pause" if cur_p else "play")
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🎧 Spotify фокус-трек перемкнуто"})
+                await self._api("editMessageReplyMarkup", {
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "reply_markup": self._pomodoro_inline_kb(),
+                })
             else:
                 try:
                     dur = int(act)
@@ -521,6 +533,13 @@ class TelegramBotService:
                 google_calendar_service._cached_event = None
                 cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Розклад оновлено!"})
+                await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": cal_t, "parse_mode": "HTML", "reply_markup": cal_k})
+            elif sub.startswith("del_"):
+                ev_id = sub[4:]
+                await google_calendar_service.delete_event(ev_id)
+                google_calendar_service._cached_event = None
+                cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🗑 Подію видалено!"})
                 await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": cal_t, "parse_mode": "HTML", "reply_markup": cal_k})
 
         elif data.startswith("sp_act:"):
