@@ -4,7 +4,7 @@ PORTAL_HTML: str = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>MagicBox Sovereign Studio • Hallmark v4.5</title>
+<title>MagicBox Sovereign Studio • Hallmark v5.0 (Nastya Edition)</title>
 <!-- Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 -->
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
@@ -279,9 +279,9 @@ input::placeholder, textarea::placeholder {
 <div id="loginModal">
   <div class="login-box">
     <div style="font-size:32px;margin-bottom:8px">🪄</div>
-    <h2 style="font-size:16px;margin-bottom:6px">MagicBox Studio • Hallmark v4.5</h2>
-    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">Введіть пароль або X-Device-Key</p>
-    <input type="password" id="pwdInput" placeholder="Пароль...">
+    <h2 style="font-size:16px;margin-bottom:6px">MagicBox Studio • Hallmark v5.0</h2>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">Введіть PIN (0511) або пароль адміністратора</p>
+    <input type="password" id="pwdInput" placeholder="PIN (0511)...">
     <button class="btn btn-cool" style="width:100%;margin-top:10px" onclick="doLogin()">Увійти</button>
   </div>
 </div>
@@ -293,7 +293,7 @@ input::placeholder, textarea::placeholder {
       <div>
         <div style="display:flex;align-items:center;gap:8px">
           <span id="onlineDot" class="pulse on"></span>
-          <b id="onlineTxt" style="font-size:14px;letter-spacing:0.5px">MAGICBOX SOVEREIGN STUDIO v4.5</b>
+          <b id="onlineTxt" style="font-size:14px;letter-spacing:0.5px">MAGICBOX SOVEREIGN STUDIO v5.0 (NASTYA EDITION)</b>
           <span class="mono" style="font-size:11px;color:var(--accent-cool)" id="fwBadge">FW: --</span>
         </div>
         <div class="mono" style="font-size:11px;color:var(--text-secondary);margin-top:3px">
@@ -340,6 +340,99 @@ input::placeholder, textarea::placeholder {
         <button class="btn btn-emerald" style="padding:6px 14px" id="spPlayBtn" onclick="spotifyAction('toggle')">⏯</button>
         <button class="btn" style="padding:6px 12px" onclick="spotifyAction('next')">⏭</button>
         <button class="btn btn-cool" style="padding:6px 12px" onclick="loginSpotify()">🔗 Підключити Spotify</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nastya Daily Comfort & Routines (v5.0) -->
+  <div class="split-2">
+    <!-- Затишок та Режим Дня Насті -->
+    <div class="card">
+      <h3><span>🌸 Затишок та Режим Дня (Настя)</span></h3>
+      
+      <!-- Тихі Години -->
+      <div style="margin-bottom:12px;background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">🌙 ТИХІ ГОДИНИ (QUIET HOURS):</span>
+          <button class="btn" id="qhToggleBtn" onclick="toggleQuietHours()" style="padding:4px 10px;font-size:11px">🌙 ВИМКНЕНО</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center">
+          <div>
+            <label style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Початок:</label>
+            <input type="time" id="qhStart" value="23:00" style="padding:6px 8px;font-size:12px">
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Кінець:</label>
+            <input type="time" id="qhEnd" value="08:00" style="padding:6px 8px;font-size:12px">
+          </div>
+          <button class="btn" style="margin-top:14px;padding:6px 12px;font-size:11px" onclick="saveQuietHours()">Зберегти</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+          Авто-приглушення світла до 15% та повна тиша (Mute) для спокійного сну.
+        </div>
+      </div>
+
+      <!-- Розумний Світанок -->
+      <div style="margin-bottom:12px;background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">🌅 РОЗУМНИЙ СВІТАНОК:</span>
+          <button class="btn" id="alarmToggleBtn" onclick="toggleAlarm()" style="padding:4px 10px;font-size:11px">🌅 ВИМКНЕНО</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center">
+          <div>
+            <label style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Час підйому:</label>
+            <input type="time" id="alarmTime" value="07:30" style="padding:6px 8px;font-size:12px">
+          </div>
+          <button class="btn" style="margin-top:14px;padding:6px 12px;font-size:11px" onclick="saveAlarm()">Зберегти</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+          За 20 хв до будильника лампа плавно вмикає сонячне світло (1% → 100%) та грає тихий акорд.
+        </div>
+      </div>
+
+      <!-- Ранковий Гід Насті -->
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-emerald" style="flex:1" onclick="triggerMorningBrief()">🌤 Отримати ранкову пораду Насті</button>
+      </div>
+      <div id="morningBriefBox" style="margin-top:8px;font-size:12px;color:var(--text-primary);background:var(--bg-surface);border:1px solid var(--border-hairline);padding:10px;border-radius:8px;display:none"></div>
+    </div>
+
+    <!-- Навчання Pomodoro & Особистий Google Календар -->
+    <div class="card">
+      <h3><span>📚 Фокус Pomodoro & 📅 Приватний Календар</span></h3>
+
+      <!-- Pomodoro Таймер -->
+      <div style="margin-bottom:14px;background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">СТАТУС: <b id="pomoStatus" class="mono" style="color:var(--text-muted)">НЕАКТИВНИЙ</b></span>
+          <b id="pomoTimer" class="mono" style="font-size:18px;color:var(--accent-warm)">25:00</b>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn active" style="flex:1;padding:8px" onclick="startPomodoro(25)">▶️ 25 хв (Фокус)</button>
+          <button class="btn" style="flex:1;padding:8px" onclick="startPomodoro(45)">▶️ 45 хв (Інтенсив)</button>
+          <button class="btn btn-danger" style="padding:8px 12px" onclick="stopPomodoro()">🛑 Стоп</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+          Фокус: теплий бурштин без звуків сповіщень. Перерва: спокійний смарагдовий бриз.
+        </div>
+      </div>
+
+      <!-- Zero-Knowledge Google Календар -->
+      <div style="background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">GOOGLE КАЛЕНДАР (ZERO-KNOWLEDGE):</span>
+          <span id="calStatusBadge" class="mono" style="font-size:11px;color:var(--text-muted)">НЕ ПІДКЛЮЧЕНО</span>
+        </div>
+        <div id="calNextEvent" class="mono" style="font-size:12px;color:var(--accent-cool);margin-bottom:8px">
+          📅 Найближча подія: --
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-cool" id="calLoginBtn" style="padding:6px 12px" onclick="loginGoogle()">🔗 Підключити Google Календар</button>
+          <button class="btn btn-danger" id="calDisconnectBtn" style="padding:6px 12px;display:none" onclick="disconnectGoogle()">✕ Відключити</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+          Шкатулка бере лише одну найближчу подію за 15 хв до початку для нагадування на екрані.
+        </div>
       </div>
     </div>
   </div>
@@ -790,6 +883,159 @@ function askAiBriefing(){
   });
 }
 
+// Nastya Routine & Comfort (v5.0)
+let quietHoursEnabled = false;
+let alarmEnabled = false;
+
+function toggleQuietHours() {
+  quietHoursEnabled = !quietHoursEnabled;
+  saveQuietHours();
+}
+
+function saveQuietHours() {
+  const start = document.getElementById('qhStart').value || '23:00';
+  const end = document.getElementById('qhEnd').value || '08:00';
+  fetch(`/api/v5/nastya/quiet-hours?enabled=${quietHoursEnabled}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, {
+    method: 'POST'
+  }).then(r => r.json()).then(d => {
+    updateQuietHoursUI(d.enabled, d.start, d.end);
+    toast(d.enabled ? '🌙 Тихі години увімкнено!' : 'Тихі години вимкнено');
+  });
+}
+
+function updateQuietHoursUI(enabled, start, end) {
+  quietHoursEnabled = Boolean(enabled);
+  const btn = document.getElementById('qhToggleBtn');
+  if (btn) {
+    btn.innerText = quietHoursEnabled ? '🌙 АКТИВНІ (ТИША)' : '🌙 ВИМКНЕНО';
+    btn.className = quietHoursEnabled ? 'btn btn-emerald' : 'btn';
+  }
+  if (start && document.getElementById('qhStart')) document.getElementById('qhStart').value = start;
+  if (end && document.getElementById('qhEnd')) document.getElementById('qhEnd').value = end;
+}
+
+function toggleAlarm() {
+  alarmEnabled = !alarmEnabled;
+  saveAlarm();
+}
+
+function saveAlarm() {
+  const t = document.getElementById('alarmTime').value || '07:30';
+  fetch(`/api/v5/nastya/alarm?enabled=${alarmEnabled}&time_str=${encodeURIComponent(t)}&days=0,1,2,3,4`, {
+    method: 'POST'
+  }).then(r => r.json()).then(d => {
+    updateAlarmUI(d.enabled, d.time);
+    toast(d.enabled ? `🌅 Будильник-світанок встановлено на ${d.time}` : 'Будильник вимкнено');
+  });
+}
+
+function updateAlarmUI(enabled, timeVal) {
+  alarmEnabled = Boolean(enabled);
+  const btn = document.getElementById('alarmToggleBtn');
+  if (btn) {
+    btn.innerText = alarmEnabled ? `🌅 УВІМКНЕНО (${timeVal || '07:30'})` : '🌅 ВИМКНЕНО';
+    btn.className = alarmEnabled ? 'btn btn-emerald' : 'btn';
+  }
+  if (timeVal && document.getElementById('alarmTime')) document.getElementById('alarmTime').value = timeVal;
+}
+
+function triggerMorningBrief() {
+  toast('Запит ранкового гіда для Насті...');
+  fetch('/api/v5/nastya/morning-brief/trigger', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      const box = document.getElementById('morningBriefBox');
+      if (box) {
+        box.style.display = 'block';
+        box.innerText = d.brief || 'Гід сформовано!';
+      }
+      toast('Ранковий гід озвучено та відправлено!');
+    });
+}
+
+function startPomodoro(min) {
+  fetch(`/api/v5/nastya/pomodoro/start?work_min=${min}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      toast(`📚 Помодоро: ${min} хв фокусу (теплий бурштин)!`);
+      updatePomodoroUI(d);
+    });
+}
+
+function stopPomodoro() {
+  fetch('/api/v5/nastya/pomodoro/stop', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      toast('Помодоро зупинено');
+      updatePomodoroUI(d);
+    });
+}
+
+function updatePomodoroUI(pomo) {
+  if (!pomo) return;
+  const statusEl = document.getElementById('pomoStatus');
+  const timerEl = document.getElementById('pomoTimer');
+  if (pomo.active) {
+    const min = Math.floor(pomo.remaining_sec / 60);
+    const sec = ('0' + (pomo.remaining_sec % 60)).slice(-2);
+    if (timerEl) timerEl.innerText = `${min}:${sec}`;
+    if (statusEl) {
+      if (pomo.mode === 'work') {
+        statusEl.innerText = '🔥 ФОКУС (БУРШТИН)';
+        statusEl.style.color = 'var(--accent-warm)';
+      } else {
+        statusEl.innerText = '☕ ВІДПОЧИНОК (СМАРАГД)';
+        statusEl.style.color = 'var(--accent-success)';
+      }
+    }
+  } else {
+    if (timerEl) timerEl.innerText = '25:00';
+    if (statusEl) {
+      statusEl.innerText = 'НЕАКТИВНИЙ';
+      statusEl.style.color = 'var(--text-muted)';
+    }
+  }
+}
+
+function loginGoogle() {
+  fetch('/api/v5/google/login')
+    .then(r => r.json())
+    .then(d => {
+      if (d.auth_url) window.open(d.auth_url, '_blank');
+      else toast('Google Client ID не налаштовано');
+    });
+}
+
+function disconnectGoogle() {
+  if (confirm('Відключити Google Календар?')) {
+    fetch('/api/v5/google/disconnect', { method: 'POST' })
+      .then(() => {
+        toast('Календар відключено');
+        pollState();
+      });
+  }
+}
+
+function updateGoogleUI(linked, nextEvt) {
+  const badge = document.getElementById('calStatusBadge');
+  const btnLogin = document.getElementById('calLoginBtn');
+  const btnDisc = document.getElementById('calDisconnectBtn');
+  const nextEvtEl = document.getElementById('calNextEvent');
+  if (linked) {
+    if (badge) { badge.innerText = '🔗 ПІДКЛЮЧЕНО (Zero-Knowledge)'; badge.style.color = 'var(--accent-success)'; }
+    if (btnLogin) btnLogin.style.display = 'none';
+    if (btnDisc) btnDisc.style.display = 'inline-block';
+    if (nextEvtEl && nextEvt) {
+      nextEvtEl.innerText = `📅 ${nextEvt.title} (${nextEvt.start_time || ''})`;
+    }
+  } else {
+    if (badge) { badge.innerText = 'НЕ ПІДКЛЮЧЕНО'; badge.style.color = 'var(--text-muted)'; }
+    if (btnLogin) btnLogin.style.display = 'inline-block';
+    if (btnDisc) btnDisc.style.display = 'none';
+    if (nextEvtEl) nextEvtEl.innerText = '📅 Найближча подія: --';
+  }
+}
+
 let personaLoaded = false;
 let configLoaded = false;
 function pollState(){
@@ -804,7 +1050,7 @@ function pollState(){
 
     const on = d.is_online;
     document.getElementById('onlineDot').className = 'pulse ' + (on ? 'on' : 'off');
-    document.getElementById('onlineTxt').innerText = on ? 'MAGICBOX SOVEREIGN STUDIO v4.5' : 'MAGICBOX OFFLINE (BLEKAUT)';
+    document.getElementById('onlineTxt').innerText = on ? 'MAGICBOX SOVEREIGN STUDIO v5.0 (NASTYA EDITION)' : 'MAGICBOX OFFLINE (BLEKAUT)';
     document.getElementById('queueTxt').innerText = d.pending_commands;
 
     const res = d.resources || {};
@@ -875,6 +1121,17 @@ function pollState(){
 
     renderGallery(d.custom_media || []);
     renderVoicePresets(d.voice_presets || []);
+
+    if(d.quiet_hours){
+      updateQuietHoursUI(d.quiet_hours.enabled, d.quiet_hours.start, d.quiet_hours.end);
+    }
+    if(d.alarm){
+      updateAlarmUI(d.alarm.enabled, d.alarm.time);
+    }
+    if(d.pomodoro){
+      updatePomodoroUI(d.pomodoro);
+    }
+    updateGoogleUI(Boolean(d.google_calendar_linked), d.next_calendar_event);
 
     const ch = d.climate_history || [];
     if(ch.length > 1){

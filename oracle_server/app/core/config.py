@@ -53,6 +53,11 @@ class Settings:
     SPOTIFY_CLIENT_SECRET: str = os.getenv("SPOTIFY_CLIENT_SECRET", "")
     SPOTIFY_REDIRECT_URI: str = os.getenv("SPOTIFY_REDIRECT_URI", "")
 
+    # Google Calendar OAuth2 (v5.0 Особистий Календар Насті)
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "")
+
     # Голосовий синтез та клонування власного голосу (v4.5)
     TTS_PROVIDER: str = os.getenv("TTS_PROVIDER", "edge") # "edge", "elevenlabs", "fish_audio"
     VOICE_CLONE_API_KEY: str = os.getenv("VOICE_CLONE_API_KEY", "")
@@ -103,17 +108,16 @@ for _folder in (
 def validate_security_keys() -> None:
     """Zero-Default Invariant: перевірка безпеки ключів доступу."""
     is_default_key = settings.API_KEY == "smartlamp-secret-key"
-    is_default_pwd = settings.DASHBOARD_PASSWORD == "0511"
 
-    if settings.APP_ENV == "production" and (is_default_key or is_default_pwd):
+    if settings.APP_ENV == "production" and is_default_key:
         raise RuntimeError(
-            "CRITICAL SECURITY: Запуск у PRODUCTION режимі з дефолтним MAGICBOX_KEY або DASHBOARD_PASSWORD заборонено! "
-            "Вкажіть власні надійні ключі у файлі .env або змінних середовища."
+            "CRITICAL SECURITY: Запуск у PRODUCTION режимі з дефолтним MAGICBOX_KEY заборонено! "
+            "Вкажіть власний надійний ключ пристрою у файлі .env або змінних середовища."
         )
 
-    if is_default_key or is_default_pwd:
+    if is_default_key:
         import sys
         sys.stderr.write(
-            "\n⚠️  [УВАГА] MagicBox працює з ДЕФОЛТНИМИ ключами безпеки (MAGICBOX_KEY/DASHBOARD_PASSWORD)! "
-            "Перед розміщенням у віддаленій мережі обов'язково замініть їх у .env\n\n"
+            "\n⚠️  [УВАГА] MagicBox працює з тестовим MAGICBOX_KEY! "
+            "Перед розміщенням у віддаленій мережі рекомендується встановити власний ключ у .env\n\n"
         )

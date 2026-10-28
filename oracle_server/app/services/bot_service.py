@@ -15,12 +15,14 @@ from app.services.ota_service import ota_service
 from app.services.media_service import media_service
 from app.services.spotify_service import spotify_service
 from app.services.infographic_service import infographic_service
+from app.services.nastya_routine_service import nastya_routine_service
+from app.services.maintenance_service import maintenance_service
 
 ADMIN_KB = {
     "keyboard": [
         [{"text": "🎨 Світло & Свічка"}, {"text": "🖼 Заставка & Гіфки"}, {"text": "🎵 Spotify Плеєр"}],
         [{"text": "🔊 Гучність & Звук"}, {"text": "📊 Інфографіка & Стан"}, {"text": "🌤 Погода & Голос ШІ"}],
-        [{"text": "🎭 Швидка Реакція (Меми)"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
+        [{"text": "🩺 Здоров'я Лампи"}, {"text": "📦 Бекап БД"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
     ],
     "resize_keyboard": True,
 }
@@ -28,8 +30,8 @@ ADMIN_KB = {
 GIRL_KB = {
     "keyboard": [
         [{"text": "🎨 Світло & Свічка"}, {"text": "🖼 Заставка & Гіфки"}, {"text": "🎵 Spotify Плеєр"}],
-        [{"text": "🔊 Гучність & Звук"}, {"text": "📊 Інфографіка & Стан"}, {"text": "🌤 Погода & Голос ШІ"}],
-        [{"text": "🎭 Швидка Реакція (Меми)"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
+        [{"text": "📚 Фокус Pomodoro"}, {"text": "🌅 Ранковий Гід"}, {"text": "🔊 Гучність & Звук"}],
+        [{"text": "📊 Інфографіка & Стан"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
     ],
     "resize_keyboard": True,
 }
@@ -813,6 +815,56 @@ class TelegramBotService:
             phrase = text[5:].strip()
             await audio_service.speak_text(phrase, settings.PUBLIC_SERVER_URL)
             await self._api("sendMessage", {"chat_id": chat_id, "text": f"🔊 Озвучую на шкатулці:\n«{phrase}»{online_note}", "reply_markup": active_kb})
+            return
+
+        if text.startswith("/pomodoro") or "Фокус" in text:
+            st = nastya_routine_service.start_pomodoro(25)
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": "📚 <b>РЕЖИМ ФОКУСУ ТА НАВЧАННЯ (POMODORO)</b>\n━━━━━━━━━━━━━━━━━━\nШкатулка перейшла на спокійне бурштинове світло на 25 хвилин. Не відволікайся, продуктивного фокусу! ✨",
+                "parse_mode": "HTML",
+                "reply_markup": active_kb,
+            })
+            return
+
+        if text.startswith("/morning") or "Ранковий Гід" in text or "Ранок" in text:
+            brief = await nastya_routine_service.generate_morning_brief_for_nastya()
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": brief,
+                "parse_mode": "HTML",
+                "reply_markup": active_kb,
+            })
+            return
+
+        if (text.startswith("/health") or "Здоров'я" in text) and is_admin:
+            rep = maintenance_service.get_health_report()
+            box = rep["box"]
+            srv = rep["server"]["resources"]
+            t_msg = (
+                f"🩺 <b>ЗДОРОВ'Я СИСТЕМИ MAGICBOX</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"📡 Шкатулка: <b>{'🟢 ОНЛАЙН' if box['is_online'] else '🔴 ОФЛАЙН'}</b> (RSSI: {box['wifi_rssi_dbm']} dBm)\n"
+                f"🌡 Кімната Насті: {box['room_temperature']}°C, {box['room_humidity']}%, {box['room_pressure_mm']} мм\n"
+                f"🔋 Вільна PSRAM: {box['psram_free_bytes'] // (1024*1024)} MB | Heap: {box['heap_free_bytes'] // 1024} KB\n"
+                f"🖥 Сервер RAM RSS: {srv.get('ram_rss_mb', 0):.1f} MB | Диск: {srv.get('storage_used_mb', 0):.1f} MB\n"
+                f"🎵 Spotify: {'Підключено ✅' if rep['integrations']['spotify_linked'] else 'Не підключено ❌'}\n"
+                f"📅 Google Календар: {'Підключено ✅' if rep['integrations']['google_calendar_linked'] else 'Не підключено ❌'}\n"
+                f"🔌 Блекаутів за 7 днів: {rep['power_analytics']['recent_outages_count']} (загалом {rep['power_analytics']['total_outage_time_min']} хв)"
+            )
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": t_msg,
+                "parse_mode": "HTML",
+                "reply_markup": ADMIN_KB,
+            })
+            return
+
+        if (text.startswith("/backup") or "Бекап" in text) and is_admin:
+            await self._api("sendMessage", {"chat_id": chat_id, "text": "⏳ Створюю SQLite бекап бази даних..."})
+            ok = await maintenance_service.send_weekly_backup_to_admin()
+            if not ok:
+                await self._api("sendMessage", {"chat_id": chat_id, "text": "❌ Помилка створення чи відправки бекапу."})
             return
 
         # 7. Звичайні текстові повідомлення від Насті чи Ярослава

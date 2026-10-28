@@ -31,6 +31,9 @@ from app.services.weather_ai_service import weather_ai_service
 from app.services.audio_service import audio_service
 from app.services.spotify_service import spotify_service
 from app.services.infographic_service import infographic_service
+from app.services.nastya_routine_service import nastya_routine_service
+from app.services.google_calendar_service import google_calendar_service
+from app.services.maintenance_service import maintenance_service
 from app.web.portal_html import PORTAL_HTML
 
 router = APIRouter(tags=["Web Studio & Remote Control v5.0"])
@@ -104,6 +107,10 @@ async def get_full_cloud_state(hours: int = 24, _: str = Depends(verify_access))
             "clone_voice_id": db_service.get_setting("voice_clone_id", settings.VOICE_CLONE_ID),
         },
         "voice_presets": db_service.list_voice_presets(),
+        "quiet_hours": nastya_routine_service.get_quiet_hours(),
+        "alarm": nastya_routine_service.get_alarm_config(),
+        "pomodoro": nastya_routine_service.get_pomodoro_status(),
+        "google_calendar_linked": google_calendar_service.is_linked(),
         "resources": memory_guard.get_telemetry(),
     }
 
@@ -313,3 +320,132 @@ async def play_voice_preset(name: str, request: Request, _: str = Depends(verify
     if not res.get("ok"):
         raise HTTPException(status_code=404, detail=res.get("error", "Preset not found"))
     return res
+
+
+# ====================================================================
+# ФАЗА 5: ОСОБИСТИЙ GOOGLE КАЛЕНДАР НАСТІ (ZERO-KNOWLEDGE PRIVACY)
+# ====================================================================
+
+@router.get("/api/v5/google/login")
+async def get_google_login(request: Request, _: str = Depends(verify_access)):
+    url = google_calendar_service.get_authorize_url(str(request.base_url))
+    return {"ok": True, "auth_url": url}
+
+
+@router.get("/api/v5/google/callback", response_class=HTMLResponse)
+async def google_oauth_callback(code: str, request: Request):
+    ok = await google_calendar_service.handle_callback(code, str(request.base_url))
+    if ok:
+        return HTMLResponse(
+            "<html><body style='background:#08090C;color:#52B788;font-family:sans-serif;text-align:center;padding:50px;'>"
+            "<h2>📅 Google Календар Насті успішно підключено!</h2>"
+            "<p>Найближчі події тепер делікатно нагадуватимуться на шкатулці.</p>"
+            "<script>setTimeout(() => window.location.href='/', 1800);</script>"
+            "</body></html>"
+        )
+    return HTMLResponse(
+        "<html><body style='background:#08090C;color:#E63946;font-family:sans-serif;text-align:center;padding:50px;'>"
+        "<h2>❌ Помилка підключення Google Календаря</h2>"
+        "<p>Перевірте налаштування GOOGLE_CLIENT_ID та GOOGLE_CLIENT_SECRET.</p>"
+        "</body></html>",
+        status_code=400,
+    )
+
+
+@router.get("/api/v5/google/status")
+async def get_google_status(_: str = Depends(verify_access)):
+    return {
+        "ok": True,
+        "is_linked": google_calendar_service.is_linked(),
+        "next_event": await google_calendar_service.get_next_event() if google_calendar_service.is_linked() else None,
+    }
+
+
+@router.post("/api/v5/google/disconnect")
+async def disconnect_google(_: str = Depends(verify_access)):
+    google_calendar_service.disconnect()
+    return {"ok": True}
+
+
+# ====================================================================
+# ФАЗА 4: ЗАХИСТ ЗАТИШКУ ТА РУТИНИ ДЛЯ НАСТІ
+# ====================================================================
+
+@router.get("/api/v5/nastya/quiet-hours")
+async def get_quiet_hours(_: str = Depends(verify_access)):
+    return {"ok": True, **nastya_routine_service.get_quiet_hours()}
+
+
+@router.post("/api/v5/nastya/quiet-hours")
+async def update_quiet_hours(
+    enabled: bool = Query(...),
+    start: str = Query("23:00"),
+    end: str = Query("08:00"),
+    _: str = Depends(verify_access),
+):
+    nastya_routine_service.set_quiet_hours(enabled, start, end)
+    return {"ok": True, "enabled": enabled, "start": start, "end": end}
+
+
+@router.get("/api/v5/nastya/alarm")
+async def get_alarm(_: str = Depends(verify_access)):
+    return {"ok": True, **nastya_routine_service.get_alarm_config()}
+
+
+@router.post("/api/v5/nastya/alarm")
+async def update_alarm(
+    enabled: bool = Query(...),
+    time_str: str = Query("07:30"),
+    days: str = Query("0,1,2,3,4"),
+    snooze_min: int = Query(9),
+    _: str = Depends(verify_access),
+):
+    day_list = [int(d.strip()) for d in days.split(",") if d.strip().isdigit()]
+    nastya_routine_service.set_alarm_config(enabled, time_str, day_list, snooze_min)
+    return {"ok": True, "enabled": enabled, "time": time_str, "days": day_list}
+
+
+@router.post("/api/v5/nastya/pomodoro/start")
+async def start_pomodoro(work_min: int = Query(25, ge=5, le=120), _: str = Depends(verify_access)):
+    st = nastya_routine_service.start_pomodoro(work_min)
+    return {"ok": True, **st}
+
+
+@router.post("/api/v5/nastya/pomodoro/stop")
+async def stop_pomodoro(_: str = Depends(verify_access)):
+    st = nastya_routine_service.stop_pomodoro()
+    return {"ok": True, **st}
+
+
+@router.get("/api/v5/nastya/pomodoro/status")
+async def get_pomodoro(_: str = Depends(verify_access)):
+    return {"ok": True, **nastya_routine_service.get_pomodoro_status()}
+
+
+@router.post("/api/v5/nastya/morning-brief/trigger")
+async def trigger_morning_brief(_: str = Depends(verify_access)):
+    brief = await nastya_routine_service.generate_morning_brief_for_nastya()
+    if settings.TG_BOT_TOKEN and state_service.girl_id:
+        from app.services.bot_service import bot_service, GIRL_KB
+        await bot_service._api("sendMessage", {
+            "chat_id": state_service.girl_id,
+            "text": brief,
+            "parse_mode": "HTML",
+            "reply_markup": GIRL_KB,
+        })
+    return {"ok": True, "brief": brief}
+
+
+# ====================================================================
+# ФАЗА 6: АДМІНІСТРАТИВНЕ ОБСЛУГОВУВАННЯ ТА ЗДОРОВ'Я
+# ====================================================================
+
+@router.get("/api/v5/admin/health-report")
+async def get_system_health(_: str = Depends(verify_admin_access)):
+    return {"ok": True, "report": maintenance_service.get_health_report()}
+
+
+@router.post("/api/v5/admin/backup")
+async def trigger_backup_now(_: str = Depends(verify_admin_access)):
+    ok = await maintenance_service.send_weekly_backup_to_admin()
+    return {"ok": ok, "message": "Бекап надіслано в Telegram" if ok else "Бекап збережено локально"}

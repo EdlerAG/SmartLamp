@@ -15,6 +15,8 @@ from app.services.blackout_service import blackout_service
 from app.services.media_service import media_service
 from app.services.ota_service import ota_service
 from app.services.spotify_service import spotify_service
+from app.services.nastya_routine_service import nastya_routine_service
+from app.services.google_calendar_service import google_calendar_service
 
 router = APIRouter(tags=["ESP32-S3 Box Gateway v5.0"])
 
@@ -56,6 +58,27 @@ async def sync_box(
     resp["sp_linked"] = spotify_service.is_linked()
     if sp_data and (payload.scr == 2 or payload.m == 11):
         resp["spotify"] = sp_data
+
+    # Перевірка світанкового будильника для Насті
+    alarm_st = nastya_routine_service.check_alarm_state()
+    if alarm_st.get("active"):
+        if alarm_st.get("phase") == "sunrise":
+            resp["set_mode"] = 2  # Бурштиновий схід
+            resp["set_brt"] = str(alarm_st.get("brightness_pct", 25))
+        elif alarm_st.get("phase") == "alarm_ring":
+            resp["set_mode"] = 0  # Теплий затишок 100%
+            resp["set_brt"] = "3"
+            resp["msg"] = "☀️ ДОБРОГО РАНКУ, НАСТЮ!"
+            resp["play_url"] = f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3"
+
+    # Перевірка тихих годин
+    resp["quiet_hours"] = nastya_routine_service.is_quiet_hours_now()
+
+    # Перевірка найближчої події календаря Насті для Smart Hub (Zero-Knowledge)
+    if google_calendar_service.is_linked():
+        cal_ev = await google_calendar_service.get_next_event()
+        if cal_ev:
+            resp["cal_event"] = cal_ev
 
     return resp
 

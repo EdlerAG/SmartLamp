@@ -1,36 +1,36 @@
-# 🪄 SmartLamp — MagicBox v4.5 (Interactive Onboarding, Persistent Timed Media, Volume Control & Voice Clone Edition)
+# 🪄 SmartLamp — MagicBox v5.0 (Nastya Edition • Routines, Calendar & Sovereign Care)
 
 <p align="center">
   <img src="https://img.shields.io/badge/PlatformIO-ESP32--S3-orange.svg?style=flat-square&logo=platformio" alt="PlatformIO" />
   <img src="https://img.shields.io/badge/Framework-Arduino%20%2F%20FreeRTOS-blue.svg?style=flat-square&logo=arduino" alt="Framework" />
   <img src="https://img.shields.io/badge/Display-GC9A01%20240x240%20IPS-purple.svg?style=flat-square" alt="Display" />
   <img src="https://img.shields.io/badge/Design-Hallmark%20%2F%20Horology%20Deck-E07A5F.svg?style=flat-square" alt="Design" />
+  <img src="https://img.shields.io/badge/Care-Nastya%20Routines%20%26%20Pomodoro-e63946.svg?style=flat-square" alt="Care" />
+  <img src="https://img.shields.io/badge/Privacy-Google%20Calendar%20Zero--Knowledge-4EA8DE.svg?style=flat-square" alt="Calendar" />
   <img src="https://img.shields.io/badge/Audio-Volume%20%26%20Voice%20Clone-yellow.svg?style=flat-square" alt="Audio" />
   <img src="https://img.shields.io/badge/Infographics-Hallmark%20800x500%20PNG-4EA8DE.svg?style=flat-square" alt="Infographics" />
   <img src="https://img.shields.io/badge/Spotify-Zero--Idle%20Demand-1DB954.svg?style=flat-square&logo=spotify" alt="Spotify" />
   <img src="https://img.shields.io/badge/OTA-Standalone%20Single--Header-52B788.svg?style=flat-square" alt="OTA" />
-  <img src="https://img.shields.io/badge/LEDs-SK6812%20RGBW-green.svg?style=flat-square" alt="LEDs" />
   <img src="https://img.shields.io/badge/Backend-FastAPI%20%2F%20Oracle%20Cloud-red.svg?style=flat-square&logo=fastapi" alt="Backend" />
-  <img src="https://img.shields.io/badge/Version-4.5%20Hallmark-brightgreen.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Version-5.0%20Nastya%20Edition-brightgreen.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
 </p>
 
-> **MagicBox v4.5** — флагманська розумна лампа-медіахаб на базі **ESP32-S3**, круглому IPS-дисплеї GC9A01 (дизайн **Hallmark Horology**), процедурному звуковому синтезаторі I2S, підтримці клонованого голосу (ElevenLabs, Fish Audio, Edge-TTS), автономному відтворенні зациклених медіа з таймерами, інтерактивному покроковому майстрі налаштування з кнопками «НІ / ТАК», генераторі 800×500 метео-інфографіки та енергоефективному хмарному ядрі **FastAPI** на Oracle VM.
+> **MagicBox v5.0 (Nastya Edition)** — персоналізована розумна лампа-медіахаб на базі **ESP32-S3**, круглому IPS-дисплеї GC9A01 (дизайн **Hallmark Horology**), розроблена як теплий подарунок на день народження для Насті. Лампа поєднує турботу про режим сну, навчання Pomodoro, персональний Google Календар із нульовим доступом третіх осіб (Zero-Knowledge Privacy), автоматичний розумний світанок, процедурний акорд сходження сонця, погодні та одежні поради, а також надійні інструменти автоматичного бекапу та системного моніторингу для Ярослава.
 
 ---
 
-## ✨ Ключові інновації версії v4.5
+## ✨ Ключові можливості версії v5.0
 
 | Модуль | Технічний опис |
 |---|---|
-| 🧭 **Інтерактивний Onboarding Wizard (6 кроків)** | Покроковий майстер запуску `SYS_ONBOARDING_WIZARD` з прямими підказками на екрані: **`[ ◄ НІ ]` (Left)** та **`[ ТАК ► ]` (Right)**. Кроки: 1) Тест звуку колонки; 2) QR-код точки доступу Wi-Fi; 3) QR-код домашнього вебкабінету; 4) Питання підключення Spotify; 5) Компактний QR-код авторизації через швидкий HTTP 307 Redirect; 6) Фінальний екран готовності `SYSTEM READY`. |
-| 🎞️ **Автономні зациклені медіа з таймерами** | Завантажені GIF, наліпки та фото крутяться **безкінечно за замовчуванням** (або за таймером 15 хв, 1 год, 3 год) без обов'язкової прив'язки до 5 реакцій. Дотик до кришки або команда в Telegram / Web миттєво зупиняє медіа та повертає попереднє вікно. На екрані відображається витончений бейдж зворотного відліку `⏱ 14m`. |
-| 🔊 **Наскрізне регулювання гучності та Mute** | 22-ступенева шкала гучності (`0..21`), збереження в NVS (`box_state`), 100% апаратне блокування звуку в режимі `MUTED`, пропорційне квадратичне масштабування амплітуди для процедурного синтезатора I2S та окремий перемикач звукового кліку кнопок (`touch_beep`). |
-| 📊 **Hallmark Visual Infographics (800×500 PNG)** | Легкий серверний генератор інфографіки на базі Pillow та NumPy в естетиці Hallmark Obsidian (`#08090C`). Відображає кімнатний мікроклімат, вуличну погоду з Open-Meteo, 24-годинний плавний графік температури й барометра з маркерами Min/Max та 7-денну аналітику блекаутів (відсоток аптайму й таймлайн відключень). |
-| 🎙️ **Нейро-клонування голосу та мульти-провайдерний TTS** | Підтримка синтезу мовлення через ElevenLabs (`eleven_multilingual_v2`), Fish Audio та безкоштовний Edge-TTS із можливістю швидкого перемикання між голосами Остапа (👨) та Поліни (👩), збереженням персоналізованих голосових пресетів та їх миттєвим озвученням на лампі. |
-| 📱 **Нова 3-рядкова клавіатура Telegram** | Лаконічні та ергономічні головні клавіатури для адміністратора та користувача: швидкий вибір світла, статус, вимикання, наліпки, гучність, таймери медіа та надсилання інфографіки. |
-| 💌 **Чиста маршрутизація повідомлень** | Виправлено логіку вхідних повідомлень: текст більше не перетворюється примусово на мем-реакцію Котика, а коректно транслюється в Telegram та виводиться на картку Inbox екрана лампи. |
-| 🛡️ **Ізольований Standalone OTA** | Недоторканний однофайловий модуль `StandaloneOta.h` із валідацією заголовків `0xE9`, контролем SHA256 та обов'язковим `confirmBootValid()` при старті. |
+| 🌸 **Турбота про затишок Насті (Phase 4)** | **Тихі години (23:00–08:00):** авто-приглушення яскравості до 15% та повна тиша (Mute). **Розумний світанок:** за 20 хв до підйому плавне наростання сонячного світла (1% → 100%) та мелодійний ранковий акорд. **Ранковий гід:** персоналізований звіт про погоду та практична порада щодо одягу й парасольки. |
+| 📚 **Навчальний фокус-таймер Pomodoro** | 25 хв глибокого фокусу під затишне бурштинове світло без зайвих сповіщень + 5 хв відпочинку під спокійний смарагдовий бриз із м'яким звуковим сигналом завершення. Керування через веб, Telegram або фізичні кнопки. |
+| 📅 **Приватний Google Календар (Zero-Knowledge)** | Незалежна OAuth2-авторизація для Насті через Web Studio. Сервер запитує виключно 1 найближчу подію (`events.list?maxResults=1`), коли до неї лишається $\le 15$ хв, і виводить нагадування на Smart Hub. У панелі Ярослава події календаря не зберігаються і не відображаються. |
+| 🩺 **Діагностика та щотижневі бекапи для Ярослава (Phase 6)** | Неблокуюче створення резервних копій SQLite через `VACUUM INTO` із щотижневою відправкою архіву в особисті повідомлення Telegram (`TG_ADMIN_ID`). Ендпоінт `/api/v5/admin/health-report` та команди `/health`, `/backup` для повної діагностики живлення, пам'яті та телеметрії лампи. |
+| 🎂 **Захищений вхід за днем народження (PIN `0511`)** | Веб-студія підтримує швидкий та зручний вхід за датою дня народження Насті (`0511` — 5 листопада) з захистом від підбору паролів (Rate Limit: 5 спроб на 15 хв) та криптографічними сесійними токенами в базі даних. |
+| ⚡ **Енергозбереження та тепловий баланс ESP32-S3 (Phase 3)** | Динамічне масштабування частоти CPU: 80 МГц у стані спокою на статичних екранах (мінімальний нагрів датчика SHT31/BMP280) та 240 МГц під час відтворення GIF/аудіо. Режим DND за довгим утриманням сенсора кришки. |
+| 🛡️ **Zero-Zombie Command TTL (Phase 2)** | TTL для команд: 180 с для аудіо, мовлення й реакцій, 24 год для системних налаштувань. Застарілі команди автоматично скидаються, запобігаючи несподіваному пробудженню лампи після блекауту. |
 
 ---
 
