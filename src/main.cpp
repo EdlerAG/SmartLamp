@@ -10,7 +10,6 @@
 #include "hardware/AudioService.h"
 #include "led/LedService.h"
 #include "network/NetworkService.h"
-#include "cloud/TelegramService.h"
 #include "cloud/OracleCloudService.h"
 #include "cloud/StandaloneOta.h"
 #include "ui/DisplayService.h"
@@ -23,13 +22,12 @@ SensorService      sensorService(appState);
 AudioService       audioService(appState);
 LedService         ledService(appState);
 DisplayService     displayService(appState);
-NetworkService     networkService(appState);
-TelegramService    telegramService(appState);
+NetworkService     networkService(appState, storageService);
 OracleCloudService oracleService(appState);
 
 ServiceRegistry<4> core1FastServices;  // Core 1: Кнопки, LED-стрічка, Дисплей
 ServiceRegistry<4> core0LocalServices; // Core 0 (Пріоритет 2): Датчики, Wi-Fi/Web, Аудіо I2S
-ServiceRegistry<4> core0CloudServices; // Core 0 (Пріоритет 1): Telegram API та Oracle Cloud
+ServiceRegistry<2> core0CloudServices; // Core 0 (Пріоритет 1): Oracle Cloud Gateway
 
 void backgroundCore0Task(void* pvParameters) {
     core0LocalServices.initAll();
@@ -301,8 +299,7 @@ void setup() {
     core0LocalServices.add(&networkService);
     core0LocalServices.add(&audioService);
 
-    // 5. Хмарні сервіси (Telegram + Oracle Cloud) на Core 0
-    core0CloudServices.add(&telegramService);
+    // 5. Хмарні сервіси (Oracle Cloud Gateway) на Core 0
     core0CloudServices.add(&oracleService);
 
     // Гармонійний процедурний акорд старту (якщо звук не вимкнено)

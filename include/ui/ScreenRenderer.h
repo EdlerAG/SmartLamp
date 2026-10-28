@@ -2,6 +2,7 @@
 #include <LovyanGFX.hpp>
 #include "core/AppState.h"
 #include "core/CommandRouter.h"
+#include "ui/HallmarkTheme.h"
 
 /**
  * ============================================================================
@@ -10,23 +11,6 @@
  * Pure tokenized RGB565 palette, zero acidic gradients, surgical typography.
  * ============================================================================
  */
-
-namespace HallmarkTheme {
-    constexpr uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
-        return ((uint16_t)(r & 0xF8) << 8) | ((uint16_t)(g & 0xFC) << 3) | (b >> 3);
-    }
-
-    constexpr uint16_t BG_PRIMARY      = rgb(8, 9, 12);      // #08090C Deep Obsidian
-    constexpr uint16_t BG_SURFACE      = rgb(18, 21, 30);    // #12151E Elevated Graphite
-    constexpr uint16_t BORDER_HAIRLINE = rgb(34, 40, 52);    // #222834 Delicate Wire
-    constexpr uint16_t TEXT_PRIMARY    = rgb(244, 243, 239); // #F4F3EF Warm Alabaster
-    constexpr uint16_t TEXT_SECONDARY  = rgb(138, 148, 166); // #8A94A6 Muted Ash
-    constexpr uint16_t ACCENT_WARM     = rgb(224, 122, 95);  // #E07A5F Braun Terracotta
-    constexpr uint16_t ACCENT_COOL     = rgb(78, 168, 222);  // #4EA8DE Calm Indigo / Sky
-    constexpr uint16_t ACCENT_SUCCESS  = rgb(82, 183, 136);  // #52B788 Sage Green / Emerald
-    constexpr uint16_t ACCENT_DANGER   = rgb(230, 57, 70);   // #E63946 Matte Coral
-    constexpr uint16_t ACCENT_AMBER    = rgb(245, 158, 11);  // #F59E0B Warm Amber
-}
 
 namespace ScreenRenderer {
 
@@ -313,7 +297,7 @@ namespace ScreenRenderer {
             case OnboardingStep::WIZ_STEP_DONE: {
                 canvas.drawArc(120, 120, 116, 112, 0, 360, HallmarkTheme::ACCENT_SUCCESS);
 
-                canvas.setFont(&fonts::FreeSansBold12pt7b);
+                canvas.setFont(&fonts::efontCN_16_b);
                 canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
                 canvas.drawString("ВІТАЮ!", 120, 78);
 
@@ -393,7 +377,7 @@ namespace ScreenRenderer {
                  (unsigned long)(ESP.getFreePsram() / (1024 * 1024)));
         canvas.drawString(mem_line, 120, 178);
 
-        canvas.setFont(&fonts::Font0);
+        canvas.setFont(&fonts::efontCN_10);
         canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
         canvas.drawString("Клікніть будь-яку кнопку для виходу", 120, 202);
     }
@@ -567,13 +551,14 @@ namespace ScreenRenderer {
         // Оверлей таймера медіа (якщо встановлено таймер показу)
         uint16_t rem_med = state.getMediaRemainingMin();
         if (rem_med > 0) {
-            canvas.fillRoundRect(80, 192, 80, 18, 9, HallmarkTheme::BG_SURFACE);
-            canvas.drawRoundRect(80, 192, 80, 18, 9, HallmarkTheme::ACCENT_WARM);
+            canvas.fillRoundRect(80, 180, 80, 18, 9, HallmarkTheme::BG_SURFACE);
+            canvas.drawRoundRect(80, 180, 80, 18, 9, HallmarkTheme::ACCENT_WARM);
             char med_lbl[32];
             snprintf(med_lbl, sizeof(med_lbl), "⏱ %u хв", rem_med);
-            canvas.setFont(&fonts::Font0);
+            canvas.setFont(&fonts::efontCN_10);
+            canvas.setTextDatum(middle_center);
             canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
-            canvas.drawString(med_lbl, 120, 201);
+            canvas.drawString(med_lbl, 120, 189);
         }
     }
 
@@ -656,22 +641,25 @@ namespace ScreenRenderer {
             canvas.drawArc(120, 120, 108, 106, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
             canvas.drawArc(120, 120, 108, 106, 180, arc_deg, HallmarkTheme::ACCENT_WARM);
 
-            // 4. Назва треку (з горизонтальним скролінгом якщо довжина > 18 символів)
+            // 4. Назва треку (з горизонтальним скролінгом якщо довжина перевищує ширину)
             canvas.setFont(&fonts::efontCN_12);
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
 
-            size_t title_len = strlen(state.spotify.title);
-            if (title_len > 18) {
-                int scroll_offset = ((now / 45) % (int)(title_len * 9 + 40)) - 20;
-                int base_x = 120 - scroll_offset;
-                canvas.drawString(state.spotify.title, base_x, 172);
+            int title_w = canvas.textWidth(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify Track");
+            if (title_w > 180) {
+                int scroll_range = title_w + 60;
+                int scroll_offset = (now / 35) % scroll_range;
+                int base_x = 120 + 90 - scroll_offset;
+                canvas.setClipRect(24, 160, 192, 22);
+                canvas.drawString(state.spotify.title, base_x, 171);
+                canvas.clearClipRect();
             } else {
-                canvas.drawString(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify Track", 120, 172);
+                canvas.drawString(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify Track", 120, 171);
             }
 
             // 5. Виконавець та час треку
             canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-            canvas.drawString(state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist", 120, 188);
+            canvas.drawString(state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist", 120, 184);
 
             char time_prog[32];
             uint32_t c_sec = cur_prog / 1000;
@@ -680,7 +668,7 @@ namespace ScreenRenderer {
                      c_sec / 60, c_sec % 60, d_sec / 60, d_sec % 60);
             canvas.setFont(&fonts::Font0);
             canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-            canvas.drawString(time_prog, 120, 204);
+            canvas.drawString(time_prog, 120, 196);
             return;
         }
 
@@ -879,7 +867,7 @@ namespace ScreenRenderer {
         const char* l_lbl = state.pomo_active ? "◄ -1м" : "◄ -5м";
         canvas.fillRoundRect(22, 148, 58, 22, 11, HallmarkTheme::BG_SURFACE);
         canvas.drawRoundRect(22, 148, 58, 22, 11, HallmarkTheme::BORDER_HAIRLINE);
-        canvas.setFont(&fonts::Font0);
+        canvas.setFont(&fonts::efontCN_10);
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
         canvas.drawString(l_lbl, 51, 159);
 
@@ -923,7 +911,7 @@ namespace ScreenRenderer {
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("З ДНЕМ НАРОДЖЕННЯ,", 120, 78);
 
-        canvas.setFont(&fonts::FreeSansBold12pt7b);
+        canvas.setFont(&fonts::efontCN_16_b);
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
         canvas.drawString("НАСТЮ! ✨", 120, 104);
 
@@ -957,7 +945,7 @@ namespace ScreenRenderer {
         canvas.fillRoundRect(144, 212, 28, 14, 7, state.btn_r_pressed ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::BG_SURFACE);
         canvas.drawRoundRect(144, 212, 28, 14, 7, HallmarkTheme::BORDER_HAIRLINE);
 
-        canvas.setFont(&fonts::Font0);
+        canvas.setFont(&fonts::efontCN_10);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         const char* l_btn = (state.screen_mode == SCREEN_POMODORO) ? (state.pomo_active ? "-1М" : "-5М") : "ЕКР";
         canvas.drawString(l_btn, 82, 219);

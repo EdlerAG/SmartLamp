@@ -5,7 +5,6 @@
 #include "core/StorageService.h"
 #include "network/WifiScanner.h"
 #include "network/PortalServer.h"
-#include "network/OtaManager.h"
 #include <WiFi.h>
 #include <DNSServer.h>
 #include <ESPmDNS.h>
@@ -23,12 +22,11 @@ private:
     };
     NetMode net_mode = NetMode::IDLE;
 
-    AppState&      state;
-    StorageService storage;
-    WifiScanner    scanner;
-    PortalServer   portal;
-    OtaManager     ota;
-    DNSServer      dnsServer;
+    AppState&       state;
+    StorageService& storage;
+    WifiScanner     scanner;
+    PortalServer    portal;
+    DNSServer       dnsServer;
 
     String   saved_ssid = "";
     String   saved_pass = "";
@@ -108,7 +106,6 @@ private:
         state.wifi_rssi      = WiFi.RSSI();
         state.setNetworkInfo(saved_ssid.c_str(), WiFi.localIP().toString().c_str());
         MDNS.begin(Config::DEVICE_NAME);
-        ota.begin();
         portal.begin();
 
         if (state.had_blackout_drop) {
@@ -173,8 +170,8 @@ private:
     }
 
 public:
-    NetworkService(AppState& st)
-        : state(st), portal(st, storage, scanner), ota(st) {}
+    NetworkService(AppState& st, StorageService& stor)
+        : state(st), storage(stor), portal(st, storage, scanner) {}
 
     const char* getName() const override { return "Network"; }
 
@@ -225,7 +222,6 @@ public:
                 break;
             case NetMode::CONNECTED:
                 if (WiFi.status() == WL_CONNECTED) {
-                    ota.handle();
                     scanner.checkAsyncScan();
                 } else {
                     if (state.wifi_connected) {

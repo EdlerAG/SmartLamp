@@ -103,6 +103,7 @@ public:
                state.ota_in_progress ||
                state.isCustomFrameActive(now) ||
                state.isReactionActive(now) ||
+               (state.screen_mode == SCREEN_POMODORO && state.pomo_active && !state.pomo_paused) ||
                (state.screen_mode == SCREEN_LIVING_GIF && state.saver_loaded) ||
                (state.screen_mode == SCREEN_SMART_HUB && (state.spotify.playing || state.tg_unread)) ||
                (now - state.last_user_activity_ms < 3000) ||
@@ -261,13 +262,14 @@ public:
                 // Якщо активний таймер показу — відмальовуємо елегантний бейдж з рештою часу
                 uint16_t rem_med = state.getMediaRemainingMin();
                 if (rem_med > 0) {
-                    canvas.fillRoundRect(80, 206, 80, 18, 9, HallmarkTheme::BG_PRIMARY);
-                    canvas.drawRoundRect(80, 206, 80, 18, 9, HallmarkTheme::BORDER_HAIRLINE);
+                    canvas.fillRoundRect(80, 180, 80, 18, 9, HallmarkTheme::BG_PRIMARY);
+                    canvas.drawRoundRect(80, 180, 80, 18, 9, HallmarkTheme::BORDER_HAIRLINE);
                     char med_lbl[32];
                     snprintf(med_lbl, sizeof(med_lbl), "⏱ %u хв", rem_med);
-                    canvas.setFont(&fonts::Font0);
+                    canvas.setFont(&fonts::efontCN_10);
+                    canvas.setTextDatum(middle_center);
                     canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
-                    canvas.drawString(med_lbl, 120, 215);
+                    canvas.drawString(med_lbl, 120, 189);
                 }
 
                 canvas.pushSprite(0, 0);
@@ -278,9 +280,11 @@ public:
             state.stopActiveMedia();
         }
 
-        // Динамічний розрахунок FPS для 4 основних вікон
+        // Динамічний розрахунок FPS для 5 основних вікон
         uint32_t target_fps = 10;
-        if (state.screen_mode == SCREEN_LIVING_GIF) {
+        if (state.screen_mode == SCREEN_POMODORO) {
+            target_fps = (state.pomo_active && !state.pomo_paused) ? 10 : 4;
+        } else if (state.screen_mode == SCREEN_LIVING_GIF) {
             target_fps = (state.saver_loaded && state.saver_fps > 0) ? state.saver_fps : 25;
         } else if (state.screen_mode == SCREEN_SMART_HUB) {
             if (state.tg_unread) target_fps = 15;
@@ -300,6 +304,10 @@ public:
         switch (state.screen_mode) {
             case SCREEN_CLIMATE:
                 ScreenRenderer::drawClimate(canvas, state, smooth_hum_angle);
+                break;
+
+            case SCREEN_POMODORO:
+                ScreenRenderer::drawPomodoro(canvas, state, now);
                 break;
 
             case SCREEN_LIVING_GIF:
