@@ -18,9 +18,19 @@ struct AppEvent {
 // Рівень А: Системні вікна (поза циклом перемикання кнопок)
 enum class SystemUiState : uint8_t {
     SYS_BOOT_SPLASH,        // Вітальний екран зі швейцарським хронографом на старті (2.8 с)
-    SYS_ONBOARDING_WIZARD,  // Покроковий майстер налаштування Wi-Fi та порталу AP
+    SYS_ONBOARDING_WIZARD,  // Інтерактивний 6-кроковий майстер налаштування (Звук, Wi-Fi, Spotify)
     SYS_NORMAL,             // Звичайний робочий стан (основні 4 екрани)
     SYS_NETWORK_DIAG        // Сервісний екран QR-коду Web Studio та системної діагностики
+};
+
+// Покроковий сценарій першого налаштування (Onboarding Wizard v4.5)
+enum class OnboardingStep : uint8_t {
+    WIZ_STEP_WELCOME_SOUND = 0, // Крок 1 — Привітання та вибір профілю звуку (Тиша / Зі звуком)
+    WIZ_STEP_WIFI_AP       = 1, // Крок 2 — Підключення телефону до точки доступу MagicBox-AP
+    WIZ_STEP_WIFI_PORTAL   = 2, // Крок 3 — Вибір домашньої Wi-Fi мережі у браузері
+    WIZ_STEP_SPOTIFY_ASK   = 3, // Крок 4 — Пропозиція підключення Spotify для вінілового плеєра
+    WIZ_STEP_SPOTIFY_QR    = 4, // Крок 5 — Сканування QR для авторизації у Spotify (login_redirect)
+    WIZ_STEP_DONE          = 5  // Крок 6 — Завершення налаштування та перехід до роботи
 };
 
 // Рівень Б: Основні 4 вікна-заставки (перемикаються лівою кнопкою)

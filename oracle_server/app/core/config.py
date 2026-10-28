@@ -34,7 +34,7 @@ def _resolve_ram_cache_dir(fallback_storage: str) -> str:
 @dataclass(frozen=True, slots=True)
 class Settings:
     PROJECT_NAME: str = "MagicBox Sovereign Cloud v5.0"
-    VERSION: str = "5.0.0-HyperLight"
+    VERSION: str = "4.5.0-Hallmark"
 
     # Безпека та мережа
     API_KEY: str = os.getenv("MAGICBOX_KEY", "smartlamp-secret-key")
@@ -47,10 +47,16 @@ class Settings:
     TG_GIRL_ID: str = os.getenv("TG_GIRL_ID", "")
     SERVER_MANAGES_BOT: bool = os.getenv("SERVER_MANAGES_BOT", "true").lower() == "true"
 
-    # Spotify OAuth2 та Vinyl Hub (v4.0)
+    # Spotify OAuth2 та Vinyl Hub (v4.5)
     SPOTIFY_CLIENT_ID: str = os.getenv("SPOTIFY_CLIENT_ID", "")
     SPOTIFY_CLIENT_SECRET: str = os.getenv("SPOTIFY_CLIENT_SECRET", "")
     SPOTIFY_REDIRECT_URI: str = os.getenv("SPOTIFY_REDIRECT_URI", "")
+
+    # Голосовий синтез та клонування власного голосу (v4.5)
+    TTS_PROVIDER: str = os.getenv("TTS_PROVIDER", "edge") # "edge", "elevenlabs", "fish_audio"
+    VOICE_CLONE_API_KEY: str = os.getenv("VOICE_CLONE_API_KEY", "")
+    VOICE_CLONE_ID: str = os.getenv("VOICE_CLONE_ID", "")
+    TTS_EDGE_VOICE: str = os.getenv("TTS_EDGE_VOICE", "uk-UA-OstapNeural") # "uk-UA-OstapNeural" (чоловічий), "uk-UA-PolinaNeural" (жіночий)
 
     # Таймінги блекауту та синхронізації
     BLACKOUT_TIMEOUT_SEC: float = float(os.getenv("BLACKOUT_TIMEOUT_SEC", "25.0"))
@@ -66,12 +72,13 @@ class Settings:
     DB_PATH: str = os.path.join(STORAGE_DIR, "magicbox_v5.db")
     FIRMWARE_PATH: str = os.path.join(STORAGE_DIR, "ota", "latest_firmware.bin")
     STICKERS_DIR: str = os.path.join(STORAGE_DIR, "stickers")   # Кастомні наліпки та .mbx гіфки
-    SOUNDS_DIR: str = os.path.join(STORAGE_DIR, "sounds")       # Кастомні MP3 звуки реакцій
+    SOUNDS_DIR: str = os.path.join(STORAGE_DIR, "sounds")       # Кастомні MP3 звуки реакцій та голосові замітки
 
-    # Надшвидкий буфер у RAM (/dev/shm) для активних стрімів
+    # Надшвидкий буфер у RAM (/dev/shm) для активних стрімів та інфографіки
     RAM_MEDIA_DIR: str = _resolve_ram_cache_dir(STORAGE_DIR)
     MEDIA_DIR: str = _resolve_ram_cache_dir(STORAGE_DIR)
     SPOTIFY_VINYL_PATH: str = os.path.join(RAM_MEDIA_DIR, "spotify_vinyl.rgb565")
+    INFOGRAPHIC_PATH: str = os.path.join(RAM_MEDIA_DIR, "infographic.png")
 
     # Ліміти для 1GB RAM VPS
     MAX_FW_SIZE: int = 4 * 1024 * 1024

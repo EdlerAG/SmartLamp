@@ -100,7 +100,6 @@ private:
             return false;
         }
 
-        state.canvas_loading = true;
         WiFiClient* stream = img_http.getStreamPtr();
         size_t total_read = 0;
         uint32_t start_ms = millis();
@@ -108,7 +107,7 @@ private:
         while (img_http.connected() && total_read < 115200 && (millis() - start_ms < 6000)) {
             size_t avail = stream->available();
             if (avail > 0) {
-                size_t to_read = min(avail, (size_t)(115200 - total_read));
+                size_t to_read = min(avail, 115200 - total_read);
                 int r = stream->readBytes(state.shared_canvas_buf + total_read, to_read);
                 if (r > 0) total_read += r;
             } else {
@@ -120,20 +119,17 @@ private:
         state.tls_in_flight = false;
 
         if (total_read == 115200) {
-            state.custom_frame_until = millis() + 10000;
-            state.canvas_loading     = false;
-            state.triggerLedNotification(NOTIFY_CYAN_WAVE, false);
-            state.registerActivity();
+            state.anim_frames_count = 1;
+            state.anim_fps = 1;
+            state.stop_media_requested = false;
+            state.screen_mode = SCREEN_LIVING_GIF;
+            state.ui_force_dirty = true;
             return true;
         }
-
-        state.custom_frame_until = 0;
-        state.canvas_loading     = false;
-        state.registerActivity();
         return false;
     }
 
-    bool downloadMbxAnimation(const String& raw_url, bool is_saver) {
+    bool downloadMbxAnimation(const String& raw_url, bool is_saver = false) {
         if (!state.psram_anim_buf || !state.wifi_connected) return false;
         String url = normalizeMediaUrl(raw_url);
 
@@ -142,7 +138,7 @@ private:
         WiFiClientSecure m_sec;
 
         mbx_http.setConnectTimeout(4000);
-        mbx_http.setTimeout(12000);
+        mbx_http.setTimeout(10000);
 
         state.tls_in_flight = true;
         bool begun = url.startsWith("https://")
@@ -192,7 +188,10 @@ private:
         if (total_read >= sizeof(MbxHeader)) {
             MbxHeader* hdr = (MbxHeader*)state.psram_anim_buf;
             if (memcmp(hdr->magic, "MBX5", 4) == 0 && hdr->num_frames > 0) {
-                state.activateCustomAnimation(hdr->num_frames, hdr->fps, hdr->ambi_r, hdr->ambi_g, hdr->ambi_b, 15000);
+                uint32_t dur = (state.media_expire_ms > millis()) ? (state.media_expire_ms - millis()) : 0;
+                state.activateCustomAnimation(hdr->num_frames, hdr->fps, hdr->ambi_r, hdr->ambi_g, hdr->ambi_b, dur);
+                state.screen_mode = SCREEN_LIVING_GIF;
+                state.ui_force_dirty = true;
 
                 if (is_saver && storage_srv && state.psram_saver_buf) {
                     // Зберігаємо постійну заставку у LittleFS
@@ -281,6 +280,13 @@ private:
         state.oracle_manages_bot  = (json.indexOf("\"bot_managed\":true") != -1);
         state.has_more_cloud_cmds = (json.indexOf("\"has_more\":true") != -1);
 
+        // Статус підключення Spotify від сервера (для майстра Onboarding та плеєра)
+        if (json.indexOf("\"sp_linked\":true") != -1) {
+            state.sp_linked = true;
+        } else if (json.indexOf("\"sp_linked\":false") != -1) {
+            state.sp_linked = false;
+        }
+
         // Обробка Spotify стану від сервера (якщо передано)
         int sp_idx = json.indexOf("\"spotify\":{");
         if (sp_idx != -1) {
@@ -322,6 +328,7 @@ private:
         if (json.indexOf("\"has_cmd\":true") == -1) return;
         state.registerNetActivity();
 
+        // 1. Команди світла та яскравості
         String mode_str = TgJsonUtils::extractIntStr(json, "set_mode");
         if (mode_str.length() > 0) {
             CommandRouter::setLightMode(state, (uint8_t)mode_str.toInt());
@@ -331,6 +338,40 @@ private:
         if (brt_str.length() > 0) {
             if (brt_str == "auto") CommandRouter::setBrightnessPreset(state, true);
             else CommandRouter::setBrightnessPreset(state, false, (uint8_t)brt_str.toInt());
+        }
+
+        // 2. Команди звуку: гучність, Mute, тактильні кліки
+        String vol_str = TgJsonUtils::extractIntStr(json, "volume");
+        if (vol_str.length() > 0) {
+            uint8_t v = (uint8_t)constrain((int)vol_str.toInt(), 0, 21);
+            CommandRouter::setVolume(state, v);
+            if (storage_srv) storage_srv->saveAudioSettings(v, state.audio_muted, state.touch_beep_enabled);
+        }
+
+        if (json.indexOf("\"muted\":true") != -1) {
+            CommandRouter::setMute(state, true);
+            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, true, state.touch_beep_enabled);
+        } else if (json.indexOf("\"muted\":false") != -1) {
+            CommandRouter::setMute(state, false);
+            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, false, state.touch_beep_enabled);
+        }
+
+        if (json.indexOf("\"touch_beep\":true") != -1) {
+            CommandRouter::setTouchBeep(state, true);
+            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, true);
+        } else if (json.indexOf("\"touch_beep\":false") != -1) {
+            CommandRouter::setTouchBeep(state, false);
+            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, false);
+        }
+
+        // 3. Команди керування показом медіа: таймер та зупинка
+        if (json.indexOf("\"stop_media\":true") != -1) {
+            CommandRouter::stopActiveMedia(state);
+        }
+
+        String med_timer_str = TgJsonUtils::extractIntStr(json, "media_timer");
+        if (med_timer_str.length() > 0) {
+            CommandRouter::setMediaTimer(state, (uint16_t)med_timer_str.toInt());
         }
 
         String sleep_str = TgJsonUtils::extractIntStr(json, "sleep");

@@ -12,6 +12,7 @@ private:
     AppState& state;
     Audio     audio;
     uint8_t   applied_volume = 0;
+    bool      applied_muted  = false;
 
     // Стан процедурного синтезатора звуків
     enum class SynthType : uint8_t {
@@ -37,6 +38,17 @@ private:
     static constexpr size_t CHUNK_SAMPLES = 128; // 128 стерео-семплів (512 байт) на тик
 
     void startSynth(SynthType type) {
+        // Якщо увімкнено режим тиші або гучність на нулі — жодних звуків (100% тиша)
+        if (state.audio_muted || state.audio_volume == 0) {
+            cur_synth = SynthType::NONE;
+            return;
+        }
+
+        // Якщо кліки вимкнені у налаштуваннях
+        if (type == SynthType::TOUCH_CLICK && !state.touch_beep_enabled) {
+            return;
+        }
+
         if (audio.isRunning()) return; // Якщо грає стрім MP3 — не перебиваємо його
         cur_synth = type;
         synth_sample_idx = 0;
@@ -77,6 +89,10 @@ private:
 
     void tickProceduralSynth() {
         if (cur_synth == SynthType::NONE || synth_total_samples == 0) return;
+        if (state.audio_muted || state.audio_volume == 0) {
+            cur_synth = SynthType::NONE;
+            return;
+        }
 
         int16_t pcm_buf[CHUNK_SAMPLES * 2]; // Лівий та правий канали
         size_t samples_to_gen = min((size_t)(synth_total_samples - synth_sample_idx), CHUNK_SAMPLES);
@@ -85,7 +101,9 @@ private:
             return;
         }
 
-        float vol_gain = (float)constrain((int)state.audio_volume, 0, 21) / 21.0f;
+        // Квадратичне масштабування гучності для природного людського слуху
+        float norm_vol = (float)constrain((int)state.audio_volume, 0, 21) / 21.0f;
+        float vol_gain = norm_vol * norm_vol; // Наприклад, на vol=4 це 0.036 (дуже тихий шепіт), на vol=21 це 1.0 (гучно)
         constexpr float TWO_PI_F = 6.283185307f;
 
         for (size_t i = 0; i < samples_to_gen; i++) {
@@ -101,12 +119,13 @@ private:
                     synth_phase1 += (freq * TWO_PI_F) / (float)SAMPLE_RATE;
                     if (synth_phase1 > TWO_PI_F) synth_phase1 -= TWO_PI_F;
                     float env = expf(-progress * 6.5f);
-                    sample_val = sinf(synth_phase1) * env * 0.75f;
+                    sample_val = sinf(synth_phase1) * env * 0.40f;
                     break;
                 }
 
                 case SynthType::BOOT_CHORD: {
-                    // Теплий гармонійний акорд запуску (C-dur: C4 261.6Hz, E4 329.6Hz, G4 392Hz, C5 523.3Hz)
+                    // Теплий мажорний септакорд C-E-G-B (261.6Hz, 329.6Hz, 392.0Hz, 493.9Hz)
+                    float progress = (float)n / (float)synth_total_samples;
                     synth_phase1 += (261.63f * TWO_PI_F) / (float)SAMPLE_RATE;
                     synth_phase2 += (329.63f * TWO_PI_F) / (float)SAMPLE_RATE;
                     synth_phase3 += (392.00f * TWO_PI_F) / (float)SAMPLE_RATE;
@@ -114,39 +133,35 @@ private:
                     if (synth_phase2 > TWO_PI_F) synth_phase2 -= TWO_PI_F;
                     if (synth_phase3 > TWO_PI_F) synth_phase3 -= TWO_PI_F;
 
-                    float progress = (float)n / (float)synth_total_samples;
                     float env = (progress < 0.08f) ? (progress / 0.08f) : expf(-(progress - 0.08f) * 3.8f);
-                    sample_val = (sinf(synth_phase1) * 0.40f + sinf(synth_phase2) * 0.35f + sinf(synth_phase3) * 0.25f) * env;
+                    sample_val = (sinf(synth_phase1) * 0.45f +
+                                  sinf(synth_phase2) * 0.35f +
+                                  sinf(synth_phase3) * 0.30f) * env * 0.85f;
                     break;
                 }
 
                 case SynthType::NOTIFY_BELL: {
-                    // Ніжний двонотний передзвін F5 (698.5 Гц) -> C6 (1046.5 Гц)
+                    // Елегантний хорологічний дзвіночок A5 (880 Гц) + обертон E6 (1318 Гц)
                     float progress = (float)n / (float)synth_total_samples;
-                    if (progress < 0.45f) {
-                        float sub_prog = progress / 0.45f;
-                        synth_phase1 += (698.46f * TWO_PI_F) / (float)SAMPLE_RATE;
-                        if (synth_phase1 > TWO_PI_F) synth_phase1 -= TWO_PI_F;
-                        float env = (sub_prog < 0.05f) ? (sub_prog / 0.05f) : expf(-(sub_prog - 0.05f) * 4.5f);
-                        sample_val = sinf(synth_phase1) * env * 0.85f;
-                    } else {
-                        float sub_prog = (progress - 0.45f) / 0.55f;
-                        synth_phase2 += (1046.50f * TWO_PI_F) / (float)SAMPLE_RATE;
-                        if (synth_phase2 > TWO_PI_F) synth_phase2 -= TWO_PI_F;
-                        float env = (sub_prog < 0.04f) ? (sub_prog / 0.04f) : expf(-(sub_prog - 0.04f) * 4.0f);
-                        sample_val = sinf(synth_phase2) * env * 0.90f;
-                    }
+                    synth_phase1 += (880.0f * TWO_PI_F) / (float)SAMPLE_RATE;
+                    synth_phase2 += (1318.5f * TWO_PI_F) / (float)SAMPLE_RATE;
+                    if (synth_phase1 > TWO_PI_F) synth_phase1 -= TWO_PI_F;
+                    if (synth_phase2 > TWO_PI_F) synth_phase2 -= TWO_PI_F;
+
+                    float env = (progress < 0.03f) ? (progress / 0.03f) : expf(-(progress - 0.03f) * 7.5f);
+                    sample_val = (sinf(synth_phase1) * 0.75f + sinf(synth_phase2) * 0.35f) * env * 0.85f;
                     break;
                 }
 
                 case SynthType::REACTION_FIRE: {
-                    // Потріскування та теплий підйом полум'я
+                    // Теплий ламповий синтез розпалювання вогню (широкий шум + суб-бас 90 Гц)
                     float progress = (float)n / (float)synth_total_samples;
-                    float noise = ((float)(rand() % 2000) / 1000.0f) - 1.0f;
-                    synth_phase1 += ((220.0f + progress * 240.0f) * TWO_PI_F) / (float)SAMPLE_RATE;
+                    float freq = 90.0f + 60.0f * sinf(progress * 18.0f);
+                    synth_phase1 += (freq * TWO_PI_F) / (float)SAMPLE_RATE;
                     if (synth_phase1 > TWO_PI_F) synth_phase1 -= TWO_PI_F;
+                    float noise = ((float)(rand() % 1000) / 500.0f) - 1.0f;
                     float env = expf(-progress * 4.0f);
-                    sample_val = (sinf(synth_phase1) * 0.55f + noise * 0.45f) * env;
+                    sample_val = (sinf(synth_phase1) * 0.6f + noise * 0.4f) * env * 0.70f;
                     break;
                 }
 
@@ -166,7 +181,7 @@ private:
                     float progress = (float)n / (float)synth_total_samples;
                     float freq = (progress < 0.5f) ? (460.0f + progress * 640.0f) : (780.0f - (progress - 0.5f) * 440.0f);
                     synth_phase1 += (freq * TWO_PI_F) / (float)SAMPLE_RATE;
-                    synth_phase2 += (freq * 2.0f * TWO_PI_F) / (float)SAMPLE_RATE; // 2-га гармоніка
+                    synth_phase2 += (freq * 2.0f * TWO_PI_F) / (float)SAMPLE_RATE;
                     if (synth_phase1 > TWO_PI_F) synth_phase1 -= TWO_PI_F;
                     if (synth_phase2 > TWO_PI_F) synth_phase2 -= TWO_PI_F;
                     float env = (progress < 0.1f) ? (progress / 0.1f) : expf(-(progress - 0.1f) * 2.8f);
@@ -222,7 +237,8 @@ public:
     void init() override {
         audio.setPinout(Config::PIN_I2S_BCLK, Config::PIN_I2S_LRC, Config::PIN_I2S_DOUT);
         applied_volume = state.audio_volume;
-        audio.setVolume(applied_volume);
+        applied_muted  = state.audio_muted;
+        audio.setVolume(applied_muted ? 0 : applied_volume);
     }
 
     bool isPlaying() {
@@ -260,9 +276,15 @@ public:
             return;
         }
 
-        if (applied_volume != state.audio_volume) {
+        // Обробка зміни гучності та режиму MUTE
+        bool mute_state = state.audio_muted || (state.audio_volume == 0);
+        if (applied_muted != mute_state || applied_volume != state.audio_volume) {
+            applied_muted  = mute_state;
             applied_volume = constrain(state.audio_volume, (uint8_t)0, (uint8_t)21);
-            audio.setVolume(applied_volume);
+            audio.setVolume(applied_muted ? 0 : applied_volume);
+            if (applied_muted && audio.isRunning()) {
+                audio.stopSong();
+            }
         }
 
         // Обробка тригерів із AppState
@@ -286,7 +308,7 @@ public:
 
         char url_buf[160];
         if (state.popPendingAudioUrl(url_buf, sizeof(url_buf))) {
-            if (state.wifi_connected) {
+            if (state.wifi_connected && !applied_muted) {
                 WiFi.setSleep(false);
                 state.registerNetActivity();
                 cur_synth = SynthType::NONE;

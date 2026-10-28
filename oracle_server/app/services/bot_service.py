@@ -1,5 +1,9 @@
+import os
+import time
+import orjson
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+
 from app.core.config import settings
 from app.core.http_client import http_pool
 from app.core.memory_guard import memory_guard
@@ -10,21 +14,22 @@ from app.services.audio_service import audio_service
 from app.services.ota_service import ota_service
 from app.services.media_service import media_service
 from app.services.spotify_service import spotify_service
+from app.services.infographic_service import infographic_service
 
 ADMIN_KB = {
     "keyboard": [
-        [{"text": "🎨 Режими та Свічка"}, {"text": "🎭 Галерея Гіфок"}, {"text": "🌤 Погода & ШІ"}],
-        [{"text": "🔥 Вогник"}, {"text": "⚡ Блискавка"}, {"text": "🐱 Мем-Кіт"}],
-        [{"text": "👽 Пороблено"}, {"text": "👑 Корона"}, {"text": "📊 Стан / ШІ-Дух"}],
+        [{"text": "🎨 Світло & Свічка"}, {"text": "🖼 Заставка & Гіфки"}, {"text": "🎵 Spotify Плеєр"}],
+        [{"text": "🔊 Гучність & Звук"}, {"text": "📊 Інфографіка & Стан"}, {"text": "🌤 Погода & Голос ШІ"}],
+        [{"text": "🎭 Швидка Реакція (Меми)"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
     ],
     "resize_keyboard": True,
 }
 
 GIRL_KB = {
     "keyboard": [
-        [{"text": "🔥 Вогник"}, {"text": "⚡ Блискавка"}, {"text": "🐱 Кусь Кота"}],
-        [{"text": "👽 Пороблено"}, {"text": "👑 Корона"}, {"text": "🎭 Галерея Гіфок"}],
-        [{"text": "🎨 Режими та Свічка"}, {"text": "🌤 Погода & ШІ"}, {"text": "📊 Стан"}],
+        [{"text": "🎨 Світло & Свічка"}, {"text": "🖼 Заставка & Гіфки"}, {"text": "🎵 Spotify Плеєр"}],
+        [{"text": "🔊 Гучність & Звук"}, {"text": "📊 Інфографіка & Стан"}, {"text": "🌤 Погода & Голос ШІ"}],
+        [{"text": "🎭 Швидка Реакція (Меми)"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
     ],
     "resize_keyboard": True,
 }
@@ -49,6 +54,20 @@ class TelegramBotService:
         except Exception:
             pass
         return None
+
+    async def _send_photo_bytes(self, chat_id: str, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict[str, Any]] = None) -> bool:
+        if not settings.TG_BOT_TOKEN:
+            return False
+        url = f"https://api.telegram.org/bot{settings.TG_BOT_TOKEN}/sendPhoto"
+        files = {"photo": ("infographic.png", photo_bytes, "image/png")}
+        data: Dict[str, Any] = {"chat_id": chat_id, "caption": caption}
+        if reply_markup:
+            data["reply_markup"] = orjson.dumps(reply_markup).decode("utf-8")
+        try:
+            resp = await http_pool.get().post(url, data=data, files=files, timeout=20.0)
+            return resp.status_code == 200
+        except Exception:
+            return False
 
     async def _download_tg_file(self, file_id: str) -> Optional[bytes]:
         f_info = await self._api("getFile", {"file_id": file_id})
@@ -102,330 +121,431 @@ class TelegramBotService:
         return {
             "inline_keyboard": [
                 [
-                    {"text": "🕯 Сон 15 хв", "callback_data": "slp:15"},
-                    {"text": "🕯 Сон 30 хв", "callback_data": "slp:30"},
-                    {"text": "🕯 Сон 60 хв", "callback_data": "slp:60"},
+                    {"text": "⏳ 15 хв", "callback_data": "sleep:15"},
+                    {"text": "⏳ 30 хв", "callback_data": "sleep:30"},
+                    {"text": "⏳ 45 хв", "callback_data": "sleep:45"},
                 ],
-                [{"text": "❌ Вимкнути таймер сну", "callback_data": "slp:0"}],
+                [
+                    {"text": "⏳ 60 хв", "callback_data": "sleep:60"},
+                    {"text": "⏳ 90 хв", "callback_data": "sleep:90"},
+                    {"text": "❌ Скасувати", "callback_data": "sleep:0"},
+                ],
                 [{"text": "🎨 До списку режимів...", "callback_data": "menu:modes"}],
             ]
         }
 
     @staticmethod
-    def _bind_slot_inline_kb(media_name: str) -> Dict[str, Any]:
-        """Інлайн-меню для закріплення надісланої гіфки/наліпки або встановлення заставкою."""
+    def _media_control_inline_kb(media_name: str) -> Dict[str, Any]:
         return {
             "inline_keyboard": [
-                [{"text": "🖼 Зробити постійною Заставкою (Вікно 2)", "callback_data": f"saver:{media_name}"}],
                 [
-                    {"text": "📌 На 🔥 Вогник", "callback_data": f"bind:{media_name}:2"},
-                    {"text": "📌 На ⚡ Блискавку", "callback_data": f"bind:{media_name}:3"},
+                    {"text": "♾ Крутиться постійно", "callback_data": "med_timer:0"},
+                    {"text": "⏹ Зупинити показ", "callback_data": "med_stop"},
                 ],
                 [
-                    {"text": "📌 На 🐱 Кота", "callback_data": f"bind:{media_name}:4"},
-                    {"text": "📌 На 👽 НЛО", "callback_data": f"bind:{media_name}:5"},
-                    {"text": "📌 На 👑 Корону", "callback_data": f"bind:{media_name}:6"},
+                    {"text": "⏱ На 15 хв", "callback_data": "med_timer:15"},
+                    {"text": "⏱ На 1 год", "callback_data": "med_timer:60"},
+                    {"text": "⏱ На 3 год", "callback_data": "med_timer:180"},
                 ],
-                [{"text": "🎭 Відкрити галерею гіфок", "callback_data": "menu:gallery"}],
+                [
+                    {"text": "📌 Зробити заставкою (LittleFS)", "callback_data": f"med_saver:{media_name}"},
+                    {"text": "🎭 Галерея", "callback_data": "menu:gallery"},
+                ],
+            ]
+        }
+
+    @staticmethod
+    def _volume_inline_kb() -> Dict[str, Any]:
+        d = state_service.latest_telemetry
+        vol = d.get("vol", 12)
+        muted = d.get("muted", False)
+        t_beep = d.get("t_beep", True)
+        mute_lbl = "🔊 Увімкнути звук" if muted else "🔇 Без звуку (Mute)"
+        beep_lbl = f"🔘 Кліки: {'ВКЛ' if t_beep else 'ВИКЛ'}"
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": mute_lbl, "callback_data": "vol:mute"},
+                    {"text": f"{'✅ ' if not muted and vol <= 5 else ''}🌙 Тихо (20%)", "callback_data": "vol:4"},
+                ],
+                [
+                    {"text": f"{'✅ ' if not muted and 10 <= vol <= 14 else ''}☕ Комфорт (55%)", "callback_data": "vol:12"},
+                    {"text": f"{'✅ ' if not muted and vol >= 19 else ''}🔊 Гучно (95%)", "callback_data": "vol:20"},
+                ],
+                [
+                    {"text": "🔉 -10%", "callback_data": "vol:down"},
+                    {"text": "🔊 +10%", "callback_data": "vol:up"},
+                    {"text": beep_lbl, "callback_data": "vol:beep"},
+                ],
+            ]
+        }
+
+    @staticmethod
+    def _reactions_quick_inline_kb() -> Dict[str, Any]:
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "🔥 Вогник", "callback_data": "react:2"},
+                    {"text": "⚡ Блискавка", "callback_data": "react:3"},
+                    {"text": "🐱 Мем-Кіт", "callback_data": "react:4"},
+                ],
+                [
+                    {"text": "👽 Пороблено", "callback_data": "react:5"},
+                    {"text": "👑 Корона", "callback_data": "react:6"},
+                ],
+            ]
+        }
+
+    @staticmethod
+    def _voice_config_inline_kb() -> Dict[str, Any]:
+        prov = audio_service.get_configured_tts_provider()
+        edge_v = audio_service.get_configured_edge_voice()
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": f"{'✅ ' if prov == 'edge' and 'Ostap' in edge_v else ''}👨 Ostap (Чоловічий)", "callback_data": "voice_sel:uk-UA-OstapNeural"},
+                    {"text": f"{'✅ ' if prov == 'edge' and 'Polina' in edge_v else ''}👩 Polina (Жіночий)", "callback_data": "voice_sel:uk-UA-PolinaNeural"},
+                ],
+                [
+                    {"text": f"{'✅ ' if prov in ('elevenlabs', 'fish_audio') else ''}🎙 Клонований Голос Ярослава (API)", "callback_data": "voice_sel:clone"},
+                ],
+                [
+                    {"text": "🗣 Озвучити тестове вітання", "callback_data": "voice:test"},
+                ],
             ]
         }
 
     @staticmethod
     def _gallery_inline_kb() -> Dict[str, Any]:
-        items = [m for m in db_service.list_custom_media() if m["media_type"] in ("gif", "sticker")][:12]
-        slot_icons = {2: "🔥", 3: "⚡", 4: "🐱", 5: "👽", 6: "👑"}
+        media_list = db_service.list_custom_media()
+        visual_media = [m for m in media_list if m.get("media_type") != "sound" and not m.get("name", "").startswith("voice_")]
+        if not visual_media:
+            return {"inline_keyboard": [[{"text": "📭 Галерея порожня. Надішли гіфку!", "callback_data": "noop"}]]}
+
         rows = []
-        for i in range(0, len(items), 2):
-            row = []
-            for m in items[i:i + 2]:
-                sl_ic = slot_icons.get(m["reaction_slot"], "🎞" if m["frames"] > 1 else "🖼")
-                lbl = f"{sl_ic} {m['name']} ({m['frames']}к)"
-                row.append({"text": lbl, "callback_data": f"play_mbx:{m['name']}"})
-            rows.append(row)
-        rows.append([{"text": "🎨 До режимів світла", "callback_data": "menu:modes"}])
+        for i in range(0, min(len(visual_media), 10), 2):
+            m1 = visual_media[i]
+            r = [{"text": f"🎬 {m1['name'][:14]}", "callback_data": f"play_media:{m1['name']}"}]
+            if i + 1 < len(visual_media):
+                m2 = visual_media[i + 1]
+                r.append({"text": f"🎬 {m2['name'][:14]}", "callback_data": f"play_media:{m2['name']}"})
+            rows.append(r)
+
+        rows.append([
+            {"text": "⏹ Зупинити показ", "callback_data": "med_stop"},
+            {"text": "🖼 Постійна Заставка", "callback_data": "menu:saver_help"},
+        ])
         return {"inline_keyboard": rows}
 
     @staticmethod
     def _ai_personas_inline_kb() -> Dict[str, Any]:
+        p_name = state_service.ai_persona_name
         return {
             "inline_keyboard": [
                 [
-                    {"text": "🧚 Затишний Дух", "callback_data": "persona:spirit"},
-                    {"text": "🐱 Кібер-Котик", "callback_data": "persona:cat"},
+                    {"text": f"{'✅ ' if 'Дух' in p_name else ''}✨ Затишний Дух", "callback_data": "persona:cozy"},
+                    {"text": f"{'✅ ' if 'Саркастич' in p_name else ''}😼 Саркастичний Кіт", "callback_data": "persona:cat"},
                 ],
                 [
-                    {"text": "💘 Романтик", "callback_data": "persona:romantic"},
-                    {"text": "🎩 Дворецький Джарвіс", "callback_data": "persona:jarvis"},
+                    {"text": f"{'✅ ' if 'Синоптик' in p_name else ''}🧭 Синоптик Braun", "callback_data": "persona:braun"},
+                    {"text": f"{'✅ ' if 'Кібер' in p_name else ''}🤖 Кіберпанк AI", "callback_data": "persona:cyber"},
                 ],
-                [{"text": "🔊 Озвучити свіжий ШІ-брифінг", "callback_data": "ai:speak"}],
+                [
+                    {"text": "🔊 Озвучити зведення зараз", "callback_data": "ai:speak"},
+                    {"text": "📊 Оновити інфографіку", "callback_data": "menu:infographic"},
+                ],
             ]
         }
 
-    def _build_status_text(self) -> str:
-        online = state_service.is_online()
+    @staticmethod
+    def _build_status_text() -> str:
         d = state_service.latest_telemetry
-        ram_mb = memory_guard.get_rss_mb()
-        status_icon = "🟢 ОНЛАЙН" if online else "🌙 ОФЛАЙН (Блекаут / Черга активна)"
+        is_on = state_service.is_online()
+        sec = state_service.seconds_since_seen()
+        status_line = "🟢 В МЕРЕЖІ (ONLINE)" if is_on else f"🔴 ВІДСУТНІЙ ЗВ'ЯЗОК ({sec or '?'} с тому)"
 
-        if not d:
-            return (
-                f"🪄 MagicBox Sovereign Cloud v5.0\n"
-                f"Статус: {status_icon} | RAM сервера: {ram_mb:.1f} MB\n"
-                f"Очікую підключення шкатулки..."
-            )
+        t_val = d.get("t", 22.0)
+        h_val = d.get("h", 50.0)
+        p_val = d.get("p", 750.0)
+        p_diff = d.get("p_diff", 0.0)
+        trend_sym = "→" if abs(p_diff) < 0.7 else ("↑" if p_diff > 0 else "↓")
+        l_pct = d.get("l", 50)
+        m_idx = d.get("m", 0)
+        m_name = MODES_UA[m_idx % len(MODES_UA)]
+        b_idx = d.get("b_idx", 2)
+        auto_b = d.get("auto_b", True)
+        b_pct = d.get("b_pct", 65)
+        vol = d.get("vol", 12)
+        muted = d.get("muted", False)
+        t_beep = d.get("t_beep", True)
+        rssi = d.get("rssi", -60)
+        sleep_m = d.get("sleep_m", 0)
+        media_m = d.get("media_m", 0)
+
+        vol_str = "🔇 MUTE" if muted or vol == 0 else f"{int(vol * 100 / 21)}% ({vol}/21)"
+        sleep_line = f"\n⏳ Таймер сну: {sleep_m} хв" if sleep_m > 0 else ""
+        media_line = f"\n⏱ Таймер медіа: {media_m} хв" if media_m > 0 else ""
 
         return (
-            f"🪄 СТАН ШКАТУЛКИ ({status_icon})\n"
+            f"🪄 MAGICBOX SOVEREIGN ATELIER (v4.5)\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"💡 Режим: {d.get('m_name', '--')} ({d.get('b_pct', 0)}%)\n"
-            f"⏳ Таймер сну: {d.get('sleep_m', 0)} хв | Світло в кімнаті: {d.get('l', 0)}%\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🌡 Температура: {d.get('t', 0):.1f} °C\n"
-            f"💧 Вологість: {d.get('h', 0):.0f} %\n"
-            f"🧭 Барометр: {d.get('p', 0):.0f} мм ({d.get('p_diff', 0):+.1f})\n"
-            f"🧠 Дух ШІ: {state_service.ai_persona_name}\n"
-            f"⚙️ FW: {d.get('fw', '--')} | 📶 {d.get('rssi', 0)} dBm | Server RAM: {ram_mb:.1f} MB"
-            f"\n"
-            f"💬 Надішли будь-який GIF, наліпку, фото, голосове або /persona [опис]!"
+            f"📡 Стан: {status_line}\n"
+            f"🌡 Температура: {t_val:.1f}°C\n"
+            f"💧 Вологість: {h_val:.0f}%\n"
+            f"🧭 Барометр: {p_val:.0f} mmHg ({trend_sym} {p_diff:+.1f})\n"
+            f"☀️ Освітленість: {l_pct}%\n"
+            f"🎨 Світло: {m_name}\n"
+            f"🔆 Яскравість: {'АВТО' if auto_b else f'РУЧН ({b_pct}%)'}\n"
+            f"🔊 Звук: {vol_str} (Кліки: {'ВКЛ' if t_beep else 'ВИКЛ'})\n"
+            f"📶 Wi-Fi Сигнал: {rssi} dBm"
+            f"{sleep_line}{media_line}\n\n"
+            f"🧠 Дух: {state_service.ai_persona_name}"
         )
 
-    def _trigger_reaction_with_custom_media(self, r_code: int, sender: str, default_txt: str) -> str:
-        """Запускає реакцію разом із прив'язаною кастомною гіфкою (.mbx) та кастомним звуком."""
-        cmd_data: Dict[str, Any] = {"react": r_code, "sender": sender[:28], "msg": default_txt}
-        host = state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)
-
-        # Перевіряємо, чи прив'язана кастомна гіфка/наліпка до цього слота реакції (2..6)
-        custom_m = db_service.get_media_for_reaction_slot(r_code)
-        custom_note = ""
-        if custom_m and custom_m.get("file_path"):
-            name = custom_m["name"]
-            crc = custom_m["crc32_hex"]
-            cmd_data.update({
-                "media_name": name,
-                "media_url": f"{host}/api/v5/media/{name}.mbx?c={crc}",
-                "img_url": f"{host}/api/v1/media/frame.rgb565?v={crc}",
-                "media_crc": crc,
-                "media_frames": custom_m["frames"],
-                "media_fps": custom_m["fps"],
-                "ambi_rgb": [custom_m["ambi_r"], custom_m["ambi_g"], custom_m["ambi_b"]],
-            })
-            custom_note = f" + кастомна анімація «{name}» ({custom_m['frames']} к.)"
-
-        sound_url = audio_service.get_reaction_sound_url(r_code, host)
-        if sound_url:
-            cmd_data["play_url"] = sound_url
-
-        state_service.enqueue_raw(cmd_data)
-        return custom_note
-
     @staticmethod
-    def _build_spotify_view(base_url: str = "") -> tuple[str, Dict[str, Any]]:
-        sp = spotify_service.get_cached_state()
-        auth_url = spotify_service.get_authorize_url(base_url)
+    def _build_spotify_view(base_url: str = "") -> Tuple[str, Dict[str, Any]]:
+        st = spotify_service.get_cached_state()
+        playing = st.get("playing", False)
+        title = st.get("title", "")
+        artist = st.get("artist", "")
+        prog_ms = st.get("progress_ms", 0)
+        dur_ms = st.get("duration_ms", 0)
 
-        if not db_service.get_setting("spotify_refresh_token", ""):
+        c_sec = prog_ms // 1000
+        d_sec = dur_ms // 1000
+        time_str = f"{c_sec // 60:02d}:{c_sec % 60:02d} / {d_sec // 60:02d}:{d_sec % 60:02d}"
+
+        if not spotify_service.is_linked():
+            auth_url = spotify_service.get_authorize_url(base_url)
             text = (
-                "🎵 <b>SPOTIFY VINYL HUB</b>\n\n"
-                "Spotify акаунт ще не підключено.\n"
-                "Натисніть кнопку нижче, щоб авторизуватися через Spotify:"
+                "🎵 <b>SPOTIFY VINYL HUB · НЕ ПІДКЛЮЧЕНО</b>\n\n"
+                "Для синхронізації вінілового плеєра 136×136, підсвітки AmbiLight та відображення треків — "
+                "авторизуй свій акаунт через офіційний OAuth2:"
             )
             kb = {
                 "inline_keyboard": [
-                    [{"text": "🔗 Підключити Spotify", "url": auth_url or "https://accounts.spotify.com"}],
-                    [{"text": "🔄 Перевірити статус", "callback_data": "spotify:refresh"}],
+                    [{"text": "🔗 Авторизувати Spotify", "url": auth_url if auth_url else "http://127.0.0.1:8000"}],
+                    [{"text": "🔄 Перевірити підключення", "callback_data": "spotify:refresh"}],
                 ]
             }
             return text, kb
 
-        playing = sp.get("playing", False)
-        title = sp.get("title", "Невідомий трек")
-        artist = sp.get("artist", "Невідомий виконавець")
-        prog_s = sp.get("progress_ms", 0) // 1000
-        dur_s = sp.get("duration_ms", 0) // 1000
-
-        status_sym = "▶️ Грає" if playing else "⏸ На паузі"
+        status_str = "▶️ ВІДТВОРЮЄТЬСЯ" if playing else "⏸ ПАУЗА"
+        track_info = f"<b>{title}</b>\n👤 {artist}\n⏱ {time_str}" if title else "<i>Очікування відтворення...</i>"
         text = (
-            f"🎵 <b>SPOTIFY VINYL HUB</b>\n\n"
-            f"Статус: {status_sym}\n"
-            f"Трек: <b>{title}</b>\n"
-            f"Виконавець: <i>{artist}</i>\n"
-            f"Час: {prog_s//60:02d}:{prog_s%60:02d} / {dur_s//60:02d}:{dur_s%60:02d}\n"
+            f"🎵 <b>SPOTIFY VINYL DECK (v4.5)</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"Статус: {status_str}\n\n"
+            f"{track_info}\n\n"
+            f"💡 Платівка автоматично обертається на екрані (Вікно 3) та живить стрічку SK6812 (Режим 11)!"
         )
-        toggle_lbl = "⏸ Пауза" if playing else "▶️ Пуск"
+
         kb = {
             "inline_keyboard": [
                 [
-                    {"text": "⏮ Назад", "callback_data": "spotify:previous"},
-                    {"text": toggle_lbl, "callback_data": "spotify:toggle"},
-                    {"text": "⏭ Далі", "callback_data": "spotify:next"},
+                    {"text": "⏮ Попередній", "callback_data": "sp_act:previous"},
+                    {"text": "⏸ Пауза" if playing else "▶️ Грати", "callback_data": "sp_act:play_pause"},
+                    {"text": "⏭ Наступний", "callback_data": "sp_act:next"},
                 ],
                 [
+                    {"text": "🎨 Увімкнути Spotify AmbiLight", "callback_data": "mode:11"},
                     {"text": "🔄 Оновити", "callback_data": "spotify:refresh"},
-                    {"text": "🔗 Перепідключити", "url": auth_url or "https://accounts.spotify.com"},
                 ],
             ]
         }
         return text, kb
 
+    def _trigger_reaction_with_custom_media(self, react_code: int, sender: str, screen_text: str) -> str:
+        state_service.enqueue_raw({"react": react_code, "sender": sender[:28], "msg": screen_text[:90]})
+        custom_info = ""
+        media_item = db_service.get_media_by_slot(react_code)
+        if media_item and media_item.get("media_type") != "sound":
+            try:
+                media_service.trigger_saved_media(media_item["name"], settings.PUBLIC_SERVER_URL)
+                custom_info = f" + кастомна анімація '{media_item['name']}'"
+            except Exception:
+                pass
+        sound_url = audio_service.get_reaction_sound_url(react_code, settings.PUBLIC_SERVER_URL)
+        if sound_url:
+            state_service.enqueue_raw({"play_url": sound_url})
+        return custom_info
+
     async def _handle_callback(self, cb: Dict[str, Any]) -> None:
         cb_id = cb.get("id", "")
         data = cb.get("data", "")
-        msg = cb.get("message", {})
-        chat_id = str((msg.get("chat") or {}).get("id", ""))
-        msg_id = msg.get("message_id")
-
-        if chat_id not in (state_service.admin_id, state_service.girl_id):
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⛔ Доступ обмежено"})
-            return
+        chat_id = str((cb.get("message") or {}).get("chat", {}).get("id", ""))
+        msg_id = (cb.get("message") or {}).get("message_id")
 
         if data.startswith("mode:"):
             m = int(data.split(":")[1])
             state_service.enqueue_raw({"set_mode": m})
-            if state_service.latest_telemetry:
-                state_service.latest_telemetry["m"] = m
-                state_service.latest_telemetry["m_name"] = MODES_UA[m % len(MODES_UA)]
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Увімкнено: {MODES_UA[m % len(MODES_UA)]}"})
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Режим: {MODES_UA[m % len(MODES_UA)]}"})
+            await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._modes_inline_kb()})
+
+        elif data.startswith("brt:"):
+            arg = data.split(":")[1]
+            if arg == "auto":
+                state_service.enqueue_raw({"set_brt": "auto"})
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Авто-яскравість увімкнена"})
+            else:
+                idx = int(arg)
+                state_service.enqueue_raw({"set_brt": str(idx)})
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Яскравість: {idx}"})
+            await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._brt_inline_kb()})
+
+        elif data.startswith("sleep:"):
+            dur = int(data.split(":")[1])
+            state_service.enqueue_raw({"sleep": dur})
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Таймер сну: {dur} хв" if dur > 0 else "Таймер сну вимкнено"})
             await self._api("editMessageText", {
                 "chat_id": chat_id,
                 "message_id": msg_id,
-                "text": f"🎨 ВИБІР РЕЖИМУ СВІТЛА\nОбрано: {MODES_UA[m % len(MODES_UA)]}",
+                "text": f"⏳ Таймер сну «Захід сонця» встановлено на {dur} хв!" if dur > 0 else "⏳ Таймер сну скасовано.",
                 "reply_markup": self._modes_inline_kb(),
             })
 
-        elif data.startswith("brt:"):
-            val = data.split(":")[1]
-            state_service.enqueue_raw({"set_brt": val})
-            if state_service.latest_telemetry:
-                state_service.latest_telemetry["auto_b"] = (val == "auto")
-                if val != "auto":
-                    state_service.latest_telemetry["b_idx"] = int(val)
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🔆 Яскравість оновлено!"})
-            await self._api("editMessageText", {
-                "chat_id": chat_id,
-                "message_id": msg_id,
-                "text": "🔆 КЕРУВАННЯ ЯСКРАВІСТЮ",
-                "reply_markup": self._brt_inline_kb(),
-            })
+        # Керування гучністю та MUTE
+        elif data.startswith("vol:"):
+            v_arg = data.split(":")[1]
+            d = state_service.latest_telemetry
+            cur_vol = d.get("vol", 12)
+            cur_muted = d.get("muted", False)
+            cur_beep = d.get("t_beep", True)
 
-        elif data.startswith("slp:"):
-            mins = int(data.split(":")[1])
-            state_service.enqueue_raw({"sleep": mins})
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"🌙 Таймер: {mins} хв" if mins else "Таймер вимкнено"})
-            await self._api("editMessageText", {
-                "chat_id": chat_id,
-                "message_id": msg_id,
-                "text": f"⏳ Таймер сну: {mins} хв" if mins else "⏳ Таймер сну вимкнено.",
-                "reply_markup": self._sleep_inline_kb(),
-            })
+            if v_arg == "mute":
+                new_m = not cur_muted
+                state_service.enqueue_raw({"muted": new_m})
+                ans = "🔇 Звук вимкнено (Mute)" if new_m else "🔊 Звук увімкнено"
+            elif v_arg == "beep":
+                new_b = not cur_beep
+                state_service.enqueue_raw({"touch_beep": new_b})
+                ans = f"🔘 Кліки кнопок: {'ВКЛ' if new_b else 'ВИКЛ'}"
+            elif v_arg == "up":
+                new_v = min(21, cur_vol + 2)
+                state_service.enqueue_raw({"volume": new_v, "muted": False})
+                ans = f"🔊 Гучність: {int(new_v * 100 / 21)}%"
+            elif v_arg == "down":
+                new_v = max(0, cur_vol - 2)
+                state_service.enqueue_raw({"volume": new_v})
+                ans = f"🔉 Гучність: {int(new_v * 100 / 21)}%"
+            else:
+                new_v = int(v_arg)
+                state_service.enqueue_raw({"volume": new_v, "muted": False})
+                ans = f"🔊 Гучність: {int(new_v * 100 / 21)}%"
 
-        elif data.startswith("bind:"):
-            _, m_name, slot_s = data.split(":")
-            slot = int(slot_s)
-            slot_names = {2: "🔥 Вогник", 3: "⚡ Блискавка", 4: "🐱 Мем-Кіт", 5: "👽 Пороблено", 6: "👑 Корона"}
-            db_service.bind_media_to_reaction_slot(m_name, slot)
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Закріплено за {slot_names.get(slot)}!"})
-            await self._api("editMessageText", {
-                "chat_id": chat_id,
-                "message_id": msg_id,
-                "text": f"✅ Кастомну анімацію «{m_name}» тепер прив'язано до реакції {slot_names.get(slot)}!",
-                "reply_markup": self._gallery_inline_kb(),
-            })
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans})
+            await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._volume_inline_kb()})
 
-        elif data.startswith("saver:"):
-            m_name = data.split(":", 1)[1]
+        # Керування медіа-показом та таймерами
+        elif data.startswith("med_timer:"):
+            t_min = int(data.split(":")[1])
+            media_service.set_timer(t_min)
+            msg_t = f"⏱ Таймер показу: {t_min} хв!" if t_min > 0 else "♾ Анімація крутиться постійно до скасування!"
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": msg_t})
+
+        elif data == "med_stop":
+            media_service.stop_media()
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⏹ Показ зупинено! Екран повернуто"})
+
+        elif data.startswith("med_saver:"):
+            s_name = data.split(":", 1)[1]
             try:
-                res = media_service.trigger_saved_media(m_name, settings.PUBLIC_SERVER_URL, set_as_saver=True)
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🖼 Збережено як заставку (Вікно 2)!"})
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": f"🖼 Анімацію «{m_name}» встановлено як постійну заставку (Вікно 2)!\nШкатулка збереже її у LittleFS.",
-                })
-            except Exception:
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "❌ Файл не знайдено"})
+                media_service.trigger_saved_media(s_name, settings.PUBLIC_SERVER_URL, set_as_saver=True)
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"📌 '{s_name}' записано як постійну заставку LittleFS!"})
+            except Exception as e:
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Помилка: {e}"})
 
-        elif data.startswith("spotify:"):
-            act = data.split(":", 1)[1]
-            if act == "refresh":
-                pass
-            elif act == "toggle":
+        # Швидкі реакції з інлайн-меню
+        elif data.startswith("react:"):
+            r_code = int(data.split(":")[1])
+            r_names = {2: "🔥 Вогник", 3: "⚡ Блискавка", 4: "🐱 Мем-Кіт", 5: "👽 Пороблено", 6: "👑 Корона"}
+            self._trigger_reaction_with_custom_media(r_code, "Telegram", r_names.get(r_code, "VIBE"))
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"{r_names.get(r_code, 'Реакція')} запущена!"})
+
+        elif data.startswith("sp_act:"):
+            action = data.split(":")[1]
+            if action == "play_pause":
                 cur_p = spotify_service.get_cached_state().get("playing", False)
                 await spotify_service.player_action("pause" if cur_p else "play")
             else:
-                await spotify_service.player_action(act)
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🎵 Spotify оновлено"})
+                await spotify_service.player_action(action)
+            await asyncio.sleep(0.4)
             sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
-            await self._api("editMessageText", {
-                "chat_id": chat_id,
-                "message_id": msg_id,
-                "text": sp_t,
-                "parse_mode": "HTML",
-                "reply_markup": sp_k,
-            })
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Spotify: {action}"})
+            await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": sp_t, "parse_mode": "HTML", "reply_markup": sp_k})
 
-        elif data.startswith("play_mbx:"):
-            m_name = data.split(":", 1)[1]
+        elif data == "spotify:refresh":
+            await asyncio.sleep(0.3)
+            sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Дані Spotify оновлено"})
+            await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": sp_t, "parse_mode": "HTML", "reply_markup": sp_k})
+
+        elif data.startswith("play_media:"):
+            name = data.split(":", 1)[1]
             try:
-                res = media_service.trigger_saved_media(m_name, settings.PUBLIC_SERVER_URL)
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"▶️ Запущено: {m_name} ({res['frames']} к.)"})
-            except Exception:
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "❌ Файл не знайдено"})
+                media_service.trigger_saved_media(name, settings.PUBLIC_SERVER_URL)
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Запущено '{name}'!"})
+            except Exception as e:
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Помилка: {e}"})
+
+        elif data.startswith("voice_sel:"):
+            choice = data.split(":", 1)[1]
+            if choice == "clone":
+                db_service.set_setting("tts_provider", "elevenlabs")
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Увімкнено Клонований Голос (ElevenLabs)!"})
+            else:
+                db_service.set_setting("tts_provider", "edge")
+                db_service.set_setting("tts_edge_voice", choice)
+                name_ua = "Ostap (Чоловічий)" if "Ostap" in choice else "Polina (Жіночий)"
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Голос Edge-TTS: {name_ua}"})
+            await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._voice_config_inline_kb()})
+
+        elif data == "voice:test":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Озвучую тестове вітання на шкатулці..."})
+            await audio_service.speak_text("Привіт! Шкатулка MagicBox v4.5 працює бездоганно. Звук чистий та об'ємний!", settings.PUBLIC_SERVER_URL)
+
+        elif data.startswith("play_voice:"):
+            v_name = data.split(":", 1)[1]
+            ok = await audio_service.play_voice_preset(v_name, settings.PUBLIC_SERVER_URL)
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Відтворюю голос на шкатулці!" if ok else "Запис не знайдено"})
 
         elif data.startswith("persona:"):
-            p_key = data.split(":")[1]
+            p_type = data.split(":")[1]
             presets = {
-                "spirit": (
-                    "Затишний Дух MagicBox",
-                    "Ти — теплий, дотепний дух-охоронець розумної шкатулки MagicBox, яку створено для затишку. Пиши українською мовою, лаконічно (2-3 речення), ніжно і з легким гумором.",
-                ),
-                "cat": (
-                    "Кібер-Котик Мурчик",
-                    "Ти — харизматичний пухнастий кібер-кіт, який живе всередині круглої лампи MagicBox. Додавай котячі метафори (мур, кусь, лапки), коментуй погоду та температуру в кімнаті дотепно українською мовою (2-3 речення).",
-                ),
-                "romantic": (
-                    "Романтичний Охоронець",
-                    "Ти — ніжний і турботливий голос шкатулки. Пиши дуже тепло, компліментарно, створюючи атмосферу любові, казки та затишку українською мовою (2-3 речення).",
-                ),
-                "jarvis": (
-                    "Дворецький J.A.R.V.I.S.",
-                    "Ти — високотехнологічний британський ШІ-дворецький Джарвіс. Доповідай показники барометра, температури та погоди з тонкою аристократичною іронією українською мовою (2-3 речення).",
-                ),
+                "cozy": ("Затишний Дух MagicBox", "Ти теплий, домашній, турботливий дух дерев'яної шкатулки з вогником. Говори лагідно, затишно і з любов'ю."),
+                "cat": ("Саркастичний Кіт", "Ти хитрий, розумний кіт, що живе всередині шкатулки. Твій тон іронічний, дотепний, ти любиш жартувати про сон і їжу."),
+                "braun": ("Синоптик Braun", "Ти точний німецький прилад хорології у стилі Дітера Рамса. Говори лаконічно, чітко, професійно."),
+                "cyber": ("Кіберпанк AI", "Ти ШІ з неонового 2077 року. Говори стильно, технічно та впевнено."),
             }
-            if p_key in presets:
-                p_name, p_prompt = presets[p_key]
+            if p_type in presets:
+                p_name, p_prompt = presets[p_type]
                 state_service.save_ai_persona(p_name, p_prompt)
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Обрано: {p_name}"})
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Персона: {p_name}"})
                 await self._api("editMessageText", {
                     "chat_id": chat_id,
                     "message_id": msg_id,
-                    "text": f"🧠 АКТИВНА ПЕРСОНА ШІ: {p_name}\n\nПромпт: «{p_prompt}»\n\n💡 Можна також задати власний характер командою:\n/persona [твій опис характеру]",
+                    "text": f"🧠 АКТИВНА ПЕРСОНА ШІ: {p_name}\n\nПромпт: «{p_prompt}»",
                     "reply_markup": self._ai_personas_inline_kb(),
                 })
 
-        elif data == "ai:speak":
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🔊 Генерую та озвучую..."})
-            res = await weather_ai_service.generate_smart_briefing(speak=True)
-            await self._api("sendMessage", {
-                "chat_id": chat_id,
-                "text": f"🔊 Озвучено ({res['persona']}):\n\n{res['ai_forecast']}",
-            })
+        elif data == "menu:infographic":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Генерую свіжу інфографіку..."})
+            png_bytes = infographic_service.generate_status_infographic()
+            await self._send_photo_bytes(
+                chat_id,
+                png_bytes,
+                caption=self._build_status_text(),
+                reply_markup=self._ai_personas_inline_kb(),
+            )
 
         elif data == "menu:gallery":
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
             await self._api("editMessageText", {
                 "chat_id": chat_id,
                 "message_id": msg_id,
-                "text": "🎭 ГАЛЕРЕЯ КАСТОМНИХ ГІФОК ТА НАЛІПОК:\nНатисни на будь-яку, щоб миттєво вивести її на круглий екран з AmbiLight-підсвіткою:",
+                "text": "🎭 ГАЛЕРЕЯ КАСТОМНИХ ГІФОК ТА НАЛІПОК:\nНатисни на будь-яку, щоб вивести її на круглий дисплей:",
                 "reply_markup": self._gallery_inline_kb(),
             })
-        elif data == "menu:brt":
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
-            await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "🔆 КЕРУВАННЯ ЯСКРАВІСТЮ", "reply_markup": self._brt_inline_kb()})
-        elif data == "menu:sleep":
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
-            await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "⏳ ТАЙМЕР СНУ «ЗАХІД СОНЦЯ»", "reply_markup": self._sleep_inline_kb()})
-        elif data == "menu:modes":
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
-            await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "🎨 ВИБІР РЕЖИМУ СВІТЛА ТА СВІЧКИ", "reply_markup": self._modes_inline_kb()})
 
     async def _handle_message(self, msg: Dict[str, Any]) -> None:
         chat_id = str((msg.get("chat") or {}).get("id", ""))
@@ -435,7 +555,7 @@ class TelegramBotService:
         if text.lower() == "/iam_admin":
             if not state_service.admin_id or chat_id == state_service.admin_id:
                 state_service.save_auth_ids(admin_id=chat_id)
-                await self._api("sendMessage", {"chat_id": chat_id, "text": "👑 Акаунт Адміністратора підтверджено у v5.0!", "reply_markup": ADMIN_KB})
+                await self._api("sendMessage", {"chat_id": chat_id, "text": "👑 Акаунт Адміністратора підтверджено у v4.5!", "reply_markup": ADMIN_KB})
             else:
                 await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Адміністратор вже прив'язаний."})
             return
@@ -452,13 +572,13 @@ class TelegramBotService:
         is_girl = (chat_id == state_service.girl_id)
 
         if not is_admin and not is_girl:
-            await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Приватна шкатулка MagicBox v5.0."})
+            await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Приватна шкатулка MagicBox v4.5."})
             return
 
         active_kb = ADMIN_KB if is_admin else GIRL_KB
         online_note = "" if state_service.is_online() else "\n🌙 (Шкатулка офлайн — команда в черзі й миттєво спрацює при появі світла!)"
 
-        # 1. Прийом НАЛІПОК (Stickers: WebP / Animated)
+        # 1. Прийом НАЛІПОК (Stickers)
         if "sticker" in msg:
             st = msg["sticker"]
             is_video_or_tgs = bool(st.get("is_animated") or st.get("is_video"))
@@ -472,11 +592,10 @@ class TelegramBotService:
                     await self._api("sendMessage", {
                         "chat_id": chat_id,
                         "text": (
-                            f"✨ Наліпку «{meta['name']}» ({meta['frames']} к., AmbiLight RGB {meta['ambi_rgb']}) "
-                            f"відправлено на круглий дисплей!{online_note}\n\n"
-                            f"Бажаєш закріпити її за однією з 5 кнопок реакцій?"
+                            f"✨ Наліпку «{meta['name']}» запущено на екрані шкатулки!{online_note}\n\n"
+                            f"Керування показом (крутиться постійно або за таймером):"
                         ),
-                        "reply_markup": self._bind_slot_inline_kb(meta["name"]),
+                        "reply_markup": self._media_control_inline_kb(meta["name"]),
                     })
                     return
 
@@ -484,7 +603,6 @@ class TelegramBotService:
         if "animation" in msg:
             anim = msg["animation"]
             mime = str(anim.get("mime_type") or "")
-            # Якщо це справжній GIF або невеликий файл — беремо оригінал, інакше прев'ю
             file_id = anim.get("file_id") if ("gif" in mime or int(anim.get("file_size", 0)) < 2500000) else None
             if not file_id:
                 thumb_obj = anim.get("thumbnail") or anim.get("thumb") or {}
@@ -497,26 +615,34 @@ class TelegramBotService:
                     await self._api("sendMessage", {
                         "chat_id": chat_id,
                         "text": (
-                            f"🎞 Живу анімацію «{meta['name']}» ({meta['frames']} кадрів @ {meta['fps']} FPS, "
-                            f"AmbiLight {meta['ambi_rgb']}) запущено на екрані!{online_note}\n\n"
-                            f"Можеш закріпити цю гіфку на будь-яку реакцію:"
+                            f"🎞 Живу анімацію «{meta['name']}» ({meta['frames']} к. @ {meta['fps']} FPS, AmbiLight RGB {meta['ambi_rgb']}) запущено на екрані!{online_note}\n\n"
+                            f"Обери тривалість показу або залиш постійно:"
                         ),
-                        "reply_markup": self._bind_slot_inline_kb(meta["name"]),
+                        "reply_markup": self._media_control_inline_kb(meta["name"]),
                     })
                     return
 
-        # 3. Прийом голосових повідомлень
+        # 3. Прийом голосових повідомлень (Voice)
         if "voice" in msg:
             voice_id = msg["voice"].get("file_id")
             if voice_id:
                 raw_voice = await self._download_tg_file(voice_id)
                 if raw_voice:
-                    await audio_service.save_voice_stream(raw_voice, sender=sender, base_url=settings.PUBLIC_SERVER_URL)
-                    await self._api("sendMessage", {
-                        "chat_id": chat_id,
-                        "text": f"🎙 Голосове повідомлення передано в RAM-буфер динаміка!{online_note}",
-                        "reply_markup": active_kb,
-                    })
+                    if text.startswith("/save_voice ") or (text and not text.startswith("/")):
+                        p_name = text.replace("/save_voice", "").strip() or f"v_{int(time.time())}"
+                        await audio_service.save_voice_preset(p_name, raw_voice, base_url=settings.PUBLIC_SERVER_URL)
+                        await self._api("sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"🎙 Голосову замітку «{p_name}» збережено у банк звуків шкатулки!",
+                            "reply_markup": {"inline_keyboard": [[{"text": "🔊 Відтворити зараз на шкатулці", "callback_data": f"play_voice:{p_name}"}]]},
+                        })
+                    else:
+                        await audio_service.save_voice_stream(raw_voice, sender=sender, base_url=settings.PUBLIC_SERVER_URL)
+                        await self._api("sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"🎙 Голосове повідомлення передано в динамік шкатулки!{online_note}",
+                            "reply_markup": active_kb,
+                        })
                     return
 
         # 4. Прийом ФОТОГРАФІЙ
@@ -528,12 +654,12 @@ class TelegramBotService:
                 meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
                 await self._api("sendMessage", {
                     "chat_id": chat_id,
-                    "text": f"🖼 Фото оброблено у формат 240×240 RGB565 (AmbiLight {meta['ambi_rgb']}) та виведено на дисплей!{online_note}",
-                    "reply_markup": self._bind_slot_inline_kb(meta["name"]),
+                    "text": f"🖼 Фото оброблено (240×240 RGB565 TrueColor Bayer, Ambi {meta['ambi_rgb']}) та виведено на дисплей!{online_note}",
+                    "reply_markup": self._media_control_inline_kb(meta["name"]),
                 })
             return
 
-        # 5. Прийом документів (.bin прошивки, .gif без стиснення або .mp3 звуки)
+        # 5. Прийом документів (.bin прошивки, .gif або .mp3 звуки)
         if "document" in msg or "audio" in msg:
             doc = msg.get("document") or msg.get("audio") or {}
             fname = str(doc.get("file_name") or "file").lower()
@@ -557,8 +683,8 @@ class TelegramBotService:
                     meta = await media_service.process_and_enqueue(raw_img, settings.PUBLIC_SERVER_URL, save_name=save_tag)
                     await self._api("sendMessage", {
                         "chat_id": chat_id,
-                        "text": f"🎞 Кастомну анімацію `{meta['name']}` ({meta['frames']} кадрів @ {meta['fps']} FPS) збережено та запущено!{online_note}",
-                        "reply_markup": self._bind_slot_inline_kb(meta["name"]),
+                        "text": f"🎞 Анімацію «{meta['name']}» запущено на екрані шкатулки!{online_note}",
+                        "reply_markup": self._media_control_inline_kb(meta["name"]),
                     })
                 return
             elif fname.endswith(".mp3") or "audio" in msg:
@@ -580,55 +706,45 @@ class TelegramBotService:
             await self._api("sendMessage", {"chat_id": chat_id, "text": self._build_status_text(), "reply_markup": active_kb})
             return
 
-        if text.startswith("/ota_status") or text.startswith("/ota"):
-            meta = ota_service.get_metadata(settings.PUBLIC_SERVER_URL)
-            if meta["available"]:
-                import datetime
-                dt_str = datetime.datetime.fromtimestamp(meta["uploaded_at"]).strftime("%Y-%m-%d %H:%M:%S")
-                txt = (
-                    f"🚀 СТАН СИСТЕМИ ОНОВЛЕНЬ (OTA v3.8)\n"
-                    f"━━━━━━━━━━━━━━━━━━\n"
-                    f"📦 Розмір: {meta['size']} байт ({meta['size'] / 1024:.1f} KB)\n"
-                    f"🔑 SHA256: `{meta['sha256']}`\n"
-                    f"🕒 Завантажено: {dt_str}\n"
-                    f"🌐 URL: `{meta['download_url']}`\n\n"
-                    f"💡 Щоб прошити лампу: надішли .bin файл у цей чат."
-                )
-            else:
-                txt = "🚀 OTA СТАН: На сервері немає завантаженої прошивки.\nНадішли .bin файл прямо у цей чат!"
-            await self._api("sendMessage", {"chat_id": chat_id, "text": txt, "reply_markup": active_kb})
+        # 6. Обробка текстових кнопок нової клавіатури v4.5
+        if text.startswith("/status") or text.startswith("/blackout") or "Інфографіка" in text or "Стан" in text:
+            png_bytes = infographic_service.generate_status_infographic()
+            await self._send_photo_bytes(
+                chat_id,
+                png_bytes,
+                caption=self._build_status_text(),
+                reply_markup=self._ai_personas_inline_kb(),
+            )
             return
 
-        if text.startswith("/status") or "Стан" in text:
-            await self._api("sendMessage", {"chat_id": chat_id, "text": self._build_status_text(), "reply_markup": self._ai_personas_inline_kb()})
-            return
-
-        if text.startswith("/gallery") or "Галерея" in text or "Гіфок" in text:
+        if text.startswith("/volume") or "Гучність" in text or "Звук" in text:
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": "🎭 ГАЛЕРЕЯ КАСТОМНИХ ГІФОК ТА НАЛІПОК:\nОбери анімацію для запуску або просто надішли нову гіфку/стікер у чат:",
-                "reply_markup": self._gallery_inline_kb(),
+                "text": "🔊 <b>КЕРУВАННЯ ГУЧНІСТЮ ТА ЗВУКОВИМИ РЕЖИМАМИ</b>\nОберіть комфортний рівень або вимкніть звук повністю:",
+                "parse_mode": "HTML",
+                "reply_markup": self._volume_inline_kb(),
             })
             return
 
-        if text.startswith("/persona"):
-            custom_p = text[8:].strip()
-            if custom_p:
-                state_service.save_ai_persona("Кастомний Дух", custom_p)
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": f"🧠 Новий характер ШІ збережено!\nПромпт: «{custom_p}»",
-                    "reply_markup": active_kb,
-                })
-            else:
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": f"🧠 Поточна персона: {state_service.ai_persona_name}\nОбери готову або напиши `/persona [твій промпт]`:",
-                    "reply_markup": self._ai_personas_inline_kb(),
-                })
+        if text.startswith("/stop") or "Скинути екран" in text or "Стоп Гіф" in text:
+            media_service.stop_media()
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": "⏹ Показ медіа зупинено, екран шкатулки повернуто до хорологічного годинника та погоди!",
+                "reply_markup": active_kb,
+            })
             return
 
-        if text.startswith("/spotify") or "spotify" in text.lower():
+        if "Швидка Реакція" in text:
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": "🎭 <b>ШВИДКІ МЕМ-РЕАКЦІЇ:</b>\nТоркніться реакції для миттєвого показу на екрані з фірмовим процедурним звуком:",
+                "parse_mode": "HTML",
+                "reply_markup": self._reactions_quick_inline_kb(),
+            })
+            return
+
+        if text.startswith("/spotify") or "Spotify" in text:
             sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
             await self._api("sendMessage", {
                 "chat_id": chat_id,
@@ -638,16 +754,33 @@ class TelegramBotService:
             })
             return
 
-        if text.startswith("/modes") or "Режими" in text or "Свічка" in text:
+        if text.startswith("/voice"):
+            prov = audio_service.get_configured_tts_provider()
+            v_name = audio_service.get_configured_edge_voice()
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": (
+                    f"🎙 <b>НАЛАШТУВАННЯ ГОЛОСУ ОЗВУЧКИ (v4.5)</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"Поточний провайдер: <code>{prov}</code>\n"
+                    f"Активний голос: <code>{v_name}</code>\n\n"
+                    f"💡 Щоб зберегти власну голосову замітку для шкатулки: надішли голосове повідомлення із текстом <code>/save_voice [назва]</code>."
+                ),
+                "parse_mode": "HTML",
+                "reply_markup": self._voice_config_inline_kb(),
+            })
+            return
+
+        if text.startswith("/modes") or "Світло" in text or "Свічка" in text:
             await self._api("sendMessage", {"chat_id": chat_id, "text": "🎨 ВИБІР РЕЖИМУ СВІТЛА ТА СВІЧКИ:", "reply_markup": self._modes_inline_kb()})
             return
 
-        if text.startswith("/brt") or "Яскравість" in text:
-            await self._api("sendMessage", {"chat_id": chat_id, "text": "🔆 КЕРУВАННЯ ЯСКРАВІСТЮ:", "reply_markup": self._brt_inline_kb()})
-            return
-
-        if text.startswith("/sleep") or "Таймер" in text:
-            await self._api("sendMessage", {"chat_id": chat_id, "text": "⏳ ТАЙМЕР СНУ «ЗАХІД СОНЦЯ»:", "reply_markup": self._sleep_inline_kb()})
+        if text.startswith("/gallery") or "Заставка" in text or "Гіфки" in text:
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": "🎭 ГАЛЕРЕЯ КАСТОМНИХ ГІФОК ТА НАЛІПОК:\nОбери анімацію або просто надішли будь-яку гіфку/стікер сюди:",
+                "reply_markup": self._gallery_inline_kb(),
+            })
             return
 
         if text.startswith("/weather") or text.startswith("/ai") or "Погода" in text:
@@ -666,40 +799,37 @@ class TelegramBotService:
             await self._api("sendMessage", {"chat_id": chat_id, "text": f"🔊 Озвучую на шкатулці:\n«{phrase}»{online_note}", "reply_markup": active_kb})
             return
 
-        reactions_map = {
-            "/fire": (2, "🔥 Вогник", "FIRE VIBE! ЦЕ ПІДПАЛ!"),
-            "🔥 Вогник": (2, "🔥 Вогник", "FIRE VIBE! ЦЕ ПІДПАЛ!"),
-            "/zap": (3, "⚡ Блискавка", "КУСЬ-ЗАП! BZZT!"),
-            "⚡ Блискавка": (3, "⚡ Блискавка", "КУСЬ-ЗАП! BZZT!"),
-            "/cat": (4, "🐱 Мем-Кіт", "НЯВ! ТИЦЬ-КУСЬ =^._.^="),
-            "🐱 Мем-Кіт": (4, "🐱 Мем-Кіт", "НЯВ! ТИЦЬ-КУСЬ =^._.^="),
-            "🐱 Кусь Кота": (4, "🐱 Мем-Кіт", "НЯВ! ТИЦЬ-КУСЬ =^._.^="),
-            "/ufo": (5, "👽 Пороблено", "UFO BEAM! ПОРОБЛЕНО!"),
-            "👽 Пороблено": (5, "👽 Пороблено", "UFO BEAM! ПОРОБЛЕНО!"),
-            "/crown": (6, "👑 Корона", "QUEEN VIBE! КРАШ!"),
-            "👑 Корона": (6, "👑 Корона", "QUEEN VIBE! КРАШ!"),
-        }
-        if text in reactions_map:
-            r_code, r_title, r_screen_txt = reactions_map[text]
-            custom_info = self._trigger_reaction_with_custom_media(r_code, sender, r_screen_txt)
-
-            if is_girl and state_service.admin_id:
-                await self._api("sendMessage", {"chat_id": state_service.admin_id, "text": f"{r_title} від Насті!", "reply_markup": ADMIN_KB})
-            elif is_admin and state_service.girl_id:
-                await self._api("sendMessage", {"chat_id": state_service.girl_id, "text": f"{r_title} від Ярослава на твоїй шкатулці!", "reply_markup": GIRL_KB})
-            await self._api("sendMessage", {"chat_id": chat_id, "text": f"{r_title}{custom_info} запущено на шкатулці!{online_note}", "reply_markup": active_kb})
-            return
-
+        # 7. Звичайні текстові повідомлення від Насті чи Ярослава
         if is_girl:
+            # Повідомлення від Насті НЕ повинно запускати мем кота!
+            # Воно надсилається Ярославу в Telegram і з'являється у картці Inbox на шкатулці
+            state_service.enqueue_raw({"sender": "Настя", "msg": text[:110]})
             if state_service.admin_id:
-                await self._api("sendMessage", {"chat_id": state_service.admin_id, "text": f"💬 Повідомлення від Насті:\n«{text}»", "reply_markup": ADMIN_KB})
-            self._trigger_reaction_with_custom_media(4, sender, text[:90])
-            await self._api("sendMessage", {"chat_id": chat_id, "text": "📨 Відповідь миттєво доставлена!", "reply_markup": GIRL_KB})
+                await self._api("sendMessage", {
+                    "chat_id": state_service.admin_id,
+                    "text": f"💬 <b>Повідомлення від Насті:</b>\n«{text}»",
+                    "parse_mode": "HTML",
+                    "reply_markup": ADMIN_KB,
+                })
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": f"📨 Повідомлення доставлено на екран шкатулки та надіслано Ярославу!{online_note}",
+                "reply_markup": GIRL_KB,
+            })
         else:
             state_service.enqueue_raw({"sender": sender[:28], "msg": text[:110]})
-            await self._api("sendMessage", {"chat_id": chat_id, "text": f"📩 Виведено рідною кирилицею на екран шкатулки!{online_note}", "reply_markup": ADMIN_KB})
             if state_service.girl_id:
-                await self._api("sendMessage", {"chat_id": state_service.girl_id, "text": f"✨ Нове повідомлення на шкатулці від {sender}:\n«{text}»", "reply_markup": GIRL_KB})
+                await self._api("sendMessage", {
+                    "chat_id": state_service.girl_id,
+                    "text": f"✨ <b>Повідомлення на шкатулці від {sender}:</b>\n«{text}»",
+                    "parse_mode": "HTML",
+                    "reply_markup": GIRL_KB,
+                })
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": f"📩 Повідомлення виведено на екран шкатулки!{online_note}",
+                "reply_markup": ADMIN_KB,
+            })
 
     async def polling_loop(self) -> None:
         if not settings.SERVER_MANAGES_BOT or len(settings.TG_BOT_TOKEN) < 15:

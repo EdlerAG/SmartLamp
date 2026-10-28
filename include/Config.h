@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 namespace Config {
-    constexpr const char* FW_VERSION  = "v4.0-Hallmark";
+    constexpr const char* FW_VERSION  = "v4.5-Hallmark";
     constexpr const char* DEVICE_NAME = "magicbox";
     constexpr const char* AP_SSID     = "MagicBox-AP";
 
@@ -21,7 +21,7 @@ namespace Config {
     constexpr const char* ORACLE_API_KEY    = "smartlamp-secret-key";
 #endif
 
-    // У v4.0 використовується миттєвий Long-Poll (сервер тримає запит до 12 с і відповідає за 15 мс!)
+    // У v4.5 використовується миттєвий Long-Poll (сервер тримає запит до 12 с і відповідає за 15 мс!)
     constexpr uint32_t TG_POLL_MS          = 2500;
     constexpr uint32_t ORACLE_SYNC_IDLE_MS = 250;   // Пауза між Long-Poll сесіями
     constexpr uint32_t ORACLE_SYNC_MS      = 250;
@@ -65,7 +65,7 @@ namespace Config {
     constexpr int8_t  PIN_I2S_BCLK    = 15;
     constexpr int8_t  PIN_I2S_LRC     = 16;
     constexpr int8_t  PIN_I2S_DOUT    = 17;
-    constexpr uint8_t DEFAULT_VOLUME  = 16; // 0..21
+    constexpr uint8_t DEFAULT_VOLUME  = 12; // 0..21 (комфортний рівень за замовчуванням v4.5)
 
     // Параметри LED стрічки SK6812 RGBW
     constexpr uint16_t NUM_LEDS       = 60;

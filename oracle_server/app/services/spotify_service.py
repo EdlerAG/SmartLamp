@@ -75,6 +75,10 @@ class SpotifyService:
         }
         return f"https://accounts.spotify.com/authorize?{urllib.parse.urlencode(params)}"
 
+    def is_linked(self) -> bool:
+        refresh_tok = db_service.get_setting("spotify_refresh_token", "")
+        return bool(refresh_tok and settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CLIENT_SECRET)
+
     async def handle_callback(self, code: str, base_url: str = "") -> bool:
         if not settings.SPOTIFY_CLIENT_ID or not settings.SPOTIFY_CLIENT_SECRET:
             return False

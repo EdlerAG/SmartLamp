@@ -1,35 +1,36 @@
-# 🪄 SmartLamp — MagicBox v4.0 (Hallmark Screensavers, Zero-Idle Spotify & Procedural I2S Edition)
+# 🪄 SmartLamp — MagicBox v4.5 (Interactive Onboarding, Persistent Timed Media, Volume Control & Voice Clone Edition)
 
 <p align="center">
   <img src="https://img.shields.io/badge/PlatformIO-ESP32--S3-orange.svg?style=flat-square&logo=platformio" alt="PlatformIO" />
   <img src="https://img.shields.io/badge/Framework-Arduino%20%2F%20FreeRTOS-blue.svg?style=flat-square&logo=arduino" alt="Framework" />
   <img src="https://img.shields.io/badge/Display-GC9A01%20240x240%20IPS-purple.svg?style=flat-square" alt="Display" />
   <img src="https://img.shields.io/badge/Design-Hallmark%20%2F%20Horology%20Deck-E07A5F.svg?style=flat-square" alt="Design" />
-  <img src="https://img.shields.io/badge/Audio-Procedural%20I2S%20PCM%20Synth-yellow.svg?style=flat-square" alt="Audio" />
+  <img src="https://img.shields.io/badge/Audio-Volume%20%26%20Voice%20Clone-yellow.svg?style=flat-square" alt="Audio" />
+  <img src="https://img.shields.io/badge/Infographics-Hallmark%20800x500%20PNG-4EA8DE.svg?style=flat-square" alt="Infographics" />
   <img src="https://img.shields.io/badge/Spotify-Zero--Idle%20Demand-1DB954.svg?style=flat-square&logo=spotify" alt="Spotify" />
-  <img src="https://img.shields.io/badge/Dithering-Bayer%204x4%20TrueColor-4EA8DE.svg?style=flat-square" alt="Dithering" />
   <img src="https://img.shields.io/badge/OTA-Standalone%20Single--Header-52B788.svg?style=flat-square" alt="OTA" />
   <img src="https://img.shields.io/badge/LEDs-SK6812%20RGBW-green.svg?style=flat-square" alt="LEDs" />
   <img src="https://img.shields.io/badge/Backend-FastAPI%20%2F%20Oracle%20Cloud-red.svg?style=flat-square&logo=fastapi" alt="Backend" />
-  <img src="https://img.shields.io/badge/Version-4.0%20Hallmark-brightgreen.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Version-4.5%20Hallmark-brightgreen.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
 </p>
 
-> **MagicBox v4.0** — преміальна розумна лампа-медіахаб на базі **ESP32-S3**, оснащена круглим IPS-дисплеєм GC9A01 з естетикою швейцарської хорології за системою **Hallmark**, процедурним звуковим синтезатором I2S без затримок циклу, нульовим навантаженням на процесор у режимі очікування для **Spotify Vinyl Deck**, квантуванням кольорів **Bayer 4×4 Ordered Dithering**, незалежним захистом прошивки **Standalone Remote OTA** та енергоефективним бекендом **FastAPI** на Oracle Cloud.
+> **MagicBox v4.5** — флагманська розумна лампа-медіахаб на базі **ESP32-S3**, круглому IPS-дисплеї GC9A01 (дизайн **Hallmark Horology**), процедурному звуковому синтезаторі I2S, підтримці клонованого голосу (ElevenLabs, Fish Audio, Edge-TTS), автономному відтворенні зациклених медіа з таймерами, інтерактивному покроковому майстрі налаштування з кнопками «НІ / ТАК», генераторі 800×500 метео-інфографіки та енергоефективному хмарному ядрі **FastAPI** на Oracle VM.
 
 ---
 
-## ✨ Ключові інновації версії v4.0
+## ✨ Ключові інновації версії v4.5
 
 | Модуль | Технічний опис |
 |---|---|
-| 🪟 **Дворівнева архітектура вікон** | Чітке розділення на **Рівень А: Системні вікна** (`SYS_BOOT_SPLASH` із променем швейцарського хронографа $R=116$, `SYS_ONBOARDING_WIZARD` 3-кроковий майстер налаштування AP із QR, `SYS_NETWORK_DIAG` діагностика за довгим кліком) та **Рівень B: 4 Hallmark Вікна-Заставки** (`CLIMATE`, `LIVING_GIF`, `SMART_HUB`, `BAROMETER`). |
-| 🎵 **Zero-Idle Demand Spotify Deck** | Повна інтеграція зі Spotify Web API (OAuth2 PKCE/Code Flow). **0.00% CPU на сервері та 0 запитів у фоні**: сервер опитує Spotify кожні 6 с *виключно тоді*, коли на лампі активне Вікно 2 або світловий режим Spotify AmbiLight (`MODE_SPOTIFY_AMBI = 11`). |
-| 💽 **Кругла вінілова платівка (136×136)** | Сервер на льоту нарізає обкладинку альбому в коло діаметром 136 px, накладає шпиндельний отвір і зберігає в RAM-диск `/dev/shm/magicbox_ram/spotify_vinyl.rgb565`. На дисплеї платівка плавно обертається в PSRAM-спрайті зі швидкістю 33⅓ RPM, віртуальним тонармом, інтерпольованою дугою треку та біжучим рядком назви. |
-| 🎨 **Bayer 4×4 Ordered Dithering** | Векторизований NumPy алгоритм просторового розмиття помилки квантування під час конвертації в RGB565. Повністю ліквідовує ступінчасті градієнти (color banding) на темних і пастельних зображеннях на 16-бітному IPS-дисплеї. |
-| 🔊 **Процедурний I2S PCM Синтезатор** | Чистий математичний синтез гармонік у реальному часі (sine, saw, chirp, envelope) безпосередньо у DMA-буфер I2S порціями по 128 семплів. Миттєвий тактильний клік при дотику, акорд завантаження, кришталевий дзвіночок сповіщень та 5 фірмових мем-звуків. |
-| 💾 **LittleFS Постійна Заставка (`/default_saver.mbx`)** | Збереження улюбленої анімації в пам'ять Flash з перевіркою CRC32 та автоматичним завантаженням при старті. Якщо файл відсутній — автоматично працює витончений швейцарський маятник `Hallmark Swiss Pendulum Clock` з можливістю приховування часу. |
-| 🛡️ **Ізольований Standalone OTA** | Недоторканний однофайловий модуль `StandaloneOta.h` із захистом від окрирплення, валідацією заголовків `0xE9`, контролем SHA256 на льоту та обов'язковим `confirmBootValid()` при старті. |
+| 🧭 **Інтерактивний Onboarding Wizard (6 кроків)** | Покроковий майстер запуску `SYS_ONBOARDING_WIZARD` з прямими підказками на екрані: **`[ ◄ НІ ]` (Left)** та **`[ ТАК ► ]` (Right)**. Кроки: 1) Тест звуку колонки; 2) QR-код точки доступу Wi-Fi; 3) QR-код домашнього вебкабінету; 4) Питання підключення Spotify; 5) Компактний QR-код авторизації через швидкий HTTP 307 Redirect; 6) Фінальний екран готовності `SYSTEM READY`. |
+| 🎞️ **Автономні зациклені медіа з таймерами** | Завантажені GIF, наліпки та фото крутяться **безкінечно за замовчуванням** (або за таймером 15 хв, 1 год, 3 год) без обов'язкової прив'язки до 5 реакцій. Дотик до кришки або команда в Telegram / Web миттєво зупиняє медіа та повертає попереднє вікно. На екрані відображається витончений бейдж зворотного відліку `⏱ 14m`. |
+| 🔊 **Наскрізне регулювання гучності та Mute** | 22-ступенева шкала гучності (`0..21`), збереження в NVS (`box_state`), 100% апаратне блокування звуку в режимі `MUTED`, пропорційне квадратичне масштабування амплітуди для процедурного синтезатора I2S та окремий перемикач звукового кліку кнопок (`touch_beep`). |
+| 📊 **Hallmark Visual Infographics (800×500 PNG)** | Легкий серверний генератор інфографіки на базі Pillow та NumPy в естетиці Hallmark Obsidian (`#08090C`). Відображає кімнатний мікроклімат, вуличну погоду з Open-Meteo, 24-годинний плавний графік температури й барометра з маркерами Min/Max та 7-денну аналітику блекаутів (відсоток аптайму й таймлайн відключень). |
+| 🎙️ **Нейро-клонування голосу та мульти-провайдерний TTS** | Підтримка синтезу мовлення через ElevenLabs (`eleven_multilingual_v2`), Fish Audio та безкоштовний Edge-TTS із можливістю швидкого перемикання між голосами Остапа (👨) та Поліни (👩), збереженням персоналізованих голосових пресетів та їх миттєвим озвученням на лампі. |
+| 📱 **Нова 3-рядкова клавіатура Telegram** | Лаконічні та ергономічні головні клавіатури для адміністратора та користувача: швидкий вибір світла, статус, вимикання, наліпки, гучність, таймери медіа та надсилання інфографіки. |
+| 💌 **Чиста маршрутизація повідомлень** | Виправлено логіку вхідних повідомлень: текст більше не перетворюється примусово на мем-реакцію Котика, а коректно транслюється в Telegram та виводиться на картку Inbox екрана лампи. |
+| 🛡️ **Ізольований Standalone OTA** | Недоторканний однофайловий модуль `StandaloneOta.h` із валідацією заголовків `0xE9`, контролем SHA256 та обов'язковим `confirmBootValid()` при старті. |
 
 ---
 
@@ -38,14 +39,17 @@
 ### Рівень А. Системні стани (поза основним циклом)
 1. **`SYS_BOOT_SPLASH` (2.8 с при старті):**
    - Швейцарський хронограф: промінь послідовно засвічує 60 засічок по контуру ($R = 116$).
-   - У центрі плавно проявляється герб `MAGICBOX`, версія `HALLMARK v4.0` та діагностика периферії (`I2C · I2S · PSRAM · OK`).
-   - Синхронно звучить м'який процедурний акорд сходження.
-2. **`SYS_ONBOARDING_WIZARD` (Перший старт або режим точки доступу AP):**
-   - **Крок 1 (Очікування клієнта):** QR-код підключення до Wi-Fi `MagicBox-Setup` та стрілка запрошення.
-   - **Крок 2 (Клієнт підключився):** QR-код переходу в веб-студію `http://192.168.4.1/`.
-   - **Крок 3 (Збереження):** Анімація підключення до домашньої мережі.
+   - У центрі проявляється герб `MAGICBOX`, версія `HALLMARK v4.5` та діагностика периферії (`I2C · I2S · PSRAM · OK`).
+   - Синхронно звучить м'який процедурний акорд сходження (з урахуванням збереженої гучності).
+2. **`SYS_ONBOARDING_WIZARD` (Інтерактивний майстер налаштування):**
+   - **Крок 1 (`WIZ_STEP_WELCOME_SOUND`):** Вітання `WELCOME TO MAGICBOX`, питання `УВІМКНУТИ ЗВУК КОЛОНКИ?`, перевірочний акорд, кнопки `[ ◄ ТИША ]` / `[ ЗВУК ► ]`.
+   - **Крок 2 (`WIZ_STEP_WIFI_AP`):** QR-код підключення до Wi-Fi `MagicBox-Setup`, кнопка `[ ПРОПУСТИТИ ► ]`.
+   - **Крок 3 (`WIZ_STEP_WIFI_PORTAL`):** QR-код переходу в веб-студію `http://192.168.4.1/`.
+   - **Крок 4 (`WIZ_STEP_SPOTIFY_ASK`):** Питання `ПІДКЛЮЧИТИ SPOTIFY?`, кнопки `[ ◄ НІ ]` / `[ ТАК ► ]`.
+   - **Крок 5 (`WIZ_STEP_SPOTIFY_QR`):** Компактний QR-код швидкої авторизації (через `GET /api/v5/spotify/login_redirect`).
+   - **Крок 6 (`WIZ_STEP_DONE`):** Повідомлення `SYSTEM READY` та плавний перехід у робочий цикл.
 3. **`SYS_NETWORK_DIAG` (Утримання лівої кнопки на 900 мс):**
-   - Швидкий виклик діагностики: QR-код для переходу в Studio за поточною IP-адресою, ім'я мережі SSID, рівень сигналу RSSI (dBm), стан пам'яті PSRAM та температура процесора.
+   - QR-код для переходу в Studio за поточною IP-адресою, SSID, RSSI (dBm), PSRAM, температура процесора та стан аудіо.
 
 ### Рівень B. Основне кільце з 4 Вікон-Заставок (Короткий клік лівої кнопки)
 ```text
@@ -55,33 +59,31 @@
 ```
 1. **Вікно 0 · `SCREEN_CLIMATE` (10 FPS):**
    - 60 хорологічних засічок із бігаючою точкою поточної секунди.
-   - Тонка дуга вологості з плавною індикацією норми (40–60%).
-   - Hero-температура `22.4°C` з акцентним десятковим знаком кольору Alabaster / Terracotta.
-   - Дві Bento-колонки Вологість / Тиск, статус хмари та назва активного світлового режиму.
+   - Тонка дуга вологості (40–60%).
+   - Hero-температура `22.4°C` з акцентним десятковим знаком Alabaster / Terracotta.
+   - Bento-колонки Вологість / Тиск, статус хмари та індикатор Mute у нижньому колонтитулі.
 2. **Вікно 1 · `SCREEN_LIVING_GIF` (Динамічний FPS з файлу або 30 FPS):**
-   - Відтворення постійної анімації з Flash-пам'яті (`/default_saver.mbx`), призначеної користувачем.
-   - Якщо файл відсутній — елегантний швейцарський маятник `Hallmark Swiss Pendulum Clock`.
-   - Короткий клік правою кнопкою вмикає/вимикає оверлей годинника.
+   - Відтворення активної зацикленої анімації або постійної заставки з Flash (`/default_saver.mbx`).
+   - Якщо активний таймер — відображається витончений бейдж `⏱ 14m`.
+   - За відсутності файлу — швейцарський маятник `Hallmark Swiss Pendulum Clock` з можливістю приховування годинника.
 3. **Вікно 2 · `SCREEN_SMART_HUB` (Динамічний 3-рівневий медіахаб):**
    - **Пріоритет 1 (Непрочитані TG):** Інтелектуальний Inbox із підсвічуванням автора, дати та пагінацією 1/5.
-   - **Пріоритет 2 (Spotify Active):** Вінілова вертушка 136×136, тонарм, біжучий рядок пісні та виконавця, дуга прогресу треку (з мілісекундною екстраполяцією) та AmbiLight-синхронізація кольору.
-   - **Пріоритет 3 (Idle):** Редакційна картка `INBOX ZERO / ALL CAUGHT UP` у стилі швейцарського плаката.
+   - **Пріоритет 2 (Spotify Active):** Вінілова вертушка 136×136, тонарм, біжучий рядок треку/виконавця, дуга прогресу та AmbiLight-синхронізація.
+   - **Пріоритет 3 (Idle):** Редакційна картка `INBOX ZERO / ALL CAUGHT UP`.
 4. **Вікно 3 · `SCREEN_BAROMETER` (4 FPS · Braun Dieter Rams Style):**
-   - Великий контрастний тиск у міліметрах ртутного стовпчика: `750 mmHg`.
-   - Векторна стрілка барометричного тренду ($\uparrow, \downarrow, \rightarrow$) та метеорологічний вердикт.
-   - 24-годинний стовпчиковий Sparkline із базовою лінією на 750 мм та теракотовим останнім стовпчиком.
+   - Великий контрастний тиск у мм рт. ст.: `750 mmHg`.
+   - Векторна стрілка тренду ($\uparrow, \downarrow, \rightarrow$) та метеорологічний вердикт.
+   - 24-годинний стовпчиковий Sparkline із базовою лінією на 750 мм.
 
 ---
 
-## 🔘 Сенсорне керування (Touch Controls v4.0)
+## 🔘 Сенсорне керування (Touch Controls v4.5)
 
-Всі натискання супроводжуються миттєвим апаратним процедурним кліком через I2S:
-
-| Кнопка | Короткий дотик | Утримання (900 мс) |
-|---|---|---|
-| **Ліва (Touch Left / GPIO 4)** | Наступне вікно-заставка ($0 \to 1 \to 2 \to 3 \to 0$) | Виклик / закриття вікна діагностики (`SYS_NETWORK_DIAG`) |
-| **Кришка (Touch Top / GPIO 6)** | Наступний режим світла ($0..11$) / Скинути сповіщення | Увімкнути / Вимкнути підсвітку |
-| **Права (Touch Right / GPIO 7)** | **На Вікні 1 (Living GIF):** Перемикання годинника поверх заставки<br>**На Вікні 2 (Telegram):** Наступне повідомлення ($1..5$)<br>**На Вікні 2 (Spotify):** Пауза / Відтворення треку (`play/pause`)<br>**На інших вікнах:** Яскравість (Авто $\to$ 15% $\to$ 35% $\to$ 65% $\to$ 100%) | **На Вікні 2 (Spotify):** Наступний трек (`next`)<br>**На інших вікнах:** Запуск 5 мем-реакцій (🔥 $\to$ ⚡ $\to$ 🐱 $\to$ 👽 $\to$ 👑) зі звуком |
+| Кнопка | Режим Onboarding Wizard | Робочий режим (Короткий дотик) | Робочий режим (Утримання 900 мс) |
+|---|---|---|---|
+| **Ліва (GPIO 4)** | **`[ ◄ НІ / ПРОПУСТИТИ ]`** (Назад / відмова) | Наступне вікно ($0 \to 1 \to 2 \to 3 \to 0$) | Вікно діагностики (`SYS_NETWORK_DIAG`) |
+| **Кришка (GPIO 6)** | Повтор тестового звуку / перемикання | **Зупинити активне медіа** (якщо грає) / Наступний режим світла ($0..11$) | Увімкнути / Вимкнути підсвітку |
+| **Права (GPIO 7)** | **`[ ТАК / ДАЛІ ► ]`** (Підтвердження) | Годинник на заставці / Наступний TG Inbox / Play-Pause Spotify / Яскравість | Наступний трек Spotify / Запуск реакцій зі звуком |
 
 ---
 
@@ -98,7 +100,7 @@
 9. `MODE_BREATHING` — Медитативне дихання
 10. `MODE_RAINBOW` — Шовковий спектральний градієнт
 11. `MODE_CANDLE` — Жива тремтяча свічка
-12. **`MODE_SPOTIFY_AMBI` (НОВЕ v4.0)** — Реактивне підсвічування в тон поточного альбому Spotify із м'яким пульсуванням
+12. `MODE_SPOTIFY_AMBI` — Реактивне підсвічування в тон поточного альбому Spotify
 
 ---
 
@@ -107,20 +109,20 @@
 ```text
 📦 SmartLamp
  ┣ 📂 include
- ┃ ┣ 📜 Config.h                     // Константи (FW_VERSION v4.0, VINYL_DIAMETER 136, SAVER_FILE_PATH)
+ ┃ ┣ 📜 Config.h                     // FW_VERSION v4.5-Hallmark, DEFAULT_VOLUME 12
  ┃ ┣ 📜 Secrets.h                    // (У .gitignore) Токени TG, Spotify та ключі Oracle
  ┃ ┣ 📜 Secrets.example.h            // Шаблон конфігурації
  ┃ ┃
  ┃ ┣ 📂 core                         // Ядро системи
- ┃ ┃ ┣ 📜 Types.h                    // SystemUiState, ScreenMode, SpotifyTrackInfo, LightModeId
- ┃ ┃ ┣ 📜 AppState.h                 // Потокобезпечна шина даних (Spinlock Mux + Spotify + LittleFS)
- ┃ ┃ ┣ 📜 CommandRouter.h            // Диспетчер команд для кнопок, Web, TG та Oracle
- ┃ ┃ ┗ 📜 StorageService.h           // Менеджер NVS та LittleFS (/default_saver.mbx)
+ ┃ ┃ ┣ 📜 Types.h                    // OnboardingStep, SystemUiState, ScreenMode, LightModeId
+ ┃ ┃ ┣ 📜 AppState.h                 // Гучність, Mute, TouchBeep, Медіа-таймери, Spinlock
+ ┃ ┃ ┣ 📜 CommandRouter.h            // Обробка гучності, Mute, зупинки медіа та таймерів
+ ┃ ┃ ┗ 📜 StorageService.h           // Збереження a_vol, a_mut, t_beep в NVS та Flash заставки
  ┃ ┃
  ┃ ┣ 📂 hardware                     // Сенсори, Звук та Ввід
  ┃ ┃ ┣ 📜 InputService.h             // Драйвер ємнісних сенсорів (Short / Long press)
- ┃ ┃ ┣ 📜 SensorService.h            // Неблокуючий SHT31 + BMP280 + АЦП LDR
- ┃ ┃ ┗ 📜 AudioService.h             // Неблокуючий I2S DSP синтезатор + MP3/WAV плеєр
+ ┃ ┃ ┣ 📜 SensorService.h            // SHT31 + BMP280 + АЦП LDR
+ ┃ ┃ ┗ 📜 AudioService.h             // Неблокуючий I2S DSP синтезатор із регулюванням гучності й MUTE
  ┃ ┃
  ┃ ┣ 📂 led                          // Світловий рушій SK6812 (60 діодів)
  ┃ ┃ ┣ 📜 LedEffects.h               // 12 математичних шейдерів (включно зі Spotify Ambi)
@@ -130,8 +132,8 @@
  ┃ ┃ ┣ 📜 DisplayDriver.h            // SPI 80 МГц + DMA
  ┃ ┃ ┣ 📜 TextUtils.h                // UTF-8 розбиття тексту
  ┃ ┃ ┣ 📜 ReactionRenderer.h         // Векторні реакції (🔥, ⚡, 🐱, 👽, 👑)
- ┃ ┃ ┣ 📜 ScreenRenderer.h           // Рендерер Swiss Chronograph, Wizard, 4 Заставок та Spotify Deck
- ┃ ┃ ┗ 📜 DisplayService.h           // Мультистейт рендеринг, PSRAM vinylSprite та LittleFS заставки
+ ┃ ┃ ┣ 📜 ScreenRenderer.h           // Рендерер 6-крокового Wizard, заставок і бейджів таймера
+ ┃ ┃ ┗ 📜 DisplayService.h           // Стейт-машина дисплея та авто-скидання таймерів медіа
  ┃ ┃
  ┃ ┣ 📂 network                      // Локальна мережа та Web-портал
  ┃ ┃ ┣ 📜 WifiScanner.h              // Pre-Scan ефіру та генерація JSON
@@ -143,23 +145,24 @@
  ┃   ┣ 📜 StandaloneOta.h            // Недоторканний zero-dependency single-header OTA flasher
  ┃   ┣ 📜 CloudOtaService.h          // Інтеграція StandaloneOta з AppState
  ┃   ┣ 📜 TgJsonUtils.h              // Парсер JSON, URL-кодер та Unicode-декодер
- ┃   ┣ 📜 TgKeyboards.h              // Генератор клавіатур бота
+ ┃   ┣ 📜 TgKeyboards.h              // Генератор клавіатур бота (3-рядкова ергономіка v4.5)
  ┃   ┣ 📜 TelegramService.h          // Telegram Bot API (TLS Session)
- ┃   ┗ 📜 OracleCloudService.h       // Long-Poll синхронізація, Spotify стан, завантаження vinyl.rgb565
+ ┃   ┗ 📜 OracleCloudService.h       // Long-Poll синхронізація, телеметрія гучності та Spotify
  ┃
  ┣ 📂 src
- ┃ ┗ 📜 main.cpp                     // setup() з confirmBootValid() та диспетчеризація FreeRTOS
+ ┃ ┗ 📜 main.cpp                     // setup() з confirmBootValid() та маршрутизація кнопок Onboarding
  ┃
  ┗ 📂 oracle_server                  // Сервер для Oracle Cloud VM (< 28 МБ RAM)
    ┣ 📜 deploy_native.sh             // 1-клік інсталятор для Linux (systemd + venv)
-   ┣ 📜 requirements.txt             // Залежності (fastapi, pillow, numpy, httpx, orjson)
+   ┣ 📜 requirements.txt             // Залежності (fastapi, pillow, numpy, httpx, orjson, edge-tts)
    ┣ 📜 main.py                      // Точка входу FastAPI + Lifespan Watchdog
    ┗ 📂 app
      ┣ 📂 core                       // config.py, memory_guard.py, security.py
-     ┣ 📂 domain                     // schemas.py (валідація Pydantic v2)
-     ┣ 📂 services                   // spotify_service.py (Zero-Idle), media_service (Bayer), ota_service
+     ┣ 📂 domain                     // schemas.py (валідація Pydantic v2, гучність, голос)
+     ┣ 📂 services                   // infographic_service.py (800x500 PNG), audio_service (Voice Clone),
+     ┃                               // media_service (Bayer Dithering + Timers), spotify_service (Zero-Idle)
      ┣ 📂 api                        // router.py, endpoints_box.py, endpoints_control.py
-     ┗ 📂 web                        // portal_html.py (Hallmark Web Studio + Spotify Deck)
+     ┗ 📂 web                        // portal_html.py (Hallmark Web Studio v4.5)
 ```
 
 ---

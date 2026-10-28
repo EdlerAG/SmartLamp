@@ -20,7 +20,7 @@ private:
     uint8_t  cur_anim_frame     = 0;
     uint8_t  cur_saver_frame    = 0;
     uint8_t  applied_lcd_brt    = 220;
-    char     cached_qr_str[80]  = "";
+    char     cached_qr_str[160] = "";
 
     float smooth_hum_angle   = 180.0f;
     float smooth_pres_angle  = 270.0f;
@@ -132,6 +132,7 @@ public:
             } else {
                 if (!state.onboarded || state.ap_mode_active) {
                     state.sys_ui_state = SystemUiState::SYS_ONBOARDING_WIZARD;
+                    state.onboarding_step = OnboardingStep::WIZ_STEP_WELCOME_SOUND;
                 } else {
                     state.sys_ui_state = SystemUiState::SYS_NORMAL;
                 }
@@ -140,27 +141,36 @@ public:
         }
 
         if (state.sys_ui_state == SystemUiState::SYS_ONBOARDING_WIZARD) {
-            uint8_t step = 1;
-            if (state.wifi_connected) {
-                step = 3;
+            // Автоматичні переходи між кроками Onboarding під час підключення мереж
+            if (state.onboarding_step == OnboardingStep::WIZ_STEP_WIFI_AP && WiFi.softAPgetStationNum() > 0) {
+                state.onboarding_step = OnboardingStep::WIZ_STEP_WIFI_PORTAL;
+                state.ui_force_dirty = true;
+            }
+            if (state.onboarding_step == OnboardingStep::WIZ_STEP_WIFI_PORTAL && state.wifi_connected) {
+                state.onboarding_step = state.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK;
+                state.ui_force_dirty = true;
+            }
+            if (state.onboarding_step == OnboardingStep::WIZ_STEP_SPOTIFY_QR && state.sp_linked) {
+                state.onboarding_step = OnboardingStep::WIZ_STEP_DONE;
+                state.trig_boot_chord = true;
+                state.ui_force_dirty = true;
+            }
+            if (state.onboarding_step == OnboardingStep::WIZ_STEP_DONE) {
                 if (state.onboarding_ready_ms == 0) {
                     state.onboarding_ready_ms = now;
-                    state.trig_boot_chord = true; // Акорд успіху
-                } else if (now - state.onboarding_ready_ms >= 2000) {
+                } else if (now - state.onboarding_ready_ms >= 3000) {
                     state.onboarded = true;
                     state.sys_ui_state = SystemUiState::SYS_NORMAL;
                     state.screen_mode = SCREEN_CLIMATE;
                     state.ui_force_dirty = true;
                     return;
                 }
-            } else if (WiFi.softAPgetStationNum() > 0) {
-                step = 2;
             }
 
-            if (now - last_frame_ms >= 200 || state.ui_force_dirty) {
+            if (now - last_frame_ms >= 100 || state.ui_force_dirty) {
                 last_frame_ms = now;
                 state.ui_force_dirty = false;
-                ScreenRenderer::drawOnboardingWizard(canvas, qr_cache, cached_qr_str, sizeof(cached_qr_str), step, state);
+                ScreenRenderer::drawOnboardingWizard(canvas, qr_cache, cached_qr_str, sizeof(cached_qr_str), state);
                 canvas.pushSprite(0, 0);
             }
             return;
@@ -200,7 +210,7 @@ public:
             return;
         }
 
-        // 3. Пріоритет: Тимчасовий стрім мультикадрового .mbx із PSRAM
+        // 3. Пріоритет: Тимчасовий стрім мультикадрового .mbx із PSRAM або активна заставка
         if (state.isCustomFrameActive(now)) {
             uint8_t fps = state.anim_fps;
             uint32_t frame_delay = 1000 / (fps > 0 ? fps : 1);
@@ -217,9 +227,25 @@ public:
                 uint16_t ambi_col = canvas.color565(state.ambi_r, state.ambi_g, state.ambi_b);
                 canvas.drawCircle(120, 120, 118, ambi_col);
                 canvas.drawCircle(120, 120, 117, ambi_col);
+
+                // Якщо активний таймер показу — відмальовуємо елегантний бейдж з рештою часу
+                uint16_t rem_med = state.getMediaRemainingMin();
+                if (rem_med > 0) {
+                    canvas.fillRoundRect(80, 206, 80, 18, 9, HallmarkTheme::BG_PRIMARY);
+                    canvas.drawRoundRect(80, 206, 80, 18, 9, HallmarkTheme::BORDER_HAIRLINE);
+                    char med_lbl[32];
+                    snprintf(med_lbl, sizeof(med_lbl), "⏱ %u хв", rem_med);
+                    canvas.setFont(&fonts::Font0);
+                    canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
+                    canvas.drawString(med_lbl, 120, 215);
+                }
+
                 canvas.pushSprite(0, 0);
             }
             return;
+        } else if (state.anim_frames_count > 0 && !state.canvas_loading) {
+            // Час дії таймера сплив або надійшла команда скасування — скидаємо активне медіа
+            state.stopActiveMedia();
         }
 
         // Динамічний розрахунок FPS для 4 основних вікон

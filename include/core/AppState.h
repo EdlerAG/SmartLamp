@@ -12,7 +12,7 @@ struct AppState {
     volatile SystemUiState sys_ui_state         = SystemUiState::SYS_BOOT_SPLASH;
     volatile uint32_t      boot_splash_start_ms = 0;
     volatile bool          onboarded            = false;
-    volatile uint8_t       onboarding_step      = 1;
+    volatile OnboardingStep onboarding_step     = OnboardingStep::WIZ_STEP_WELCOME_SOUND;
     volatile uint32_t      onboarding_ready_ms  = 0;
     volatile uint32_t      diag_opened_ms       = 0;
 
@@ -51,13 +51,15 @@ struct AppState {
     volatile uint32_t last_net_activity_ms  = 0;
     volatile bool     ui_force_dirty        = true;
 
-    // --- МУЛЬТИКАДРОВИЙ ПРОГРАВАЧ ГІФОК ТА НАЛІПОК У PSRAM (v4.0) ---
+    // --- МУЛЬТИКАДРОВИЙ ПРОГРАВАЧ ГІФОК ТА НАЛІПОК У PSRAM (v4.5) ---
     uint8_t*          psram_anim_buf        = nullptr; // Буфер під активні стріми (до 36 кадрів)
     uint8_t*          psram_saver_buf       = nullptr; // Окремий буфер під постійну заставку LittleFS
     uint8_t*          shared_canvas_buf     = nullptr;
     volatile uint8_t  anim_frames_count     = 0;
     volatile uint8_t  anim_fps              = 15;
     volatile uint32_t custom_frame_until    = 0;
+    volatile uint32_t media_expire_ms       = 0;       // 0: крутиться безперервно поки не скасують; >0: час завершення за таймером
+    volatile bool     stop_media_requested  = false;
     volatile bool     canvas_loading        = false;
 
     // Постійна GIF-Заставка (Вікно 2)
@@ -79,13 +81,20 @@ struct AppState {
     volatile uint8_t  screen_reaction_type  = NOTIFY_NONE;
     volatile uint32_t screen_reaction_until = 0;
 
-    // --- SPOTIFY VINYL HUB (v4.0) ---
+    // --- SPOTIFY VINYL HUB (v4.5) ---
     SpotifyTrackInfo  spotify;
     volatile int8_t   cmd_spotify_action    = 0; // 0: none, 1: next, 2: prev, 3: play_pause
     volatile bool     spotify_vinyl_needed  = false;
     volatile bool     spotify_vinyl_loading = false;
+    volatile bool     sp_linked             = false; // Офіційний Spotify акаунт прив'язано до сервера
 
-    // --- ТАКТИЛЬНІ ТА ПРОЦЕДУРНІ I2S ЗВУКИ ---
+    // --- ЗВУКОВА ПІДСИСТЕМА I2S ТА МУТЕ-КОНТРОЛЬ (v4.5) ---
+    volatile uint8_t  audio_volume          = Config::DEFAULT_VOLUME; // 0..21
+    volatile bool     audio_muted           = false; // Повне відключення звуку (100% тиша)
+    volatile bool     touch_beep_enabled    = true;  // Тактильні кліки сенсорних кнопок
+    volatile bool     audio_settings_dirty  = false;
+
+    // Процедурні тригери синтезатора
     volatile bool     trig_touch_click      = false;
     volatile bool     trig_boot_chord       = false;
     volatile bool     trig_notify_bell      = false;
@@ -127,7 +136,6 @@ struct AppState {
     // Черги URL для OTA, Аудіо (I2S) та Анімацій (.mbx / .rgb565)
     volatile bool    ota_in_progress = false;
     volatile uint8_t ota_progress    = 0;
-    volatile uint8_t audio_volume    = Config::DEFAULT_VOLUME;
 
     char pending_ota_url[160]        = "";
     char pending_ota_sha256[65]      = "";
@@ -177,7 +185,7 @@ struct AppState {
         strncpy(oracle_key, Config::ORACLE_API_KEY, sizeof(oracle_key) - 1);
 
         strncpy(inbox[0].sender, "Ярослав", sizeof(inbox[0].sender) - 1);
-        strncpy(inbox[0].text, "Шкатулка MagicBox v4.0 готова! Надішли наліпку чи гіфку ✨", sizeof(inbox[0].text) - 1);
+        strncpy(inbox[0].text, "Шкатулка MagicBox v4.5 готова! Надішли наліпку чи гіфку ✨", sizeof(inbox[0].text) - 1);
         strncpy(inbox[0].time_received, "--:--", sizeof(inbox[0].time_received) - 1);
         for (int i = 0; i < 24; i++) pressure_hist[i] = 750.0f;
     }
@@ -197,21 +205,76 @@ struct AppState {
     }
 
     bool isCustomFrameActive(uint32_t now) const {
-        return !canvas_loading && (anim_frames_count > 0) && ((int32_t)(custom_frame_until - now) > 0);
+        if (canvas_loading || anim_frames_count == 0 || stop_media_requested) return false;
+        // Якщо встановлено таймер показу медіа — перевіряємо його закінчення
+        if (media_expire_ms > 0 && (int32_t)(now - media_expire_ms) >= 0) return false;
+        return true;
     }
 
-    void activateCustomAnimation(uint8_t frames, uint8_t fps, uint8_t r, uint8_t g, uint8_t b, uint32_t duration_ms = 11000) {
+    void activateCustomAnimation(uint8_t frames, uint8_t fps, uint8_t r, uint8_t g, uint8_t b, uint32_t duration_ms = 0) {
         portENTER_CRITICAL(&mux);
-        anim_frames_count  = constrain(frames, (uint8_t)1, Config::MBX_MAX_FRAMES);
-        anim_fps           = constrain(fps, (uint8_t)4, (uint8_t)30);
-        ambi_r             = r;
-        ambi_g             = g;
-        ambi_b             = b;
-        ambi_active        = true;
-        custom_frame_until = millis() + duration_ms;
-        canvas_loading     = false;
+        anim_frames_count     = constrain(frames, (uint8_t)1, Config::MBX_MAX_FRAMES);
+        anim_fps              = constrain(fps, (uint8_t)4, (uint8_t)30);
+        ambi_r                = r;
+        ambi_g                = g;
+        ambi_b                = b;
+        ambi_active           = true;
+        stop_media_requested  = false;
+        media_expire_ms       = (duration_ms > 0) ? (millis() + duration_ms) : 0;
+        custom_frame_until    = media_expire_ms;
+        canvas_loading        = false;
         portEXIT_CRITICAL(&mux);
         led_notify_type = NOTIFY_AMBILIGHT;
+        registerActivity();
+    }
+
+    void stopActiveMedia() {
+        portENTER_CRITICAL(&mux);
+        anim_frames_count    = 0;
+        custom_frame_until   = 0;
+        media_expire_ms      = 0;
+        stop_media_requested = true;
+        ambi_active          = false;
+        portEXIT_CRITICAL(&mux);
+        ui_force_dirty = true;
+        registerActivity();
+    }
+
+    void setMediaTimer(uint16_t minutes) {
+        portENTER_CRITICAL(&mux);
+        if (minutes == 0) {
+            media_expire_ms = 0; // Постійно
+        } else {
+            media_expire_ms = millis() + ((uint32_t)minutes * 60000UL);
+        }
+        custom_frame_until = media_expire_ms;
+        portEXIT_CRITICAL(&mux);
+        ui_force_dirty = true;
+        registerActivity();
+    }
+
+    void setVolume(uint8_t vol) {
+        portENTER_CRITICAL(&mux);
+        audio_volume = constrain(vol, (uint8_t)0, (uint8_t)21);
+        if (audio_volume == 0) audio_muted = true;
+        audio_settings_dirty = true;
+        portEXIT_CRITICAL(&mux);
+        registerActivity();
+    }
+
+    void setMute(bool muted) {
+        portENTER_CRITICAL(&mux);
+        audio_muted = muted;
+        audio_settings_dirty = true;
+        portEXIT_CRITICAL(&mux);
+        registerActivity();
+    }
+
+    void setTouchBeep(bool enabled) {
+        portENTER_CRITICAL(&mux);
+        touch_beep_enabled = enabled;
+        audio_settings_dirty = true;
+        portEXIT_CRITICAL(&mux);
         registerActivity();
     }
 
@@ -233,6 +296,13 @@ struct AppState {
     uint16_t getSleepTimerRemainingMin() const {
         if (!sleep_timer_active) return 0;
         int32_t rem = (int32_t)(sleep_timer_end_ms - millis());
+        if (rem <= 0) return 0;
+        return (uint16_t)((rem + 59999) / 60000);
+    }
+
+    uint16_t getMediaRemainingMin() const {
+        if (media_expire_ms == 0 || anim_frames_count == 0) return 0;
+        int32_t rem = (int32_t)(media_expire_ms - millis());
         if (rem <= 0) return 0;
         return (uint16_t)((rem + 59999) / 60000);
     }
@@ -264,8 +334,6 @@ struct AppState {
         if (eventQueue) {
             AppEvent ev{type};
             xQueueSend(eventQueue, &ev, 0);
-            custom_frame_until = 0;
-            ambi_active        = false;
             registerActivity();
         }
     }

@@ -114,8 +114,8 @@ class StateService:
         if self.command_queue:
             last = self.command_queue[-1]
             # Якщо в останній команді ще немає медіа чи тексту, можемо злити зміни світла/яскравості в один пакет
-            if not any(k in data for k in ("msg", "media_url", "play_url", "ota_url")):
-                if not any(k in last for k in ("msg", "media_url", "play_url", "ota_url")):
+            if not any(k in data for k in ("msg", "media_url", "play_url", "ota_url", "stop_media")):
+                if not any(k in last for k in ("msg", "media_url", "play_url", "ota_url", "stop_media")):
                     last.update(data)
                     realtime_hub.notify_new_command()
                     return len(self.command_queue)

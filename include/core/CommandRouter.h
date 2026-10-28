@@ -100,6 +100,26 @@ public:
         state.markSettingsDirty();
     }
 
+    static void setVolume(AppState& state, uint8_t vol) {
+        state.setVolume(vol);
+    }
+
+    static void setMute(AppState& state, bool muted) {
+        state.setMute(muted);
+    }
+
+    static void setTouchBeep(AppState& state, bool beep) {
+        state.setTouchBeep(beep);
+    }
+
+    static void stopActiveMedia(AppState& state) {
+        state.stopActiveMedia();
+    }
+
+    static void setMediaTimer(AppState& state, uint16_t minutes) {
+        state.setMediaTimer(minutes);
+    }
+
     static void setSleepTimer(AppState& state, uint16_t minutes) {
         if (minutes == 0) {
             state.sleep_timer_active = false;
@@ -158,7 +178,8 @@ public:
                  "{\"fw\":\"%s\",\"t\":%.1f,\"h\":%.0f,\"p\":%.0f,\"p_diff\":%.1f,\"l\":%d,"
                  "\"m\":%d,\"m_name\":\"%s\","
                  "\"auto_b\":%s,\"b_idx\":%d,\"b_pct\":%d,"
-                 "\"sleep_m\":%u,\"scr\":%d,\"rssi\":%d,\"time\":\"%s\","
+                 "\"vol\":%u,\"muted\":%s,\"t_beep\":%s,"
+                 "\"sleep_m\":%u,\"media_m\":%u,\"scr\":%d,\"rssi\":%d,\"time\":\"%s\","
                  "\"unread\":%s,\"inbox_cnt\":%u,\"oracle\":%s,"
                  "\"sp_act\":%d,\"sp_playing\":%s,"
                  "\"heap\":%lu,\"psram_free\":%lu,"
@@ -167,7 +188,8 @@ public:
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
                  state.light_mode, getModeNameUa(state.light_mode),
                  state.auto_brt ? "true" : "false", state.manual_brt_idx, state.getLedBrightnessPercent(),
-                 state.getSleepTimerRemainingMin(), state.screen_mode, (int)state.wifi_rssi, t_str,
+                 state.audio_volume, state.audio_muted ? "true" : "false", state.touch_beep_enabled ? "true" : "false",
+                 state.getSleepTimerRemainingMin(), state.getMediaRemainingMin(), state.screen_mode, (int)state.wifi_rssi, t_str,
                  state.tg_unread ? "true" : "false", state.inbox_count,
                  state.oracle_online ? "true" : "false",
                  (int)sp_act, state.spotify.playing ? "true" : "false",

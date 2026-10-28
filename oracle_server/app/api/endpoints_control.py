@@ -2,7 +2,7 @@
 import os
 import secrets
 from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 
 from app.core.config import settings
 from app.core.security import verify_access
@@ -13,6 +13,8 @@ from app.domain.schemas import (
     AiAskRequest,
     LoginRequest,
     SpotifyActionRequest,
+    VolumeControlRequest,
+    VoiceConfigRequest,
 )
 from app.services.database_service import db_service
 from app.services.state_service import state_service
@@ -22,6 +24,7 @@ from app.services.media_service import media_service
 from app.services.weather_ai_service import weather_ai_service
 from app.services.audio_service import audio_service
 from app.services.spotify_service import spotify_service
+from app.services.infographic_service import infographic_service
 from app.web.portal_html import PORTAL_HTML
 
 router = APIRouter(tags=["Web Studio & Remote Control v5.0"])
@@ -59,6 +62,12 @@ async def get_full_cloud_state(hours: int = 24, _: str = Depends(verify_access))
             "prompt": state_service.ai_system_prompt,
             "temperature": state_service.ai_temperature,
         },
+        "tts_config": {
+            "provider": db_service.get_setting("tts_provider", settings.TTS_PROVIDER),
+            "edge_voice": db_service.get_setting("tts_edge_voice", settings.TTS_EDGE_VOICE),
+            "clone_voice_id": db_service.get_setting("voice_clone_id", settings.VOICE_CLONE_ID),
+        },
+        "voice_presets": db_service.list_voice_presets(),
         "resources": memory_guard.get_telemetry(),
     }
 
@@ -93,6 +102,7 @@ async def upload_custom_media(
     save_name: str = "",
     reaction_slot: int = 0,
     set_as_saver: bool = False,
+    timer_min: int = Query(0, description="Таймер показу в хвилинах (0 = безкінечно)"),
     file: UploadFile = File(...),
     _: str = Depends(verify_access),
 ):
@@ -102,6 +112,7 @@ async def upload_custom_media(
         save_name=save_name,
         reaction_slot=reaction_slot,
         set_as_saver=set_as_saver,
+        media_timer_min=timer_min if timer_min > 0 else None,
     )
     return {"ok": True, **meta}
 
@@ -112,9 +123,15 @@ async def trigger_saved_media(
     name: str,
     request: Request,
     saver: bool = Query(False, description="Встановити як постійну заставку (Вікно 2)"),
+    timer_min: int = Query(0, description="Таймер показу в хвилинах (0 = безкінечно)"),
     _: str = Depends(verify_access),
 ):
-    return media_service.trigger_saved_media(name, str(request.base_url), set_as_saver=saver)
+    return media_service.trigger_saved_media(
+        name,
+        str(request.base_url),
+        set_as_saver=saver,
+        media_timer_min=timer_min if timer_min > 0 else None,
+    )
 
 
 @router.post("/api/v5/media/bind")
@@ -190,3 +207,73 @@ async def trigger_tts_speech(text: str, request: Request, _: str = Depends(verif
 @router.post("/api/v1/ota/upload")
 async def upload_ota_binary(request: Request, file: UploadFile = File(...), _: str = Depends(verify_access)):
     return await ota_service.save_and_queue_firmware(file, str(request.base_url))
+
+
+@router.post("/api/v5/media/stop")
+async def stop_active_media(_: str = Depends(verify_access)):
+    """Зупинити активний показ медіа на лампі та повернутися на попередній екран."""
+    media_service.stop_media()
+    return {"ok": True, "message": "Зупинка медіа відправлена"}
+
+
+@router.post("/api/v5/media/timer")
+async def set_media_timer(
+    minutes: int = Query(..., ge=0, le=1440, description="Хвилини (0 = безкінечно)"),
+    _: str = Depends(verify_access),
+):
+    """Встановити таймер для поточного показу медіа."""
+    media_service.set_timer(minutes)
+    return {"ok": True, "timer_min": minutes}
+
+
+@router.get("/api/v5/infographic/png")
+async def get_infographic_png(_: str = Depends(verify_access)):
+    """Повертає згенеровану 800x500 інфографіку у стилі Hallmark Obsidian."""
+    png_path = await infographic_service.generate_infographic_png()
+    if not os.path.exists(png_path):
+        raise HTTPException(status_code=500, detail="Infographic generation failed")
+    return FileResponse(png_path, media_type="image/png", filename="hallmark_infographic.png")
+
+
+@router.post("/api/v5/audio/volume")
+async def set_audio_volume(req: VolumeControlRequest, _: str = Depends(verify_access)):
+    """Керування гучністю (0..21), Mute та звуком сенсорних кнопок."""
+    cmd = CommandPayload(
+        vol=req.volume,
+        muted=req.muted,
+        touch_beep=req.touch_beep,
+    )
+    queued = state_service.enqueue_command(cmd)
+    return {"ok": True, "queued": queued, "volume": req.volume, "muted": req.muted, "touch_beep": req.touch_beep}
+
+
+@router.post("/api/v5/audio/voice-config")
+async def configure_voice(req: VoiceConfigRequest, _: str = Depends(verify_access)):
+    """Налаштування провайдера TTS (Edge-TTS, ElevenLabs, Fish Audio) та голосу."""
+    if req.provider:
+        db_service.set_setting("tts_provider", req.provider)
+    if req.edge_voice:
+        db_service.set_setting("tts_edge_voice", req.edge_voice)
+    if req.clone_voice_id:
+        db_service.set_setting("voice_clone_id", req.clone_voice_id)
+    return {
+        "ok": True,
+        "provider": req.provider or db_service.get_setting("tts_provider", settings.TTS_PROVIDER),
+        "edge_voice": req.edge_voice or db_service.get_setting("tts_edge_voice", settings.TTS_EDGE_VOICE),
+        "clone_voice_id": req.clone_voice_id or db_service.get_setting("voice_clone_id", settings.VOICE_CLONE_ID),
+    }
+
+
+@router.get("/api/v5/audio/presets")
+async def list_voice_presets(_: str = Depends(verify_access)):
+    """Список збережених голосових пресетів."""
+    return {"ok": True, "presets": db_service.list_voice_presets()}
+
+
+@router.post("/api/v5/audio/preset/{name}/play")
+async def play_voice_preset(name: str, request: Request, _: str = Depends(verify_access)):
+    """Озвучити збережену фразу на лампі."""
+    res = await audio_service.play_voice_preset(name, str(request.base_url))
+    if not res.get("ok"):
+        raise HTTPException(status_code=404, detail=res.get("error", "Preset not found"))
+    return res

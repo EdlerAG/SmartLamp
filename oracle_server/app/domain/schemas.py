@@ -3,8 +3,8 @@ from typing import Optional, List, Dict, Any
 
 
 class BoxTelemetryPayload(BaseModel):
-    """Вхідний пакет телеметрії від ESP32-S3 (v4.0 / v5.0)."""
-    fw: str = "v4.0"
+    """Вхідний пакет телеметрії від ESP32-S3 (v4.5 / v5.0)."""
+    fw: str = "v4.5"
     t: float
     h: float
     p: float
@@ -14,7 +14,11 @@ class BoxTelemetryPayload(BaseModel):
     auto_b: bool = True
     b_idx: int = 2
     b_pct: int = 65
+    vol: int = 12
+    muted: bool = False
+    t_beep: bool = True
     sleep_m: int = 0
+    media_m: int = 0
     scr: int = 0
     rssi: int = -60
     time: str = "--:--"
@@ -32,6 +36,10 @@ class CommandPayload(BaseModel):
     set_brt: Optional[str] = Field(None, description="'auto' або '0'..'3'")
     sleep: Optional[int] = Field(None, ge=0, le=180)
     volume: Optional[int] = Field(None, ge=0, le=21)
+    muted: Optional[bool] = None
+    touch_beep: Optional[bool] = None
+    stop_media: Optional[bool] = None
+    media_timer: Optional[int] = None
     react: Optional[int] = Field(None, ge=2, le=6)
     sender: Optional[str] = Field(None, max_length=32)
     msg: Optional[str] = Field(None, max_length=120)
@@ -52,6 +60,21 @@ class CommandPayload(BaseModel):
 class SpotifyActionRequest(BaseModel):
     """Запит керування відтворенням Spotify."""
     action: str = Field(..., description="'next', 'previous', 'play', 'pause'")
+
+
+class VolumeControlRequest(BaseModel):
+    """Керування гучністю та звуковими режимами."""
+    volume: Optional[int] = Field(None, ge=0, le=21)
+    muted: Optional[bool] = None
+    touch_beep: Optional[bool] = None
+
+
+class VoiceConfigRequest(BaseModel):
+    """Налаштування синтезатора мовлення та власного голосу."""
+    provider: Optional[str] = Field("edge", description="'edge', 'elevenlabs', 'fish_audio'")
+    voice_name: Optional[str] = Field(None, description="'uk-UA-OstapNeural', 'uk-UA-PolinaNeural' або назва клону")
+    voice_id: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 class AiPersonaConfigRequest(BaseModel):

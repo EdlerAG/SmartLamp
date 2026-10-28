@@ -112,6 +112,10 @@ public:
             if (prefs.isKey("a_brt"))  state.auto_brt       = prefs.getBool("a_brt", true);
             if (prefs.isKey("m_brt"))  state.manual_brt_idx = prefs.getUChar("m_brt", 2) % 4;
 
+            if (prefs.isKey("a_vol"))  state.audio_volume       = prefs.getUChar("a_vol", Config::DEFAULT_VOLUME);
+            if (prefs.isKey("a_mut"))  state.audio_muted        = prefs.getBool("a_mut", false);
+            if (prefs.isKey("t_beep")) state.touch_beep_enabled = prefs.getBool("t_beep", true);
+
             String tok = prefs.isKey("tg_tok") ? prefs.getString("tg_tok") : String(Config::DEFAULT_TG_TOKEN);
             String adm = prefs.isKey("tg_adm") ? prefs.getString("tg_adm") : String(Config::DEFAULT_ADMIN_ID);
             String grl = prefs.isKey("tg_grl") ? prefs.getString("tg_grl") : String(Config::DEFAULT_GIRL_ID);
@@ -121,6 +125,15 @@ public:
             String o_key = prefs.isKey("or_key") ? prefs.getString("or_key") : String(Config::ORACLE_API_KEY);
             state.setOracleConfig(o_url.c_str(), o_key.c_str());
 
+            prefs.end();
+        }
+    }
+
+    void saveAudioSettings(uint8_t vol, bool muted, bool beep) {
+        if (prefs.begin("box_state", false)) {
+            prefs.putUChar("a_vol", vol);
+            prefs.putBool("a_mut", muted);
+            prefs.putBool("t_beep", beep);
             prefs.end();
         }
     }
@@ -160,6 +173,11 @@ public:
     }
 
     void checkDelayedSave(AppState& state) {
+        if (state.audio_settings_dirty) {
+            state.audio_settings_dirty = false;
+            saveAudioSettings(state.audio_volume, state.audio_muted, state.touch_beep_enabled);
+        }
+
         if (state.tg_config_dirty) {
             state.tg_config_dirty = false;
             char tok[64], adm[20], grl[20];

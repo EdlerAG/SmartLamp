@@ -5,7 +5,7 @@
 
 /**
  * ============================================================================
- * ScreenRenderer (v4.0 Hallmark Horology, Vinyl Deck & Clean Living Screensavers)
+ * ScreenRenderer (v4.5 Hallmark Horology, Interactive Wizard & Living Screensavers)
  * Inspired by Dieter Rams Braun horology and Hallmark Atelier design standards.
  * Pure tokenized RGB565 palette, zero acidic gradients, surgical typography.
  * ============================================================================
@@ -100,107 +100,247 @@ namespace ScreenRenderer {
                             120 + (int)(cos_v * 118),  120 + (int)(sin_v * 118), col);
         }
 
-        int arc_end = 180 + (int)(progress * 360.0f);
-        canvas.drawArc(120, 120, 107, 105, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
-        canvas.drawArc(120, 120, 107, 105, 180, arc_end, HallmarkTheme::ACCENT_WARM);
+        canvas.drawArc(120, 120, 88, 86, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
 
         canvas.setFont(&fonts::FreeSansBold12pt7b);
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
         canvas.drawString("MAGICBOX", 120, 92);
 
         canvas.setFont(&fonts::efontCN_12);
-        canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-        canvas.drawString("HALLMARK v4.0", 120, 116);
+        canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
+        canvas.drawString("HALLMARK v4.5", 120, 116);
 
-        canvas.setFont(&fonts::efontCN_12);
-        canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
-        canvas.drawString("I2C · I2S · PSRAM · OK", 120, 142);
-
-        canvas.setFont(&fonts::Font0);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+        canvas.drawString("I2C · I2S · PSRAM · OK", 120, 144);
+
+        canvas.setTextColor(HallmarkTheme::BORDER_HAIRLINE);
         canvas.drawString("PRECISION ATELIER", 120, 172);
     }
 
-    // 2. SYS_ONBOARDING_WIZARD (Покроковий майстер підключення)
+    // 2. SYS_ONBOARDING_WIZARD (Інтерактивний 6-кроковий майстер v4.5)
     inline void drawOnboardingWizard(
         LGFX_Sprite& canvas,
         LGFX_Sprite& qr_cache,
         char* cached_qr_str,
         size_t qr_len,
-        uint8_t step,
         AppState& state
     ) {
         canvas.fillScreen(HallmarkTheme::BG_PRIMARY);
         drawPerimeterTicks(canvas);
 
-        if (step == 1) {
-            // Крок 1: Підключення до AP
-            canvas.setFont(&fonts::efontCN_12);
-            canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
-            canvas.drawString("STEP 1 / 2 · CONNECT WI-FI", 120, 28);
+        OnboardingStep step = state.onboarding_step;
 
-            const char* qr_payload = "WIFI:S:MagicBox-AP;T:nopass;;";
-            if (strcmp(qr_payload, cached_qr_str) != 0) {
-                strncpy(cached_qr_str, qr_payload, qr_len - 1);
-                cached_qr_str[qr_len - 1] = '\0';
-                qr_cache.fillScreen(TFT_WHITE);
-                qr_cache.qrcode(qr_payload, 5, 5, 100, 3);
+        switch (step) {
+            // Крок 1: Вибір профілю звуку (Тиша vs Зі звуком)
+            case OnboardingStep::WIZ_STEP_WELCOME_SOUND: {
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
+                canvas.drawString("WELCOME TO MAGICBOX", 120, 30);
+
+                // Іконка динаміка в центрі
+                canvas.drawCircle(120, 86, 32, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.fillCircle(120, 86, 26, HallmarkTheme::BG_SURFACE);
+                canvas.drawCircle(120, 86, 26, HallmarkTheme::ACCENT_COOL);
+
+                canvas.setFont(&fonts::FreeSansBold12pt7b);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString("SOUND?", 120, 86);
+
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString("Увімкнути звук колонки?", 120, 130);
+
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("I2S DAC · MAX98357A · Hi-Fi", 120, 150);
+
+                // Дві капсули-підказки над кнопками
+                canvas.fillRoundRect(22, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(22, 186, 88, 26, 13, HallmarkTheme::ACCENT_DANGER);
+                canvas.setTextColor(HallmarkTheme::ACCENT_DANGER);
+                canvas.drawString("◄ ТИША", 66, 199);
+
+                canvas.fillRoundRect(130, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(130, 186, 88, 26, 13, HallmarkTheme::ACCENT_SUCCESS);
+                canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
+                canvas.drawString("ЗВУК ►", 174, 199);
+                break;
             }
 
-            canvas.fillRoundRect(65, 46, 110, 110, 8, HallmarkTheme::BG_SURFACE);
-            canvas.drawRoundRect(65, 46, 110, 110, 8, HallmarkTheme::BORDER_HAIRLINE);
-            qr_cache.pushSprite(&canvas, 65, 46);
+            // Крок 2: Підключення до AP лампи
+            case OnboardingStep::WIZ_STEP_WIFI_AP: {
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
+                canvas.drawString("КРОК 1/3 · WI-FI ШКАТУЛКИ", 120, 24);
 
-            canvas.setFont(&fonts::efontCN_12);
-            canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-            canvas.drawString("Scan to join MagicBox-AP", 120, 172);
+                const char* qr_payload = "WIFI:S:MagicBox-AP;T:nopass;;";
+                if (strcmp(qr_payload, cached_qr_str) != 0) {
+                    strncpy(cached_qr_str, qr_payload, qr_len - 1);
+                    cached_qr_str[qr_len - 1] = '\0';
+                    qr_cache.fillScreen(TFT_WHITE);
+                    qr_cache.qrcode(qr_payload, 5, 5, 100, 3);
+                }
 
-            canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-            canvas.drawString("Пароль відсутній (Open AP)", 120, 192);
+                canvas.fillRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
+                qr_cache.pushSprite(&canvas, 70, 42);
 
-        } else if (step == 2) {
-            // Крок 2: Відкриття веб-порталу
-            canvas.setFont(&fonts::efontCN_12);
-            canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-            canvas.drawString("STEP 2 / 2 · SETUP PORTAL", 120, 28);
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString("1. Скануй QR камерою", 120, 154);
 
-            const char* qr_payload = "http://192.168.4.1/";
-            if (strcmp(qr_payload, cached_qr_str) != 0) {
-                strncpy(cached_qr_str, qr_payload, qr_len - 1);
-                cached_qr_str[qr_len - 1] = '\0';
-                qr_cache.fillScreen(TFT_WHITE);
-                qr_cache.qrcode(qr_payload, 5, 5, 100, 3);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("SSID: MagicBox-AP (Open)", 120, 172);
+
+                // Кнопка далі
+                canvas.fillRoundRect(136, 188, 80, 24, 12, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(136, 188, 80, 24, 12, HallmarkTheme::ACCENT_COOL);
+                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
+                canvas.drawString("ДАЛІ ►", 176, 200);
+                break;
             }
 
-            canvas.fillRoundRect(65, 46, 110, 110, 8, HallmarkTheme::BG_SURFACE);
-            canvas.drawRoundRect(65, 46, 110, 110, 8, HallmarkTheme::BORDER_HAIRLINE);
-            qr_cache.pushSprite(&canvas, 65, 46);
+            // Крок 3: Портал вибору домашньої мережі
+            case OnboardingStep::WIZ_STEP_WIFI_PORTAL: {
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
+                canvas.drawString("КРОК 2/3 · ДОМАШНІЙ WI-FI", 120, 24);
 
-            canvas.setFont(&fonts::efontCN_12);
-            canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-            canvas.drawString("Select Home Wi-Fi in Browser", 120, 172);
+                const char* qr_payload = "http://192.168.4.1/";
+                if (strcmp(qr_payload, cached_qr_str) != 0) {
+                    strncpy(cached_qr_str, qr_payload, qr_len - 1);
+                    cached_qr_str[qr_len - 1] = '\0';
+                    qr_cache.fillScreen(TFT_WHITE);
+                    qr_cache.qrcode(qr_payload, 5, 5, 100, 3);
+                }
 
-            canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-            canvas.drawString("http://192.168.4.1", 120, 192);
+                canvas.fillRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
+                qr_cache.pushSprite(&canvas, 70, 42);
 
-        } else {
-            // Крок 3: Підключено успішно
-            canvas.drawArc(120, 120, 116, 112, 0, 360, HallmarkTheme::ACCENT_SUCCESS);
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString("2. Обери мережу в браузері", 120, 154);
 
-            canvas.setFont(&fonts::FreeSansBold12pt7b);
-            canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
-            canvas.drawString("CONNECTED!", 120, 92);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("http://192.168.4.1", 120, 172);
 
-            canvas.setFont(&fonts::efontCN_12);
-            canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-            canvas.drawString(state.wifi_ssid, 120, 124);
+                canvas.fillRoundRect(24, 188, 80, 24, 12, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(24, 188, 80, 24, 12, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("◄ НАЗАД", 64, 200);
 
-            canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-            canvas.drawString(state.ip_address, 120, 148);
+                canvas.fillRoundRect(136, 188, 80, 24, 12, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(136, 188, 80, 24, 12, HallmarkTheme::ACCENT_COOL);
+                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
+                canvas.drawString("ДАЛІ ►", 176, 200);
+                break;
+            }
 
-            canvas.setFont(&fonts::efontCN_12);
-            canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-            canvas.drawString("Ready to Shine ✨", 120, 178);
+            // Крок 4: Пропозиція підключення Spotify
+            case OnboardingStep::WIZ_STEP_SPOTIFY_ASK: {
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
+                canvas.drawString("КРОК 3/3 · МУЗИКА SPOTIFY", 120, 28);
+
+                // Вінілова платівка
+                canvas.fillCircle(120, 86, 34, HallmarkTheme::BG_SURFACE);
+                canvas.drawCircle(120, 86, 34, HallmarkTheme::ACCENT_SUCCESS);
+                canvas.drawCircle(120, 86, 26, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.drawCircle(120, 86, 18, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.fillCircle(120, 86, 6, HallmarkTheme::ACCENT_WARM);
+
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString("Підключити акаунт Spotify?", 120, 134);
+
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("Для вінілового плеєра та Ambi", 120, 154);
+
+                // Кнопки: Пізніше / Підключити
+                canvas.fillRoundRect(22, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(22, 186, 88, 26, 13, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("◄ ПІЗНІШЕ", 66, 199);
+
+                canvas.fillRoundRect(128, 186, 92, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(128, 186, 92, 26, 13, HallmarkTheme::ACCENT_SUCCESS);
+                canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
+                canvas.drawString("ПІДКЛЮЧИТИ ►", 174, 199);
+                break;
+            }
+
+            // Крок 5: QR-код для швидкого входу у Spotify
+            case OnboardingStep::WIZ_STEP_SPOTIFY_QR: {
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
+                canvas.drawString("ВХІД У SPOTIFY", 120, 24);
+
+                char qr_payload[160];
+                char or_url[128];
+                state.getOracleConfig(or_url, sizeof(or_url), nullptr, 0);
+                if (strlen(or_url) > 8) {
+                    snprintf(qr_payload, sizeof(qr_payload), "%s/api/v5/spotify/login_redirect", or_url);
+                } else {
+                    snprintf(qr_payload, sizeof(qr_payload), "http://192.168.4.1/api/v5/spotify/login_redirect");
+                }
+
+                if (strcmp(qr_payload, cached_qr_str) != 0) {
+                    strncpy(cached_qr_str, qr_payload, qr_len - 1);
+                    cached_qr_str[qr_len - 1] = '\0';
+                    qr_cache.fillScreen(TFT_WHITE);
+                    qr_cache.qrcode(qr_payload, 5, 5, 100, 3);
+                }
+
+                canvas.fillRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
+                qr_cache.pushSprite(&canvas, 70, 42);
+
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString("Скануй для входу в Spotify", 120, 154);
+
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("Очікування авторизації...", 120, 172);
+
+                canvas.fillRoundRect(24, 188, 92, 24, 12, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(24, 188, 92, 24, 12, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("◄ ПРОПУСТИТИ", 70, 200);
+                break;
+            }
+
+            // Крок 6: Завершено
+            case OnboardingStep::WIZ_STEP_DONE: {
+                canvas.drawArc(120, 120, 116, 112, 0, 360, HallmarkTheme::ACCENT_SUCCESS);
+
+                canvas.setFont(&fonts::FreeSansBold12pt7b);
+                canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
+                canvas.drawString("ВІТАЮ!", 120, 78);
+
+                canvas.setFont(&fonts::efontCN_14);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString("ВСЕ НАЛАШТОВАНО", 120, 106);
+
+                if (state.sp_linked) {
+                    canvas.setFont(&fonts::efontCN_12);
+                    canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
+                    canvas.drawString("SPOTIFY ПІДКЛЮЧЕНО ✓", 120, 134);
+                } else {
+                    canvas.setFont(&fonts::efontCN_12);
+                    canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
+                    canvas.drawString("Ready to Shine ✨", 120, 134);
+                }
+
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("Шкатулка готова до роботи", 120, 160);
+
+                canvas.fillRoundRect(136, 188, 80, 24, 12, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(136, 188, 80, 24, 12, HallmarkTheme::ACCENT_SUCCESS);
+                canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
+                canvas.drawString("ПОЧАТИ ►", 176, 200);
+                break;
+            }
         }
     }
 
@@ -247,8 +387,9 @@ namespace ScreenRenderer {
         canvas.drawString(net_line, 120, 160);
 
         char mem_line[64];
-        snprintf(mem_line, sizeof(mem_line), "Heap: %lu kB · PSRAM: %lu MB",
-                 (unsigned long)(ESP.getFreeHeap() / 1024),
+        snprintf(mem_line, sizeof(mem_line), "Vol: %u%% %s · PSRAM: %lu MB",
+                 (state.audio_volume * 100) / 21,
+                 state.audio_muted ? "[MUTED]" : "",
                  (unsigned long)(ESP.getFreePsram() / (1024 * 1024)));
         canvas.drawString(mem_line, 120, 178);
 
@@ -367,13 +508,16 @@ namespace ScreenRenderer {
         snprintf(p_str, sizeof(p_str), "%.0f mm", state.pressure);
         canvas.drawString(p_str, 168, 142);
 
-        // Індикатор яскравості
+        // Індикатор яскравості та гучності
         uint8_t brt_pct = state.getLedBrightnessPercent();
         canvas.setFont(&fonts::efontCN_12);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         char brt_info[64];
-        snprintf(brt_info, sizeof(brt_info), "%s • Світло %d%% • Дім %d%%",
-                 state.auto_brt ? "АВТО" : "РУЧН", brt_pct, state.light_percent);
+        snprintf(brt_info, sizeof(brt_info), "%s • Світ %d%% • Звук %s%d%%",
+                 state.auto_brt ? "АВТО" : "РУЧН",
+                 brt_pct,
+                 state.audio_muted ? "🔇" : "",
+                 state.audio_muted ? 0 : (state.audio_volume * 100) / 21);
         canvas.drawString(brt_info, 120, 168);
 
         canvas.drawFastHLine(48, 180, 144, HallmarkTheme::BORDER_HAIRLINE);
@@ -418,6 +562,18 @@ namespace ScreenRenderer {
             canvas.setFont(&fonts::efontCN_12);
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
             canvas.drawString(clk_buf, 120, 29);
+        }
+
+        // Оверлей таймера медіа (якщо встановлено таймер показу)
+        uint16_t rem_med = state.getMediaRemainingMin();
+        if (rem_med > 0) {
+            canvas.fillRoundRect(80, 192, 80, 18, 9, HallmarkTheme::BG_SURFACE);
+            canvas.drawRoundRect(80, 192, 80, 18, 9, HallmarkTheme::ACCENT_WARM);
+            char med_lbl[32];
+            snprintf(med_lbl, sizeof(med_lbl), "⏱ %u хв", rem_med);
+            canvas.setFont(&fonts::Font0);
+            canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
+            canvas.drawString(med_lbl, 120, 201);
         }
     }
 
@@ -657,7 +813,7 @@ namespace ScreenRenderer {
         canvas.setFont(&fonts::Font0);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("ЕКР", 82, 219);
-        canvas.drawString("СВІТ", 120, 219);
+        canvas.drawString(state.audio_muted ? "ТИША" : "СВІТ", 120, 219);
 
         const char* r_lbl = "ЯСК";
         if (state.screen_mode == SCREEN_LIVING_GIF) r_lbl = "ГОД";

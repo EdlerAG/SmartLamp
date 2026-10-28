@@ -216,6 +216,7 @@ class MediaService:
         save_name: str = "",
         reaction_slot: int = 0,
         set_as_saver: bool = False,
+        media_timer_min: Optional[int] = None,
     ) -> Dict[str, Any]:
         meta = await asyncio.to_thread(self._process_media_sync, raw_bytes, save_name, reaction_slot)
         host = state_service.resolve_public_url(base_url)
@@ -238,16 +239,33 @@ class MediaService:
         }
         if set_as_saver:
             cmd_dict["set_saver"] = True
+        if media_timer_min is not None:
+            cmd_dict["media_timer"] = int(media_timer_min)
 
         state_service.enqueue_raw(cmd_dict)
         meta["media_url"] = media_url
         return meta
+
+    def stop_media(self) -> None:
+        state_service.enqueue_raw({
+            "stop_media": True,
+            "sender": "Web/Bot",
+            "msg": "Зупинка показу медіа",
+        })
+
+    def set_timer(self, minutes: int) -> None:
+        state_service.enqueue_raw({
+            "media_timer": int(minutes),
+            "sender": "Web/Bot",
+            "msg": f"Таймер: {minutes} хв" if minutes > 0 else "Медіа постійно",
+        })
 
     def trigger_saved_media(
         self,
         name: str,
         base_url: str = "",
         set_as_saver: bool = False,
+        media_timer_min: Optional[int] = None,
     ) -> Dict[str, Any]:
         safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", name)[:28].lower()
         info = db_service.get_media_by_name(safe_name)
@@ -278,6 +296,8 @@ class MediaService:
         }
         if set_as_saver:
             cmd_dict["set_saver"] = True
+        if media_timer_min is not None:
+            cmd_dict["media_timer"] = int(media_timer_min)
 
         state_service.enqueue_raw(cmd_dict)
         return {
@@ -299,12 +319,13 @@ class MediaService:
         save_name: str = "",
         reaction_slot: int = 0,
         set_as_saver: bool = False,
+        media_timer_min: Optional[int] = None,
     ) -> Dict[str, Any]:
         raw = await file.read(10 * 1024 * 1024)
         if not raw:
             raise HTTPException(status_code=400, detail="Порожній файл")
         try:
-            return await self.process_and_enqueue(raw, base_url, save_name, reaction_slot, set_as_saver)
+            return await self.process_and_enqueue(raw, base_url, save_name, reaction_slot, set_as_saver, media_timer_min)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Помилка конвертації медіа: {e}")
 

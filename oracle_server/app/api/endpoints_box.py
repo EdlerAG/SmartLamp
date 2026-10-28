@@ -2,7 +2,7 @@
 import os
 import re
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 import orjson
 
 from app.core.security import verify_access
@@ -53,6 +53,7 @@ async def sync_box(
         await realtime_hub.wait_for_command(timeout=wait)
 
     resp = state_service.pop_next_sync_response()
+    resp["sp_linked"] = spotify_service.is_linked()
     if sp_data and (payload.scr == 2 or payload.m == 11):
         resp["spotify"] = sp_data
 
@@ -77,13 +78,24 @@ async def box_websocket_endpoint(ws: WebSocket):
             await blackout_service.on_box_ping(prev_seen, ack=bool(payload.ack), ping_type=payload.ping or 0)
 
             if state_service.command_queue:
-                await ws.send_text(orjson.dumps(state_service.pop_next_sync_response()).decode("utf-8"))
+                resp = state_service.pop_next_sync_response()
+                resp["sp_linked"] = spotify_service.is_linked()
+                await ws.send_text(orjson.dumps(resp).decode("utf-8"))
     except WebSocketDisconnect:
         pass
     except Exception:
         pass
     finally:
         realtime_hub.unregister_box_ws(ws)
+
+
+@router.get("/api/v5/spotify/login_redirect")
+async def spotify_login_redirect(request: Request):
+    """Компактний 307 Redirect для простого та легкого QR-коду на екрані плати."""
+    auth_url = spotify_service.get_authorize_url(str(request.base_url))
+    if not auth_url:
+        raise HTTPException(status_code=400, detail="Spotify client credentials not configured")
+    return RedirectResponse(auth_url, status_code=307)
 
 
 @router.get("/api/v5/spotify/vinyl.rgb565")

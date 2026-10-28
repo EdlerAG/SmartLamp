@@ -4,7 +4,7 @@ PORTAL_HTML: str = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>MagicBox Sovereign Studio • Hallmark v3.8</title>
+<title>MagicBox Sovereign Studio • Hallmark v4.5</title>
 <!-- Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 -->
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
@@ -176,6 +176,11 @@ body {
   border: none;
   font-weight: 700;
 }
+.btn-danger {
+  background: var(--bg-surface);
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+}
 
 input, select, textarea {
   width: 100%;
@@ -257,6 +262,16 @@ input::placeholder, textarea::placeholder {
   z-index: 1000;
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
 }
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.slider-container input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent-warm);
+  cursor: pointer;
+}
 </style>
 </head>
 <body>
@@ -264,7 +279,7 @@ input::placeholder, textarea::placeholder {
 <div id="loginModal">
   <div class="login-box">
     <div style="font-size:32px;margin-bottom:8px">🪄</div>
-    <h2 style="font-size:16px;margin-bottom:6px">MagicBox Studio • Hallmark v3.8</h2>
+    <h2 style="font-size:16px;margin-bottom:6px">MagicBox Studio • Hallmark v4.5</h2>
     <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">Введіть пароль або X-Device-Key</p>
     <input type="password" id="pwdInput" placeholder="Пароль...">
     <button class="btn btn-cool" style="width:100%;margin-top:10px" onclick="doLogin()">Увійти</button>
@@ -278,7 +293,7 @@ input::placeholder, textarea::placeholder {
       <div>
         <div style="display:flex;align-items:center;gap:8px">
           <span id="onlineDot" class="pulse on"></span>
-          <b id="onlineTxt" style="font-size:14px;letter-spacing:0.5px">MAGICBOX SOVEREIGN STUDIO</b>
+          <b id="onlineTxt" style="font-size:14px;letter-spacing:0.5px">MAGICBOX SOVEREIGN STUDIO v4.5</b>
           <span class="mono" style="font-size:11px;color:var(--accent-cool)" id="fwBadge">FW: --</span>
         </div>
         <div class="mono" style="font-size:11px;color:var(--text-secondary);margin-top:3px">
@@ -287,6 +302,11 @@ input::placeholder, textarea::placeholder {
           Черга: <b id="queueTxt">0</b>
         </div>
       </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <a href="/api/v5/infographic/png" target="_blank" class="btn btn-cool" style="text-decoration:none;display:flex;align-items:center;gap:6px">
+        📊 800x500 Інфографіка
+      </a>
     </div>
   </div>
 
@@ -297,7 +317,7 @@ input::placeholder, textarea::placeholder {
     <div class="kpi"><span>Режим та Яскравість</span><b id="kMode" style="font-size:16px">--</b></div>
   </div>
 
-  <!-- Spotify Vinyl Hub (v4.0) -->
+  <!-- Spotify Vinyl Hub (v4.5) -->
   <div class="card" style="margin-bottom:12px;background:var(--bg-surface);border:1px solid var(--border-hairline)">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
       <div style="display:flex;align-items:center;gap:12px">
@@ -324,6 +344,7 @@ input::placeholder, textarea::placeholder {
   </div>
 
   <div class="split-2">
+    <!-- Світло та Яскравість -->
     <div class="card">
       <h3><span>🎨 Режими Світла, Яскравість та Реакції</span></h3>
       <div class="mode-grid" id="modeGrid"></div>
@@ -348,8 +369,79 @@ input::placeholder, textarea::placeholder {
       </div>
     </div>
 
+    <!-- Акустика, Гучність та Синтез Голосу (v4.5) -->
     <div class="card">
-      <h3><span>🎞 Студія Кастомних Гіфок (.mbx AmbiLight)</span></h3>
+      <h3><span>🔊 Акустика та Синтез Голосу (v4.5)</span></h3>
+      
+      <!-- Гучність та Mute -->
+      <div style="margin-bottom:14px;background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">ГУЧНІСТЬ КОЛОНКИ: <b id="volVal" class="mono" style="color:var(--accent-warm)">12 / 21</b></span>
+          <div style="display:flex;gap:6px">
+            <button class="btn" id="muteBtn" onclick="toggleMute()" style="padding:4px 10px;font-size:11px">🔊 ЗВУК УВІМК</button>
+            <button class="btn" id="touchBeepBtn" onclick="toggleTouchBeep()" style="padding:4px 10px;font-size:11px">🔔 КЛІКИ: ТАК</button>
+          </div>
+        </div>
+        <div class="slider-container">
+          <span class="mono" style="font-size:11px;color:var(--text-muted)">0</span>
+          <input type="range" id="volSlider" min="0" max="21" value="12" oninput="onVolSlider(this.value)" onchange="applyVolume(this.value)">
+          <span class="mono" style="font-size:11px;color:var(--text-muted)">21</span>
+        </div>
+      </div>
+
+      <!-- Вибір Голосу -->
+      <form onsubmit="saveVoiceConfig(event)">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div>
+            <label style="font-size:11px;color:var(--text-secondary);text-transform:uppercase">Рушій TTS:</label>
+            <select id="ttsProviderSelect" onchange="onProviderChange()">
+              <option value="edge-tts">Edge-TTS (Безкоштовно)</option>
+              <option value="elevenlabs">ElevenLabs (Клонований)</option>
+              <option value="fish_audio">Fish Audio (Нейро-голос)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-secondary);text-transform:uppercase">Голос Edge-TTS:</label>
+            <select id="edgeVoiceSelect">
+              <option value="uk-UA-OstapNeural">Остап 👨 (uk-UA-Ostap)</option>
+              <option value="uk-UA-PolinaNeural">Поліна 👩 (uk-UA-Polina)</option>
+            </select>
+          </div>
+        </div>
+        <div id="cloneVoiceRow" style="display:none;margin-bottom:8px">
+          <label style="font-size:11px;color:var(--text-secondary);text-transform:uppercase">Voice Clone ID:</label>
+          <input type="text" id="cloneVoiceIdInput" placeholder="eleven_voice_id...">
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <button type="submit" class="btn active">Зберегти налаштування голосу</button>
+        </div>
+      </form>
+
+      <!-- Голосові пресети -->
+      <div style="margin-top:12px">
+        <label style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;display:block;margin-bottom:6px">Збережені голосові фрази:</label>
+        <div id="voicePresetsList" style="display:flex;flex-wrap:wrap;gap:6px;max-height:90px;overflow-y:auto"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="split-2">
+    <!-- Студія Кастомних Гіфок (.mbx AmbiLight) та Таймер -->
+    <div class="card">
+      <h3>
+        <span>🎞 Студія Кастомних Гіфок (.mbx)</span>
+        <button class="btn btn-danger" style="padding:4px 10px;font-size:11px" onclick="stopMedia()">🛑 Зупинити показ</button>
+      </h3>
+      
+      <!-- Панель швидкого таймера для поточного медіа -->
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;background:var(--bg-surface);padding:8px 12px;border-radius:8px;border:1px solid var(--border-hairline)">
+        <span class="mono" style="font-size:11px;color:var(--text-secondary)">⏱ Таймер показу:</span>
+        <button class="btn" style="padding:4px 8px;font-size:11px" onclick="setMediaTimer(15)">15 хв</button>
+        <button class="btn" style="padding:4px 8px;font-size:11px" onclick="setMediaTimer(60)">1 год</button>
+        <button class="btn" style="padding:4px 8px;font-size:11px" onclick="setMediaTimer(180)">3 год</button>
+        <button class="btn" style="padding:4px 8px;font-size:11px" onclick="setMediaTimer(0)">♾ Безкінечно</button>
+      </div>
+
       <form onsubmit="uploadMedia(event)" style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;margin-bottom:12px">
         <input type="file" id="mediaFile" accept=".gif,.webp,.png,.jpg,.jpeg" required>
         <div style="display:flex;gap:6px">
@@ -367,14 +459,8 @@ input::placeholder, textarea::placeholder {
       </form>
       <div class="media-grid" id="mediaGrid"></div>
     </div>
-  </div>
 
-  <div class="split-2">
-    <div class="card">
-      <h3><span>📈 Історія Клімату та Барометра (SQLite WAL)</span></h3>
-      <div id="climateChart" style="height:260px"></div>
-    </div>
-
+    <!-- Персона ШІ -->
     <div class="card">
       <h3><span>🧠 Налаштування Персони ШІ (Gemini)</span></h3>
       <form onsubmit="saveAiPersona(event)">
@@ -389,6 +475,11 @@ input::placeholder, textarea::placeholder {
       </form>
       <div id="aiResponseBox" style="margin-top:12px;font-size:12.5px;color:var(--text-secondary);background:var(--bg-surface);border:1px solid var(--border-hairline);padding:10px;border-radius:8px;display:none"></div>
     </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h3><span>📈 Історія Клімату та Барометра (SQLite WAL)</span></h3>
+    <div id="climateChart" style="height:260px"></div>
   </div>
 </div>
 
@@ -410,6 +501,9 @@ MODES.forEach((name, idx) => {
   b.onclick = () => sendCmd({set_mode: idx});
   mg.appendChild(b);
 });
+
+let currentMuted = false;
+let currentTouchBeep = true;
 
 function toast(msg){
   const t = document.getElementById('toast');
@@ -461,6 +555,112 @@ function speakTts(){
     else toast('Озвучку згенеровано та передано!');
   });
   document.getElementById('msgTxt').value = '';
+}
+
+// Volume & Audio Controls (v4.5)
+function onVolSlider(v){
+  document.getElementById('volVal').innerText = `${v} / 21`;
+}
+
+function applyVolume(v){
+  fetch('/api/v5/audio/volume', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({volume: parseInt(v), muted: currentMuted, touch_beep: currentTouchBeep})
+  }).then(() => toast(`Гучність: ${v}/21`));
+}
+
+function toggleMute(){
+  currentMuted = !currentMuted;
+  const v = parseInt(document.getElementById('volSlider').value || '12');
+  fetch('/api/v5/audio/volume', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({volume: v, muted: currentMuted, touch_beep: currentTouchBeep})
+  }).then(() => {
+    updateMuteUI(currentMuted);
+    toast(currentMuted ? 'Звук вимкнено (MUTE)' : 'Звук увімкнено');
+  });
+}
+
+function updateMuteUI(m){
+  const btn = document.getElementById('muteBtn');
+  if(m){
+    btn.innerText = '🔇 MUTE (ТИША)';
+    btn.className = 'btn btn-danger';
+  } else {
+    btn.innerText = '🔊 ЗВУК УВІМК';
+    btn.className = 'btn btn-emerald';
+  }
+}
+
+function toggleTouchBeep(){
+  currentTouchBeep = !currentTouchBeep;
+  const v = parseInt(document.getElementById('volSlider').value || '12');
+  fetch('/api/v5/audio/volume', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({volume: v, muted: currentMuted, touch_beep: currentTouchBeep})
+  }).then(() => {
+    updateTouchBeepUI(currentTouchBeep);
+    toast(currentTouchBeep ? 'Кліки кнопок увімкнено' : 'Кліки кнопок вимкнено');
+  });
+}
+
+function updateTouchBeepUI(tb){
+  const btn = document.getElementById('touchBeepBtn');
+  btn.innerText = tb ? '🔔 КЛІКИ: ТАК' : '🔕 КЛІКИ: НІ';
+  btn.className = tb ? 'btn btn-emerald' : 'btn';
+}
+
+function onProviderChange(){
+  const prov = document.getElementById('ttsProviderSelect').value;
+  document.getElementById('cloneVoiceRow').style.display = (prov === 'elevenlabs' || prov === 'fish_audio') ? 'block' : 'none';
+}
+
+function saveVoiceConfig(e){
+  e.preventDefault();
+  const provider = document.getElementById('ttsProviderSelect').value;
+  const edgeVoice = document.getElementById('edgeVoiceSelect').value;
+  const cloneId = document.getElementById('cloneVoiceIdInput').value.trim();
+  fetch('/api/v5/audio/voice-config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({provider: provider, edge_voice: edgeVoice, clone_voice_id: cloneId})
+  }).then(() => toast('Налаштування голосу збережено!'));
+}
+
+function renderVoicePresets(presets){
+  const el = document.getElementById('voicePresetsList');
+  el.innerHTML = '';
+  if(!presets || presets.length === 0){
+    el.innerHTML = '<span style="color:var(--text-muted);font-size:11px">Немає збережених фраз</span>';
+    return;
+  }
+  presets.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.style.padding = '4px 8px';
+    btn.style.fontSize = '11px';
+    btn.innerText = `▶️ ${p.name}`;
+    btn.title = p.text;
+    btn.onclick = () => {
+      fetch(`/api/v5/audio/preset/${encodeURIComponent(p.name)}/play`, {method: 'POST'})
+        .then(() => toast(`Озвучено: «${p.name}»`));
+    };
+    el.appendChild(btn);
+  });
+}
+
+// Media Loop & Timers (v4.5)
+function stopMedia(){
+  fetch('/api/v5/media/stop', {method:'POST'}).then(() => toast('Показ медіа зупинено'));
+}
+
+function setMediaTimer(minutes){
+  fetch(`/api/v5/media/timer?minutes=${minutes}`, {method:'POST'}).then(() => {
+    toast(minutes > 0 ? `Таймер встановлено на ${minutes} хв` : 'Медіа зациклено безкінечно');
+  });
 }
 
 function uploadMedia(e){
@@ -583,6 +783,7 @@ function askAiBriefing(){
 }
 
 let personaLoaded = false;
+let configLoaded = false;
 function pollState(){
   fetch('/api/v5/state?hours=24').then(r => {
     if(r.status === 401) {
@@ -595,7 +796,7 @@ function pollState(){
 
     const on = d.is_online;
     document.getElementById('onlineDot').className = 'pulse ' + (on ? 'on' : 'off');
-    document.getElementById('onlineTxt').innerText = on ? 'MAGICBOX SOVEREIGN STUDIO' : 'MAGICBOX OFFLINE (BLEKAUT)';
+    document.getElementById('onlineTxt').innerText = on ? 'MAGICBOX SOVEREIGN STUDIO v4.5' : 'MAGICBOX OFFLINE (BLEKAUT)';
     document.getElementById('queueTxt').innerText = d.pending_commands;
 
     const res = d.resources || {};
@@ -623,7 +824,7 @@ function pollState(){
 
     const t = d.telemetry || {};
     if(t.t !== undefined){
-      document.getElementById('fwBadge').innerText = `${t.fw || 'v3.8'} | ${t.rssi || -60} dBm`;
+      document.getElementById('fwBadge').innerText = `${t.fw || 'v4.5'} | ${t.rssi || -60} dBm`;
       document.getElementById('kTemp').innerText = t.t.toFixed(1) + ' °C';
       document.getElementById('kHum').innerText = t.h.toFixed(0) + ' %';
       document.getElementById('kPres').innerText = `${t.p.toFixed(0)} мм (${t.p_diff>=0?'+':''}${(t.p_diff||0).toFixed(1)})`;
@@ -632,6 +833,20 @@ function pollState(){
         const el = document.getElementById('mBtn'+i);
         if(el) el.className = (t.m === i) ? 'btn active' : 'btn';
       });
+
+      // Update volume slider from telemetry if not actively dragging
+      if(t.vol !== undefined && !document.getElementById('volSlider').matches(':active')){
+        document.getElementById('volSlider').value = t.vol;
+        document.getElementById('volVal').innerText = `${t.vol} / 21`;
+      }
+      if(t.muted !== undefined){
+        currentMuted = Boolean(t.muted);
+        updateMuteUI(currentMuted);
+      }
+      if(t.t_beep !== undefined){
+        currentTouchBeep = Boolean(t.t_beep);
+        updateTouchBeepUI(currentTouchBeep);
+      }
     }
 
     if(!personaLoaded && d.ai_persona){
@@ -640,7 +855,18 @@ function pollState(){
       document.getElementById('aiPrompt').value = d.ai_persona.prompt;
     }
 
+    if(!configLoaded && d.tts_config){
+      configLoaded = true;
+      document.getElementById('ttsProviderSelect').value = d.tts_config.provider || 'edge-tts';
+      document.getElementById('edgeVoiceSelect').value = d.tts_config.edge_voice || 'uk-UA-OstapNeural';
+      if(d.tts_config.clone_voice_id){
+        document.getElementById('cloneVoiceIdInput').value = d.tts_config.clone_voice_id;
+      }
+      onProviderChange();
+    }
+
     renderGallery(d.custom_media || []);
+    renderVoicePresets(d.voice_presets || []);
 
     const ch = d.climate_history || [];
     if(ch.length > 1){
