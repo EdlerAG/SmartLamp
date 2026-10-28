@@ -23,7 +23,8 @@ ADMIN_KB = {
     "keyboard": [
         [{"text": "🎨 Світло & Свічка"}, {"text": "🖼 Заставка & Гіфки"}, {"text": "🎵 Spotify Плеєр"}],
         [{"text": "🔊 Гучність & Звук"}, {"text": "📊 Інфографіка & Стан"}, {"text": "📅 Розклад Насті"}],
-        [{"text": "🩺 Здоров'я Лампи"}, {"text": "📦 Бекап БД"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
+        [{"text": "🎂 Привітати з ДР"}, {"text": "📚 Фокус Pomodoro"}, {"text": "🩺 Здоров'я Лампи"}],
+        [{"text": "📦 Бекап БД"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
     ],
     "resize_keyboard": True,
 }
@@ -373,6 +374,23 @@ class TelegramBotService:
             state_service.enqueue_raw({"play_url": sound_url})
         return custom_info
 
+    def _pomodoro_inline_kb(self) -> Dict[str, Any]:
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "⏱ 15 хв", "callback_data": "pomo:15"},
+                    {"text": "⏱ 25 хв", "callback_data": "pomo:25"},
+                ],
+                [
+                    {"text": "⏱ 45 хв", "callback_data": "pomo:45"},
+                    {"text": "⏱ 60 хв", "callback_data": "pomo:60"},
+                ],
+                [
+                    {"text": "🛑 Зупинити Pomodoro", "callback_data": "pomo:stop"},
+                ]
+            ]
+        }
+
     async def _handle_callback(self, cb: Dict[str, Any]) -> None:
         cb_id = cb.get("id", "")
         data = cb.get("data", "")
@@ -449,6 +467,33 @@ class TelegramBotService:
         elif data == "med_stop":
             media_service.stop_media()
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⏹ Показ зупинено! Екран повернуто"})
+
+        elif data.startswith("pomo:"):
+            act = data.split(":", 1)[1]
+            if act == "stop":
+                nastya_routine_service.stop_pomodoro()
+                state_service.enqueue_raw({"pomo_action": "stop"})
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🛑 Pomodoro зупинено"})
+                await self._api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "text": "🛑 <b>Фокус Pomodoro зупинено</b>. Шкатулка повернулась до звичайного режиму.",
+                    "parse_mode": "HTML",
+                })
+            else:
+                try:
+                    dur = int(act)
+                except ValueError:
+                    dur = 25
+                nastya_routine_service.start_pomodoro(dur)
+                state_service.enqueue_raw({"pomo_action": "start", "pomo_min": dur})
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"⏳ Фокус {dur} хв запущено!"})
+                await self._api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "text": f"📚 <b>РЕЖИМ ФОКУСУ ТА НАВЧАННЯ (POMODORO)</b>\n━━━━━━━━━━━━━━━━━━\nШкатулка перейшла на спокійне бурштинове світло на <b>{dur} хв</b>. Не відволікайся, продуктивного фокусу! ✨",
+                    "parse_mode": "HTML",
+                })
 
         elif data.startswith("med_saver:"):
             s_name = data.split(":", 1)[1]
@@ -818,14 +863,67 @@ class TelegramBotService:
             await self._api("sendMessage", {"chat_id": chat_id, "text": f"🔊 Озвучую на шкатулці:\n«{phrase}»{online_note}", "reply_markup": active_kb})
             return
 
-        if text.startswith("/pomodoro") or "Фокус" in text:
-            st = nastya_routine_service.start_pomodoro(25)
+        if text.startswith("/silent "):
+            clean_txt = text[8:].strip()
+            if clean_txt:
+                cmd = CommandPayload(
+                    msg=clean_txt,
+                    sender=sender[:20],
+                    silent=True,
+                )
+                state_service.enqueue_command(cmd)
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": f"🤫 <b>Тихе повідомлення надіслано на екран лампи:</b>\n«{clean_txt}»\n<i>(Без звукового сигналу та без різких спалахів світла)</i>",
+                    "parse_mode": "HTML",
+                    "reply_markup": active_kb,
+                })
+                return
+
+        if (text.startswith("/birthday") or "Привітати з ДР" in text) and is_admin:
+            db_service.set_setting("birthday_greeted", True)
+            cmd = CommandPayload(
+                birthday_celebrate=True,
+                set_mode=4,
+                set_brt="3",
+                msg="🎂 З ДНЕМ НАРОДЖЕННЯ, НАСТЮ! ✨",
+                play_url=f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3" if settings.PUBLIC_SERVER_URL else None,
+            )
+            state_service.enqueue_command(cmd)
+            if state_service.girl_id:
+                await self._api("sendMessage", {
+                    "chat_id": state_service.girl_id,
+                    "text": "🎂 <b>З ДНЕМ НАРОДЖЕННЯ, НАСТЮ!</b> 🎉✨\n\nНехай кожен твій день буде сповнений тепла, затишку, радості та натхнення! Твоя SmartLamp завжди поруч, щоб світити для тебе! 💖🎁",
+                    "parse_mode": "HTML",
+                    "reply_markup": GIRL_KB,
+                })
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": "📚 <b>РЕЖИМ ФОКУСУ ТА НАВЧАННЯ (POMODORO)</b>\n━━━━━━━━━━━━━━━━━━\nШкатулка перейшла на спокійне бурштинове світло на 25 хвилин. Не відволікайся, продуктивного фокусу! ✨",
+                "text": "🎉 <b>Привітання з Днем Народження активовано!</b>\nНа лампі увімкнено святкову листівку, анімацію та надіслано привітання Насті в Telegram.",
                 "parse_mode": "HTML",
-                "reply_markup": active_kb,
+                "reply_markup": ADMIN_KB,
             })
+            return
+
+        if text.startswith("/pomodoro") or "Фокус" in text:
+            parts = text.split()
+            if len(parts) > 1 and parts[1].isdigit():
+                dur = max(5, min(120, int(parts[1])))
+                nastya_routine_service.start_pomodoro(dur)
+                state_service.enqueue_raw({"pomo_action": "start", "pomo_min": dur})
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": f"📚 <b>РЕЖИМ ФОКУСУ ТА НАВЧАННЯ (POMODORO)</b>\n━━━━━━━━━━━━━━━━━━\nШкатулка перейшла на спокійне бурштинове світло на <b>{dur} хвилин</b>. Не відволікайся, продуктивного фокусу! ✨",
+                    "parse_mode": "HTML",
+                    "reply_markup": active_kb,
+                })
+            else:
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "📚 <b>РЕЖИМ ФОКУСУ ТА НАВЧАННЯ (POMODORO)</b>\n━━━━━━━━━━━━━━━━━━\nОбери бажану тривалість фокусу для Насті або відправ <code>/pomodoro [хвилини]</code>:",
+                    "parse_mode": "HTML",
+                    "reply_markup": self._pomodoro_inline_kb(),
+                })
             return
 
         if text.startswith("/morning") or "Ранковий Гід" in text or "Ранок" in text:

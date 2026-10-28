@@ -304,6 +304,7 @@ input::placeholder, textarea::placeholder {
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <span id="roleBadge" class="mono" style="font-size:11px;padding:5px 10px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-hairline);color:var(--accent-warm)">🌸 НАСТЯ</span>
       <a href="/api/v5/infographic/png" target="_blank" class="btn btn-cool" style="text-decoration:none;display:flex;align-items:center;gap:6px">
         📊 800x500 Інфографіка
       </a>
@@ -408,12 +409,14 @@ input::placeholder, textarea::placeholder {
           <b id="pomoTimer" class="mono" style="font-size:18px;color:var(--accent-warm)">25:00</b>
         </div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button class="btn active" style="flex:1;padding:8px" onclick="startPomodoro(25)">▶️ 25 хв (Фокус)</button>
-          <button class="btn" style="flex:1;padding:8px" onclick="startPomodoro(45)">▶️ 45 хв (Інтенсив)</button>
+          <button class="btn" style="padding:6px 10px" onclick="adjustPomoInput(-5)">-5 хв</button>
+          <input type="number" id="pomoInput" value="25" min="5" max="120" style="width:60px;text-align:center;padding:6px" class="mono">
+          <button class="btn" style="padding:6px 10px" onclick="adjustPomoInput(5)">+5 хв</button>
+          <button class="btn active" style="flex:1;padding:8px" onclick="startPomodoro(parseInt(document.getElementById('pomoInput').value)||25)">▶️ Старт</button>
           <button class="btn btn-danger" style="padding:8px 12px" onclick="stopPomodoro()">🛑 Стоп</button>
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
-          Фокус: теплий бурштин без звуків сповіщень. Перерва: спокійний смарагдовий бриз.
+          💡 Робота: теплий бурштин без сповіщень. Перерва: спокійний смарагдовий бриз. Кнопки на шкатулці: Ліва -хв, Права +хв, Кришка Старт/Пауза.
         </div>
       </div>
 
@@ -574,6 +577,51 @@ input::placeholder, textarea::placeholder {
   <div class="card" style="margin-bottom:16px">
     <h3><span>📈 Історія Клімату та Барометра (SQLite WAL)</span></h3>
     <div id="climateChart" style="height:260px"></div>
+  </div>
+
+  <!-- 🛡️ Панель Архітектора (Ярослав) -->
+  <div id="adminPanel" style="display:none;margin-top:16px" class="card">
+    <h3><span>🛡️ Панель Архітектора (Ярослав)</span></h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <!-- Блок Привітання з Днем Народження -->
+      <div style="background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline)">
+        <div style="font-size:12px;font-weight:600;color:var(--accent-warm);margin-bottom:6px">🎂 ПРИВІТАННЯ З ДНЕМ НАРОДЖЕННЯ:</div>
+        <p style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">
+          Миттєвий запуск святкової листівки на шкатулці, світлового шоу та надсилання привітання в Telegram (навіть якщо свято вже минуло або попереду).
+        </p>
+        <button class="btn btn-cool" style="width:100%;padding:8px" onclick="triggerBirthdayCelebration()">🎉 Привітати Настю з Днем Народження!</button>
+      </div>
+
+      <!-- Блок тихого повідомлення Silent Push -->
+      <div style="background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline)">
+        <div style="font-size:12px;font-weight:600;color:var(--accent-cool);margin-bottom:6px">🤫 ТИХЕ ПОВІДОМЛЕННЯ (SILENT PUSH):</div>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <input type="text" id="silentMsgInput" placeholder="Текст без дзвіночка на екран...">
+          <button class="btn" style="padding:8px 12px" onclick="sendSilentPush()">Надіслати</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted)">
+          Виводиться в картку Inbox без звукового сигналу та без різких спалахів (якщо Настя вчиться чи спить).
+        </div>
+      </div>
+    </div>
+
+    <!-- Перегляд розкладу Google Календаря Насті -->
+    <div style="background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline);margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">📅 РОЗКЛАД НАСТІ (GOOGLE КАЛЕНДАР):</span>
+        <button class="btn" style="padding:4px 10px;font-size:11px" onclick="loadNastyaSchedule()">🔄 Оновити розклад</button>
+      </div>
+      <div id="scheduleContainer" class="mono" style="font-size:11.5px;color:var(--text-secondary);max-height:160px;overflow-y:auto">
+        Натисніть «Оновити розклад» для перегляду подій...
+      </div>
+    </div>
+
+    <!-- Системне здоров'я та бекап -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick="triggerAdminBackup()">📦 Створити та надіслати бекап БД в Telegram</button>
+      <button class="btn" onclick="loadHealthReport()">🩺 Повний звіт про здоров'я системи</button>
+    </div>
+    <div id="healthReportBox" style="margin-top:8px;font-size:11px;font-family:var(--font-mono);background:var(--bg-primary);border:1px solid var(--border-hairline);padding:10px;border-radius:6px;display:none;white-space:pre-wrap"></div>
   </div>
 </div>
 
@@ -953,6 +1001,14 @@ function triggerMorningBrief() {
     });
 }
 
+function adjustPomoInput(delta) {
+  const el = document.getElementById('pomoInput');
+  if (!el) return;
+  let val = parseInt(el.value) || 25;
+  val = Math.max(5, Math.min(120, val + delta));
+  el.value = val;
+}
+
 function startPomodoro(min) {
   fetch(`/api/v5/nastya/pomodoro/start?work_min=${min}`, { method: 'POST' })
     .then(r => r.json())
@@ -968,6 +1024,60 @@ function stopPomodoro() {
     .then(d => {
       toast('Помодоро зупинено');
       updatePomodoroUI(d);
+    });
+}
+
+function triggerBirthdayCelebration() {
+  if (!confirm('Запустити святкову листівку на шкатулці та надіслати привітання Насті в Telegram?')) return;
+  fetch('/api/v5/admin/birthday-trigger', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      toast(d.message || 'Привітання надіслано!');
+    });
+}
+
+function sendSilentPush() {
+  const txt = document.getElementById('silentMsgInput').value.trim();
+  if (!txt) return;
+  sendCmd({ msg: txt, sender: 'Ярослав', silent: true });
+  document.getElementById('silentMsgInput').value = '';
+  toast('🤫 Тихе повідомлення відправлено на екран!');
+}
+
+function loadNastyaSchedule() {
+  const box = document.getElementById('scheduleContainer');
+  box.innerText = 'Завантаження розкладу...';
+  fetch('/api/v5/admin/nastya-schedule')
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok || !d.events || d.events.length === 0) {
+        box.innerText = 'Немає запланованих подій або календар не підключено.';
+        return;
+      }
+      box.innerHTML = d.events.map(e => `<div style="margin-bottom:4px">🕒 <b>${e.start_time}</b>: ${e.summary} ${e.location ? '(' + e.location + ')' : ''}</div>`).join('');
+    })
+    .catch(() => {
+      box.innerText = 'Помилка завантаження розкладу.';
+    });
+}
+
+function triggerAdminBackup() {
+  toast('⏳ Створення бекапу...');
+  fetch('/api/v5/admin/backup', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      toast(d.message || 'Бекап виконано!');
+    });
+}
+
+function loadHealthReport() {
+  const box = document.getElementById('healthReportBox');
+  box.style.display = 'block';
+  box.innerText = 'Отримання звіту...';
+  fetch('/api/v5/admin/health-report')
+    .then(r => r.json())
+    .then(d => {
+      box.innerText = JSON.stringify(d.report, null, 2);
     });
 }
 
@@ -1142,6 +1252,18 @@ function pollState(forceFull = false){
       updatePomodoroUI(d.pomodoro);
     }
     updateGoogleUI(Boolean(d.google_calendar_linked), d.next_calendar_event);
+
+    if (d.user_role === 'admin') {
+      const ap = document.getElementById('adminPanel');
+      if (ap) ap.style.display = 'block';
+      const rb = document.getElementById('roleBadge');
+      if (rb) { rb.innerText = '🛡️ АРХІТЕКТОР (ЯРОСЛАВ)'; rb.style.color = 'var(--accent-cool)'; }
+    } else {
+      const ap = document.getElementById('adminPanel');
+      if (ap) ap.style.display = 'none';
+      const rb = document.getElementById('roleBadge');
+      if (rb) { rb.innerText = '🌸 ЗАТИШОК (НАСТЯ)'; rb.style.color = 'var(--accent-warm)'; }
+    }
 
     const ch = d.climate_history || [];
     if(ch.length > 1){

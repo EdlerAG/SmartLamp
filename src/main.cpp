@@ -150,6 +150,14 @@ void processEvents() {
         // Тактильний звуковий клік на будь-яке натискання сенсора (якщо увімкнено та не MUTE)
         audioService.playTouchClick();
 
+        // 0. Якщо активне вікно святкування Дня Народження — будь-який клік закриває оверлей
+        if (appState.sys_ui_state == SystemUiState::SYS_BIRTHDAY_CELEBRATE) {
+            appState.sys_ui_state = SystemUiState::SYS_NORMAL;
+            appState.birthday_celebrate_active = false;
+            appState.registerActivity();
+            continue;
+        }
+
         // 1. Якщо відкритий майстер Onboarding — кнопки мають специфічну навігацію
         if (appState.sys_ui_state == SystemUiState::SYS_ONBOARDING_WIZARD) {
             handleOnboardingButton(ev.type);
@@ -160,6 +168,9 @@ void processEvents() {
             case EventType::BTN_LEFT_SHORT:
                 if (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG) {
                     appState.sys_ui_state = SystemUiState::SYS_NORMAL;
+                } else if (appState.screen_mode == SCREEN_POMODORO) {
+                    // На екрані Pomodoro ліва кнопка зменшує час (-5 хв у режимі налаштування, -1 хв під час бігу)
+                    appState.pomoAdjustMinutes(appState.pomo_active ? -1 : -5);
                 } else {
                     appState.screen_mode = (appState.screen_mode + 1) % SCREEN_COUNT;
                 }
@@ -167,10 +178,15 @@ void processEvents() {
                 break;
 
             case EventType::BTN_LEFT_LONG:
-                // Довге утримання лівої кнопки відкриває/закриває сервісний екран Web Studio та діагностики
-                appState.sys_ui_state = (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG)
-                                        ? SystemUiState::SYS_NORMAL
-                                        : SystemUiState::SYS_NETWORK_DIAG;
+                if (appState.screen_mode == SCREEN_POMODORO) {
+                    // З екрана Pomodoro довгий клік перемикає на наступний екран кільця
+                    appState.screen_mode = (appState.screen_mode + 1) % SCREEN_COUNT;
+                } else {
+                    // Довге утримання лівої кнопки відкриває/закриває сервісний екран Web Studio та діагностики
+                    appState.sys_ui_state = (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG)
+                                            ? SystemUiState::SYS_NORMAL
+                                            : SystemUiState::SYS_NETWORK_DIAG;
+                }
                 appState.registerActivity();
                 break;
 
@@ -180,6 +196,9 @@ void processEvents() {
                 } else if (appState.anim_frames_count > 0) {
                     // Якщо зараз крутиться активна гіфка/наліпка — скидаємо показ за дотиком до кришки
                     appState.stopActiveMedia();
+                } else if (appState.screen_mode == SCREEN_POMODORO) {
+                    // Дотик до сенсорної кришки вмикає Старт / Паузу Pomodoro
+                    appState.pomoToggleStartPause();
                 } else if (appState.screen_mode == SCREEN_SMART_HUB && appState.tg_unread) {
                     // Дотик до кришки позначає вхідне повідомлення прочитаним
                     appState.tg_unread = false;
@@ -195,8 +214,11 @@ void processEvents() {
                 break;
 
             case EventType::BTN_TOP_LONG:
-                // Якщо світло ввімкнено — вимикаємо його; якщо вже вимкнено — тривале утримання вмикає/вимикає DND «Не турбувати»
-                if (appState.light_mode != MODE_LIGHT_OFF) {
+                if (appState.screen_mode == SCREEN_POMODORO) {
+                    // Тривалий дотик до кришки скидає таймер Pomodoro
+                    appState.pomoStop();
+                } else if (appState.light_mode != MODE_LIGHT_OFF) {
+                    // Якщо світло ввімкнено — вимикаємо його; якщо вже вимкнено — тривале утримання вмикає/вимикає DND «Не турбувати»
                     CommandRouter::togglePower(appState);
                 } else {
                     appState.setDnd(!appState.dnd_mode);
@@ -207,6 +229,9 @@ void processEvents() {
             case EventType::BTN_RIGHT_SHORT:
                 if (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG) {
                     appState.sys_ui_state = SystemUiState::SYS_NORMAL;
+                } else if (appState.screen_mode == SCREEN_POMODORO) {
+                    // На екрані Pomodoro права кнопка збільшує час (+5 хв у режимі налаштування, +1 хв під час бігу)
+                    appState.pomoAdjustMinutes(appState.pomo_active ? 1 : 5);
                 } else if (appState.screen_mode == SCREEN_LIVING_GIF) {
                     // Перемикання оверлею годинника поверх заставки
                     appState.saver_show_clock = !appState.saver_show_clock;
@@ -227,7 +252,10 @@ void processEvents() {
                 break;
 
             case EventType::BTN_RIGHT_LONG:
-                if (appState.screen_mode == SCREEN_SMART_HUB && appState.spotify.playing) {
+                if (appState.screen_mode == SCREEN_POMODORO) {
+                    // Довгий клік правої кнопки скидає Pomodoro
+                    appState.pomoStop();
+                } else if (appState.screen_mode == SCREEN_SMART_HUB && appState.spotify.playing) {
                     // Наступний трек у Spotify за довгим кліком
                     appState.cmd_spotify_action = 1;
                 } else {

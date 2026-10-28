@@ -102,6 +102,19 @@ struct AppState {
     volatile bool     cal_active            = false;
     volatile bool     quiet_hours_active    = false;
 
+    // --- POMODORO ФОКУС-ТАЙМЕР (v5.1) ---
+    volatile bool     pomo_active           = false;
+    volatile bool     pomo_paused           = false;
+    volatile uint8_t  pomo_duration_min     = 25;  // 5..90 хв (налаштовується кнопками ◄/►)
+    volatile uint32_t pomo_end_ms           = 0;
+    volatile uint32_t pomo_paused_rem_ms    = 0;
+    volatile bool     pomo_is_break         = false; // false: фокус, true: перерва
+
+    // --- ПРИВІТАННЯ З ДНЕМ НАРОДЖЕННЯ (v5.1) ---
+    volatile bool     birthday_greeted          = false;
+    volatile bool     birthday_celebrate_active = false;
+    volatile uint32_t birthday_celebrate_end_ms = 0;
+
     // Процедурні тригери синтезатора
     volatile bool     trig_touch_click      = false;
     volatile bool     trig_boot_chord       = false;
@@ -320,6 +333,73 @@ struct AppState {
             portEXIT_CRITICAL(&mux);
             ui_force_dirty = true;
         }
+    }
+
+    void pomoAdjustMinutes(int8_t delta) {
+        portENTER_CRITICAL(&mux);
+        if (!pomo_active) {
+            int16_t new_m = (int16_t)pomo_duration_min + delta;
+            pomo_duration_min = (uint8_t)constrain((int)new_m, 5, 90);
+        } else {
+            int32_t rem = (int32_t)(pomo_end_ms - millis()) + ((int32_t)delta * 60000L);
+            if (rem < 30000) rem = 30000;
+            pomo_end_ms = millis() + (uint32_t)rem;
+        }
+        portEXIT_CRITICAL(&mux);
+        ui_force_dirty = true;
+        registerActivity();
+    }
+
+    void pomoToggleStartPause() {
+        portENTER_CRITICAL(&mux);
+        uint32_t now = millis();
+        if (!pomo_active) {
+            pomo_active = true;
+            pomo_paused = false;
+            pomo_is_break = false;
+            pomo_end_ms = now + ((uint32_t)pomo_duration_min * 60000L);
+            light_mode = MODE_AMBER_EMBER;
+        } else if (pomo_paused) {
+            pomo_paused = false;
+            pomo_end_ms = now + pomo_paused_rem_ms;
+        } else {
+            pomo_paused = true;
+            pomo_paused_rem_ms = (pomo_end_ms > now) ? (pomo_end_ms - now) : 0;
+        }
+        portEXIT_CRITICAL(&mux);
+        ui_force_dirty = true;
+        registerActivity();
+    }
+
+    void pomoStop() {
+        portENTER_CRITICAL(&mux);
+        pomo_active = false;
+        pomo_paused = false;
+        pomo_is_break = false;
+        pomo_end_ms = 0;
+        pomo_paused_rem_ms = 0;
+        portEXIT_CRITICAL(&mux);
+        ui_force_dirty = true;
+        registerActivity();
+    }
+
+    uint16_t getPomoRemainingSeconds() const {
+        if (!pomo_active) return (uint16_t)pomo_duration_min * 60;
+        if (pomo_paused) return (uint16_t)(pomo_paused_rem_ms / 1000);
+        uint32_t now = millis();
+        if (now >= pomo_end_ms) return 0;
+        return (uint16_t)((pomo_end_ms - now) / 1000);
+    }
+
+    void triggerBirthdayCelebration(uint32_t duration_ms = 20000) {
+        portENTER_CRITICAL(&mux);
+        birthday_celebrate_active = true;
+        birthday_celebrate_end_ms = millis() + duration_ms;
+        sys_ui_state = SystemUiState::SYS_BIRTHDAY_CELEBRATE;
+        birthday_greeted = true;
+        portEXIT_CRITICAL(&mux);
+        ui_force_dirty = true;
+        registerActivity();
     }
 
     void triggerLedNotification(NotifyLedType type, bool show_screen_overlay = false) {

@@ -54,11 +54,19 @@ async def login_dashboard(req: LoginRequest, request: Request, response: Respons
             detail="Забагато невдалих спроб входу. Зачекайте 15 хвилин.",
         )
 
-    is_admin = secrets.compare_digest(req.password, settings.DASHBOARD_PASSWORD) or secrets.compare_digest(req.password, settings.API_KEY)
-    if is_admin:
+    # Ролі: Ярослав (admin) за API_KEY або DASHBOARD_PASSWORD; Настя (nastya) за паролем '0511'
+    role = None
+    if secrets.compare_digest(req.password, settings.API_KEY):
+        role = "admin"
+    elif secrets.compare_digest(req.password, "0511"):
+        role = "nastya"
+    elif secrets.compare_digest(req.password, settings.DASHBOARD_PASSWORD):
+        role = "admin" if settings.DASHBOARD_PASSWORD != "0511" else "nastya"
+
+    if role:
         clear_login_failures(client_ip)
         session_token = secrets.token_urlsafe(36)
-        db_service.create_session(session_token, role="admin", duration_sec=86400 * 14)
+        db_service.create_session(session_token, role=role, duration_sec=86400 * 14)
 
         is_https = request.url.scheme == "https"
         response.set_cookie(
@@ -69,7 +77,7 @@ async def login_dashboard(req: LoginRequest, request: Request, response: Respons
             max_age=86400 * 14,
             samesite="lax",
         )
-        return {"ok": True, "token": session_token, "role": "admin"}
+        return {"ok": True, "token": session_token, "role": role}
 
     record_login_failure(client_ip)
     raise HTTPException(status_code=401, detail="Невірний пароль")
@@ -85,13 +93,14 @@ async def logout_dashboard(response: Response, mb_session: Optional[str] = Cooki
 
 @router.get("/api/v1/box/state")
 @router.get("/api/v5/state")
-async def get_full_cloud_state(hours: int = 24, fast: bool = False, _: str = Depends(verify_access)):
+async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = Depends(verify_access)):
     cal_event = None
     if google_calendar_service.is_linked():
         cal_event = await google_calendar_service.get_next_event()
 
     resp = {
         "ok": True,
+        "user_role": role,
         "is_online": state_service.is_online(),
         "seconds_since_last_ping": state_service.seconds_since_seen(),
         "pending_commands": len(state_service.command_queue),
@@ -415,18 +424,44 @@ async def update_alarm(
 @router.post("/api/v5/nastya/pomodoro/start")
 async def start_pomodoro(work_min: int = Query(25, ge=5, le=120), _: str = Depends(verify_access)):
     st = nastya_routine_service.start_pomodoro(work_min)
+    state_service.enqueue_command(CommandPayload(pomo_action="start", pomo_min=work_min))
     return {"ok": True, **st}
 
 
 @router.post("/api/v5/nastya/pomodoro/stop")
 async def stop_pomodoro(_: str = Depends(verify_access)):
     st = nastya_routine_service.stop_pomodoro()
+    state_service.enqueue_command(CommandPayload(pomo_action="stop"))
     return {"ok": True, **st}
 
 
 @router.get("/api/v5/nastya/pomodoro/status")
 async def get_pomodoro(_: str = Depends(verify_access)):
     return {"ok": True, **nastya_routine_service.get_pomodoro_status()}
+
+
+@router.post("/api/v5/admin/birthday-trigger")
+async def trigger_birthday_celebration(_: str = Depends(verify_admin_access)):
+    """Адміністративне привітання Насті з Днем Народження (навіть якщо не встиг точно 5-го)."""
+    db_service.set_setting("birthday_greeted", True)
+    cmd = CommandPayload(
+        birthday_celebrate=True,
+        set_mode=4,
+        set_brt="3",
+        msg="🎂 З ДНЕМ НАРОДЖЕННЯ, НАСТЮ! ✨",
+        play_url=f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3" if settings.PUBLIC_SERVER_URL else None,
+    )
+    state_service.enqueue_command(cmd)
+
+    if settings.TG_BOT_TOKEN and state_service.girl_id:
+        from app.services.bot_service import bot_service, GIRL_KB
+        await bot_service._api("sendMessage", {
+            "chat_id": state_service.girl_id,
+            "text": "🎂 <b>З ДНЕМ НАРОДЖЕННЯ, НАСТЮ!</b> 🎉✨\n\nНехай кожен твій день буде сповнений тепла, затишку, радості та натхнення! Твоя SmartLamp поруч, щоб світити для тебе! 💖🎁",
+            "parse_mode": "HTML",
+            "reply_markup": GIRL_KB,
+        })
+    return {"ok": True, "message": "Привітання з Днем Народження успішно активовано!"}
 
 
 @router.post("/api/v5/nastya/morning-brief/trigger")

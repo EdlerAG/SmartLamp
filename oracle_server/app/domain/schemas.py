@@ -58,6 +58,10 @@ class CommandPayload(BaseModel):
     sp_action: Optional[str] = None
     spotify: Optional[Dict[str, Any]] = None
     sys_cmd: Optional[str] = Field(None, description="'reboot', 'clear_cache', 'start_ap', 'eco_sleep'")
+    birthday_celebrate: Optional[bool] = None
+    pomo_action: Optional[str] = None
+    pomo_min: Optional[int] = None
+    silent: Optional[bool] = None
 
 
 class SpotifyActionRequest(BaseModel):

@@ -818,10 +818,132 @@ namespace ScreenRenderer {
         canvas.drawString("750", 192, baseline_y - 4);
     }
 
-    // НАВІГАЦІЙНИЙ ПІДВАЛ (FOOTER NAV ДЛЯ 4 ВІКОН)
+    // ВІКНО 5: SCREEN_POMODORO (Hallmark Horology Focus Dial & Timer — 10 FPS)
+    inline void drawPomodoro(LGFX_Sprite& canvas, AppState& state, uint32_t now) {
+        drawPerimeterTicks(canvas);
+
+        uint16_t rem_sec = state.getPomoRemainingSeconds();
+        uint16_t tot_sec = (uint16_t)state.pomo_duration_min * 60;
+        float prog = (tot_sec > 0) ? ((float)rem_sec / (float)tot_sec) : 0.0f;
+        prog = constrain(prog, 0.0f, 1.0f);
+
+        // Хорологічна дуга зворотного відліку
+        uint16_t arc_col = state.pomo_is_break ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::ACCENT_WARM;
+        int deg_end = (int)(prog * 360.0f);
+        canvas.drawArc(120, 120, 108, 104, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
+        if (deg_end > 0) {
+            canvas.drawArc(120, 120, 108, 104, 270, (270 + deg_end) % 360, arc_col);
+        }
+
+        // Заголовок
+        canvas.setFont(&fonts::efontCN_12);
+        canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+        canvas.drawString("HALLMARK FOCUS DIAL", 120, 32);
+
+        // Великі цифри таймера
+        canvas.setFont(&fonts::FreeSansBold24pt7b);
+        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+        char t_buf[16];
+        uint16_t m = rem_sec / 60;
+        uint16_t s = rem_sec % 60;
+        snprintf(t_buf, sizeof(t_buf), "%02u:%02u", m, s);
+        canvas.drawString(t_buf, 120, 84);
+
+        // Статус-бейдж
+        const char* st_txt = "НАЛАШТУВАННЯ (◄/►)";
+        uint16_t badge_col = HallmarkTheme::BORDER_HAIRLINE;
+        uint16_t text_col = HallmarkTheme::TEXT_SECONDARY;
+        if (state.pomo_active) {
+            if (state.pomo_paused) {
+                st_txt = "ПАУЗА • ТОРКНИСЬ КРИШКИ";
+                badge_col = HallmarkTheme::ACCENT_COOL;
+                text_col = HallmarkTheme::ACCENT_COOL;
+            } else if (state.pomo_is_break) {
+                st_txt = "☕ ПЕРЕРВА • СМАРАГД";
+                badge_col = HallmarkTheme::ACCENT_SUCCESS;
+                text_col = HallmarkTheme::ACCENT_SUCCESS;
+            } else {
+                st_txt = "📚 ФОКУС • БУРШТИН";
+                badge_col = HallmarkTheme::ACCENT_WARM;
+                text_col = HallmarkTheme::ACCENT_WARM;
+            }
+        }
+
+        canvas.fillRoundRect(32, 114, 176, 22, 11, HallmarkTheme::BG_SURFACE);
+        canvas.drawRoundRect(32, 114, 176, 22, 11, badge_col);
+        canvas.setFont(&fonts::efontCN_12);
+        canvas.setTextColor(text_col);
+        canvas.drawString(st_txt, 120, 125);
+
+        // Капсули керування над кнопками
+        const char* l_lbl = state.pomo_active ? "◄ -1м" : "◄ -5м";
+        canvas.fillRoundRect(22, 148, 58, 22, 11, HallmarkTheme::BG_SURFACE);
+        canvas.drawRoundRect(22, 148, 58, 22, 11, HallmarkTheme::BORDER_HAIRLINE);
+        canvas.setFont(&fonts::Font0);
+        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+        canvas.drawString(l_lbl, 51, 159);
+
+        const char* t_lbl = !state.pomo_active ? "СТАРТ" : (state.pomo_paused ? "ДАЛІ" : "ПАУЗА");
+        canvas.fillRoundRect(88, 148, 64, 22, 11, HallmarkTheme::BG_SURFACE);
+        canvas.drawRoundRect(88, 148, 64, 22, 11, arc_col);
+        canvas.setTextColor(arc_col);
+        canvas.drawString(t_lbl, 120, 159);
+
+        const char* r_lbl = state.pomo_active ? "+1м ►" : "+5м ►";
+        canvas.fillRoundRect(160, 148, 58, 22, 11, HallmarkTheme::BG_SURFACE);
+        canvas.drawRoundRect(160, 148, 58, 22, 11, HallmarkTheme::BORDER_HAIRLINE);
+        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+        canvas.drawString(r_lbl, 189, 159);
+
+        canvas.setFont(&fonts::efontCN_12);
+        canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+        canvas.drawString("Утримуй ◄ для виходу", 120, 184);
+    }
+
+    // СИСТЕМНИЙ СТАН: SYS_BIRTHDAY_CELEBRATE (Святкова картка привітання Насті)
+    inline void drawBirthdayCelebrate(LGFX_Sprite& canvas, AppState& state, uint32_t now) {
+        drawPerimeterTicks(canvas);
+
+        uint8_t pulse = 180 + (int)(sinf((float)now * 0.005f) * 70.0f);
+        uint16_t gold_col = canvas.color565(pulse, (pulse * 3) / 4, pulse / 3);
+
+        canvas.drawArc(120, 120, 114, 111, 0, 360, gold_col);
+        canvas.drawArc(120, 120, 107, 106, 0, 360, HallmarkTheme::ACCENT_WARM);
+
+        canvas.fillRoundRect(22, 28, 196, 174, 14, HallmarkTheme::BG_SURFACE);
+        canvas.drawRoundRect(22, 28, 196, 174, 14, gold_col);
+
+        canvas.fillCircle(120, 52, 16, HallmarkTheme::BG_PRIMARY);
+        canvas.drawCircle(120, 52, 16, gold_col);
+        canvas.setFont(&fonts::efontCN_14);
+        canvas.setTextColor(gold_col);
+        canvas.drawString("🎂", 120, 52);
+
+        canvas.setFont(&fonts::efontCN_12);
+        canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+        canvas.drawString("З ДНЕМ НАРОДЖЕННЯ,", 120, 78);
+
+        canvas.setFont(&fonts::FreeSansBold12pt7b);
+        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+        canvas.drawString("НАСТЮ! ✨", 120, 104);
+
+        canvas.setFont(&fonts::efontCN_12);
+        canvas.setTextColor(gold_col);
+        canvas.drawString("05.11 · Твій особливий день", 120, 130);
+
+        canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+        canvas.drawString("Тепла, затишку та посмішок", 120, 150);
+
+        canvas.fillRoundRect(70, 168, 100, 24, 12, HallmarkTheme::BG_PRIMARY);
+        canvas.drawRoundRect(70, 168, 100, 24, 12, gold_col);
+        canvas.setTextColor(gold_col);
+        canvas.drawString("🪄 ДЯКУЮ", 120, 180);
+    }
+
+    // НАВІГАЦІЙНИЙ ПІДВАЛ (FOOTER NAV ДЛЯ 5 ВІКОН)
     inline void drawFooterNav(LGFX_Sprite& canvas, AppState& state) {
         for (int i = 0; i < SCREEN_COUNT; i++) {
-            int x = 102 + i * 12;
+            int x = 96 + i * 12;
             uint16_t c = (state.screen_mode == i) ? HallmarkTheme::ACCENT_WARM : HallmarkTheme::BORDER_HAIRLINE;
             canvas.fillCircle(x, 202, (state.screen_mode == i) ? 3 : 2, c);
         }
@@ -837,12 +959,17 @@ namespace ScreenRenderer {
 
         canvas.setFont(&fonts::Font0);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-        canvas.drawString("ЕКР", 82, 219);
-        canvas.drawString(state.dnd_mode ? "DND" : (state.audio_muted ? "ТИША" : "СВІТ"), 120, 219);
+        const char* l_btn = (state.screen_mode == SCREEN_POMODORO) ? (state.pomo_active ? "-1М" : "-5М") : "ЕКР";
+        canvas.drawString(l_btn, 82, 219);
+
+        const char* m_btn = (state.screen_mode == SCREEN_POMODORO) ? (!state.pomo_active ? "ПУСК" : "ПАУЗ") :
+                            (state.dnd_mode ? "DND" : (state.audio_muted ? "ТИША" : "СВІТ"));
+        canvas.drawString(m_btn, 120, 219);
 
         const char* r_lbl = "ЯСК";
         if (state.screen_mode == SCREEN_LIVING_GIF) r_lbl = "ГОД";
         else if (state.screen_mode == SCREEN_SMART_HUB) r_lbl = state.spotify.playing ? "ТРЕК" : "ДАЛІ";
+        else if (state.screen_mode == SCREEN_POMODORO) r_lbl = state.pomo_active ? "+1М" : "+5М";
         else if (state.auto_brt) r_lbl = "АВТ";
 
         canvas.drawString(r_lbl, 158, 219);

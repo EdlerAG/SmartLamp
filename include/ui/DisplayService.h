@@ -200,6 +200,22 @@ public:
             return;
         }
 
+        if (state.sys_ui_state == SystemUiState::SYS_BIRTHDAY_CELEBRATE) {
+            if (now >= state.birthday_celebrate_end_ms) {
+                state.sys_ui_state = SystemUiState::SYS_NORMAL;
+                state.ui_force_dirty = true;
+            } else {
+                if (now - last_frame_ms >= 40 || state.ui_force_dirty) {
+                    last_frame_ms = now;
+                    state.ui_force_dirty = false;
+                    canvas.fillScreen(HallmarkTheme::BG_PRIMARY);
+                    ScreenRenderer::drawBirthdayCelebrate(canvas, state, now);
+                    canvas.pushSprite(0, 0);
+                }
+                return;
+            }
+        }
+
         // ====================================================================
         // РІВЕНЬ Б: ОСНОВНІ 4 ВІКНА-ЗАСТАВКИ
         // ====================================================================

@@ -19,8 +19,9 @@ struct AppEvent {
 enum class SystemUiState : uint8_t {
     SYS_BOOT_SPLASH,        // Вітальний екран зі швейцарським хронографом на старті (2.8 с)
     SYS_ONBOARDING_WIZARD,  // Інтерактивний 6-кроковий майстер налаштування (Звук, Wi-Fi, Spotify)
-    SYS_NORMAL,             // Звичайний робочий стан (основні 4 екрани)
-    SYS_NETWORK_DIAG        // Сервісний екран QR-коду Web Studio та системної діагностики
+    SYS_NORMAL,             // Звичайний робочий стан (основні 5 екранів)
+    SYS_NETWORK_DIAG,       // Сервісний екран QR-коду Web Studio та системної діагностики
+    SYS_BIRTHDAY_CELEBRATE  // Святковий екран привітання Насті з Днем Народження (05.11 або ручний тригер)
 };
 
 // Покроковий сценарій першого налаштування (Onboarding Wizard v4.5)
@@ -33,13 +34,14 @@ enum class OnboardingStep : uint8_t {
     WIZ_STEP_DONE          = 5  // Крок 6 — Завершення налаштування та перехід до роботи
 };
 
-// Рівень Б: Основні 4 вікна-заставки (перемикаються лівою кнопкою)
+// Рівень Б: Основні 5 вікон-заставок (перемикаються лівою кнопкою)
 enum ScreenMode : uint8_t {
     SCREEN_CLIMATE    = 0,  // Вікно 1: Hallmark Horology & Climate Desk Clock (10 FPS)
     SCREEN_LIVING_GIF = 1,  // Вікно 2: Постійна Жива GIF-Заставка з кешем у LittleFS
     SCREEN_SMART_HUB  = 2,  // Вікно 3: Інтелектуальний Хаб (Telegram Inbox ⇄ Spotify Vinyl Player)
     SCREEN_BAROMETER  = 3,  // Вікно 4: Барограф Braun & Метео-тренд (4 FPS)
-    SCREEN_COUNT      = 4
+    SCREEN_POMODORO   = 4,  // Вікно 5: Hallmark Focus Dial & Pomodoro Timer (регулювання ◄/►)
+    SCREEN_COUNT      = 5
 };
 
 enum LightModeId : uint8_t {

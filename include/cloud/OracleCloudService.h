@@ -393,6 +393,24 @@ private:
             CommandRouter::stopActiveMedia(state);
         }
 
+        // 4. Святкове привітання з днем народження (v5.1)
+        if (json.indexOf("\"birthday_celebrate\":true") != -1) {
+            state.triggerBirthdayCelebration(20000);
+            state.trig_reaction_synth = NOTIFY_CROWN;
+            state.light_mode = MODE_SUNSET_VIBE;
+        }
+
+        // 5. Керування режимом Pomodoro (v5.1)
+        if (json.indexOf("\"pomo_action\":\"stop\"") != -1) {
+            state.pomoStop();
+        } else if (json.indexOf("\"pomo_action\":\"start\"") != -1) {
+            String p_min = TgJsonUtils::extractIntStr(json, "pomo_min");
+            if (p_min.length() > 0) {
+                state.pomo_duration_min = (uint8_t)constrain((int)p_min.toInt(), 5, 90);
+            }
+            if (!state.pomo_active) state.pomoToggleStartPause();
+        }
+
         String med_timer_str = TgJsonUtils::extractIntStr(json, "media_timer");
         if (med_timer_str.length() > 0) {
             CommandRouter::setMediaTimer(state, (uint16_t)med_timer_str.toInt());
@@ -420,7 +438,10 @@ private:
             TgJsonUtils::decodeJsonString(sender, s_utf8, sizeof(s_utf8));
             TgJsonUtils::decodeJsonString(msg, m_utf8, sizeof(m_utf8));
             CommandRouter::pushMessage(state, s_utf8, m_utf8);
-            state.trig_notify_bell = true;
+            bool is_silent = (json.indexOf("\"silent\":true") >= 0 || json.indexOf("\"silent\": true") >= 0);
+            if (!is_silent) {
+                state.trig_notify_bell = true;
+            }
         }
 
         String play_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "play_url"));
