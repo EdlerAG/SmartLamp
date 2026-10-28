@@ -137,6 +137,17 @@ private:
         return false;
     }
 
+    static uint32_t calculateCrc32(const uint8_t* data, size_t length) {
+        uint32_t crc = 0xFFFFFFFF;
+        for (size_t i = 0; i < length; i++) {
+            crc ^= data[i];
+            for (uint8_t j = 0; j < 8; j++) {
+                crc = (crc >> 1) ^ (0xEDB88320 & (-(int32_t)(crc & 1)));
+            }
+        }
+        return ~crc;
+    }
+
     bool downloadMbxAnimation(const String& raw_url, bool is_saver = false) {
         if (!state.psram_anim_buf || !state.wifi_connected) return false;
         String url = normalizeMediaUrl(raw_url);
@@ -196,6 +207,13 @@ private:
         if (total_read >= sizeof(MbxHeader)) {
             MbxHeader* hdr = (MbxHeader*)state.psram_anim_buf;
             if (memcmp(hdr->magic, "MBX5", 4) == 0 && hdr->num_frames > 0) {
+                // Захист від битих кадрів: перевірка контрольної суми CRC32
+                if (hdr->crc32 != 0 && total_read > sizeof(MbxHeader)) {
+                    uint32_t calc_crc = calculateCrc32(state.psram_anim_buf + sizeof(MbxHeader), total_read - sizeof(MbxHeader));
+                    if (calc_crc != hdr->crc32) {
+                        return false;
+                    }
+                }
                 uint32_t dur = (state.media_expire_ms > millis()) ? (state.media_expire_ms - millis()) : 0;
                 state.activateCustomAnimation(hdr->num_frames, hdr->fps, hdr->ambi_r, hdr->ambi_g, hdr->ambi_b, dur);
                 state.screen_mode = SCREEN_LIVING_GIF;
@@ -438,7 +456,7 @@ private:
             state.light_mode = MODE_SUNSET_VIBE;
         }
 
-        // 5. Керування режимом Pomodoro (v5.1)
+        // 5. Керування режимом Pomodoro (v5.1 - v5.3)
         if (json.indexOf("\"pomo_action\":\"stop\"") != -1) {
             state.pomoStop();
         } else if (json.indexOf("\"pomo_action\":\"start\"") != -1) {
@@ -446,12 +464,13 @@ private:
             if (p_min.length() > 0) {
                 state.pomo_duration_min = (uint8_t)constrain((int)p_min.toInt(), 5, 90);
             }
+            bool is_brk = (json.indexOf("\"pomo_break\":true") != -1);
             state.screen_mode = SCREEN_POMODORO;
             state.pomo_active = true;
             state.pomo_paused = false;
-            state.pomo_is_break = false;
+            state.pomo_is_break = is_brk;
             state.pomo_end_ms = millis() + (uint32_t)state.pomo_duration_min * 60000UL;
-            state.light_mode = MODE_AMBER_EMBER;
+            state.light_mode = is_brk ? MODE_OCEAN_BREEZE : MODE_AMBER_EMBER;
             state.ui_force_dirty = true;
         }
 
@@ -632,6 +651,8 @@ public:
             int code = http.POST((uint8_t*)status_json, strlen(status_json));
             if (code == 200) {
                 state.oracle_online = true;
+                state.last_cloud_sync_ms = millis();
+                state.cloud_sync_ok_cnt++;
                 String resp = http.getString();
                 http.end();
                 state.tls_in_flight = false;
@@ -641,11 +662,13 @@ public:
             state.oracle_online       = false;
             state.oracle_manages_bot  = false;
             state.has_more_cloud_cmds = false;
+            state.cloud_sync_err_cnt++;
             http.end();
         } else {
             state.oracle_online       = false;
             state.oracle_manages_bot  = false;
             state.has_more_cloud_cmds = false;
+            state.cloud_sync_err_cnt++;
         }
         state.tls_in_flight = false;
     }

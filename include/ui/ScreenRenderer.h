@@ -706,6 +706,11 @@ namespace ScreenRenderer {
         canvas.fillRoundRect(22, 28, 196, 148, 10, HallmarkTheme::BG_SURFACE);
         canvas.drawRoundRect(22, 28, 196, 148, 10, HallmarkTheme::BORDER_HAIRLINE);
 
+        // Індикатор актуальності хмарної синхронізації
+        uint32_t sync_age = (state.last_cloud_sync_ms > 0) ? (now - state.last_cloud_sync_ms) : 999999;
+        uint16_t sync_col = (sync_age < 15000) ? HallmarkTheme::ACCENT_SUCCESS : ((sync_age < 45000) ? HallmarkTheme::ACCENT_WARM : HallmarkTheme::ACCENT_DANGER);
+        canvas.fillCircle(34, 46, 3, sync_col);
+
         canvas.setFont(&fonts::efontCN_12);
         canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
         char s_line[64];

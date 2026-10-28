@@ -184,6 +184,7 @@ public:
                  "\"unread\":%s,\"inbox_cnt\":%u,\"oracle\":%s,"
                  "\"sp_act\":%d,\"sp_playing\":%s,"
                  "\"heap\":%lu,\"psram_free\":%lu,"
+                 "\"rst\":\"%s\","
                  "\"ack\":%s,\"ping\":%u}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
@@ -198,6 +199,7 @@ public:
                  state.oracle_online ? "true" : "false",
                  (int)sp_act, state.spotify.playing ? "true" : "false",
                  (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
+                 state.reset_reason,
                  ack_flag ? "true" : "false", ping_val);
     }
 

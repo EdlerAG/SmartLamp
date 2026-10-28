@@ -631,6 +631,19 @@ input::placeholder, textarea::placeholder {
       </div>
     </div>
 
+    <!-- ДІАГНОСТИКА ТА СИСТЕМНЕ ОБСЛУГОВУВАННЯ ШКАТУЛКИ -->
+    <div style="background:var(--bg-surface);padding:12px;border-radius:8px;border:1px solid var(--border-hairline);margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--accent-cool);margin-bottom:8px">🛠️ ДІАГНОСТИКА ТА ОБСЛУГОВУВАННЯ ШКАТУЛКИ:</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:8px;margin-bottom:8px">
+        <button class="btn btn-danger" style="padding:8px" onclick="systemAction('reboot')">🔄 Перезавантажити ESP32-S3</button>
+        <button class="btn" style="padding:8px" onclick="systemAction('clear_cache')">🧹 Очистити кеш заставки</button>
+        <button class="btn" style="padding:8px" onclick="systemAction('start_ap')">📡 Запустити Wi-Fi AP</button>
+      </div>
+      <div id="boxDiagLine" class="mono" style="font-size:11px;color:var(--text-secondary)">
+        Стан: <span id="diagStatus" style="color:var(--accent-success)">Підключено</span> | Перезапуск: <span id="diagRst" style="color:var(--accent-warm)">--</span> | Пам'ять: Heap <span id="diagHeap">--</span> KB, PSRAM <span id="diagPsram">--</span> KB
+      </div>
+    </div>
+
     <!-- Системне здоров'я та бекап -->
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn" onclick="triggerAdminBackup()">📦 Створити та надіслати бекап БД в Telegram</button>
@@ -1255,6 +1268,27 @@ function deleteCalendarEvent(id) {
     });
 }
 
+function systemAction(action) {
+  const labels = {
+    'reboot': 'перезавантажити шкатулку ESP32-S3',
+    'clear_cache': 'очистити кеш LittleFS заставки',
+    'start_ap': 'примусово увімкнути точку доступу Wi-Fi SoftAP'
+  };
+  if (!confirm(`Ви дійсно бажаєте ${labels[action] || action}?`)) return;
+  const endpoint = `/api/v5/system/${action === 'clear_cache' ? 'clear-cache' : (action === 'start_ap' ? 'start-ap' : 'reboot')}`;
+  fetch(endpoint, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        toast(`Команду «${action}» поставлено в чергу`);
+        pollState();
+      } else {
+        toast('Помилка виконання команди');
+      }
+    })
+    .catch(() => toast('Збій зв\'язку з сервером'));
+}
+
 let personaLoaded = false;
 let configLoaded = false;
 let pollTickCount = 0;
@@ -1326,6 +1360,14 @@ function pollState(forceFull = false){
       }
       if(t.dnd !== undefined){
         updateDndUI(Boolean(t.dnd));
+      }
+      if(t.heap !== undefined){
+        const dh = document.getElementById('diagHeap');
+        if(dh) dh.innerText = Math.round(t.heap / 1024);
+        const dp = document.getElementById('diagPsram');
+        if(dp) dp.innerText = Math.round((t.psram_free || 0) / 1024);
+        const dr = document.getElementById('diagRst');
+        if(dr) dr.innerText = t.rst || 'NORMAL';
       }
     }
 

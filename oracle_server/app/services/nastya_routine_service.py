@@ -160,7 +160,6 @@ class NastyaRoutineService:
         state_service.enqueue_raw({
             "pomo_action": "stop",
             "stop_media": True,
-            "set_mode": 0,
         })
         logger.info("Pomodoro stopped")
         return self.get_pomodoro_status()
@@ -180,8 +179,11 @@ class NastyaRoutineService:
                 self._pomodoro_mode = "break"
                 self._pomodoro_duration_min = 5
                 self._pomodoro_end_time = now + 300
+                rem = 300
+                pct = 0
                 state_service.enqueue_raw({
                     "pomo_action": "start",
+                    "pomo_break": True,
                     "pomo_min": "5",
                     "set_mode": 7, # Океанський спокійний бриз
                     "media_timer": 5,

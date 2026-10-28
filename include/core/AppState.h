@@ -148,6 +148,10 @@ struct AppState {
     volatile bool    oracle_manages_bot  = false;
     volatile bool    has_more_cloud_cmds = false;
     volatile bool    audio_playing       = false;
+    char             reset_reason[16]    = "UNKNOWN";
+    volatile uint32_t last_cloud_sync_ms = 0;
+    volatile uint16_t cloud_sync_ok_cnt  = 0;
+    volatile uint16_t cloud_sync_err_cnt = 0;
 
     char wifi_ssid[33]  = "Підключення...";
     char ip_address[20] = "0.0.0.0";

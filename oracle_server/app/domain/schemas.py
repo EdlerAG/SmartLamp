@@ -34,6 +34,7 @@ class BoxTelemetryPayload(BaseModel):
     ack: bool = False
     ping: int = 0  # 2..6 = натиснута фізична кнопка реакції на лампі
     sp_act: int = 0 # 1: next, 2: prev, 3: play_pause від кнопок лампи
+    rst: Optional[str] = "UNKNOWN" # Причина останнього перезапуску ESP32
 
 
 class CommandPayload(BaseModel):
@@ -66,6 +67,7 @@ class CommandPayload(BaseModel):
     birthday_celebrate: Optional[bool] = None
     pomo_action: Optional[str] = None
     pomo_min: Optional[int] = None
+    pomo_break: Optional[bool] = None
     silent: Optional[bool] = None
     dnd: Optional[bool] = None
 

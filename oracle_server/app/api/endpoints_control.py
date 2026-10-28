@@ -583,3 +583,46 @@ async def get_nastya_schedule(_: str = Depends(verify_admin_access)):
         "is_linked": google_calendar_service.is_linked(),
         "events": events,
     }
+
+
+# ====================================================================
+# ФАЗА 6: СИСТЕМНІ КОМАНДИ ТА ДІАГНОСТИКА ШКАТУЛКИ (v5.3)
+# ====================================================================
+
+@router.post("/api/v5/system/reboot")
+async def reboot_box(_: str = Depends(verify_access)):
+    """Перезавантажити ESP32-S3 через хмарну чергу."""
+    cmd = CommandPayload(sys_cmd="reboot")
+    state_service.enqueue_command(cmd)
+    logger.info("Enqueued sys_cmd: reboot")
+    return {"ok": True, "action": "reboot"}
+
+
+@router.post("/api/v5/system/clear-cache")
+async def clear_box_cache(_: str = Depends(verify_access)):
+    """Очистити кеш заставки LittleFS та скинути налаштування на шкатулці."""
+    cmd = CommandPayload(sys_cmd="clear_cache")
+    state_service.enqueue_command(cmd)
+    logger.info("Enqueued sys_cmd: clear_cache")
+    return {"ok": True, "action": "clear_cache"}
+
+
+@router.post("/api/v5/system/start-ap")
+async def start_box_ap(_: str = Depends(verify_access)):
+    """Примусово запустити точку доступу SoftAP на шкатулці для налаштування Wi-Fi."""
+    cmd = CommandPayload(sys_cmd="start_ap")
+    state_service.enqueue_command(cmd)
+    logger.info("Enqueued sys_cmd: start_ap")
+    return {"ok": True, "action": "start_ap"}
+
+
+@router.post("/api/v5/system/command")
+async def send_system_command(payload: Dict[str, str], _: str = Depends(verify_access)):
+    """Універсальний виклик системної команди: 'reboot', 'clear_cache', 'start_ap'."""
+    action = payload.get("action", "")
+    if action not in ["reboot", "clear_cache", "start_ap"]:
+        raise HTTPException(status_code=400, detail="Невідома дія системної команди")
+    cmd = CommandPayload(sys_cmd=action)
+    state_service.enqueue_command(cmd)
+    logger.info("Enqueued sys_cmd: %s", action)
+    return {"ok": True, "action": action}

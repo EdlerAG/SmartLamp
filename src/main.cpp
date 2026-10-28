@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 #include "Config.h"
 #include "core/Types.h"
 #include "core/AppState.h"
@@ -273,8 +274,25 @@ void processEvents() {
 void setup() {
     Serial.begin(115200);
 
+    // Діагностика причини перезапуску
+    esp_reset_reason_t rst = esp_reset_reason();
+    switch (rst) {
+        case ESP_RST_POWERON:   strncpy(appState.reset_reason, "POWERON", sizeof(appState.reset_reason)); break;
+        case ESP_RST_SW:        strncpy(appState.reset_reason, "SOFTWARE", sizeof(appState.reset_reason)); break;
+        case ESP_RST_PANIC:     strncpy(appState.reset_reason, "PANIC", sizeof(appState.reset_reason)); break;
+        case ESP_RST_INT_WDT:   strncpy(appState.reset_reason, "INT_WDT", sizeof(appState.reset_reason)); break;
+        case ESP_RST_TASK_WDT:  strncpy(appState.reset_reason, "TASK_WDT", sizeof(appState.reset_reason)); break;
+        case ESP_RST_BROWNOUT:  strncpy(appState.reset_reason, "BROWNOUT", sizeof(appState.reset_reason)); break;
+        case ESP_RST_DEEPSLEEP: strncpy(appState.reset_reason, "DEEPSLEEP", sizeof(appState.reset_reason)); break;
+        default:                strncpy(appState.reset_reason, "OTHER", sizeof(appState.reset_reason)); break;
+    }
+
     // Критичний фундамент безпеки: підтвердження валідності прошивки
     StandaloneOta::confirmBootValid();
+
+    // Ініціалізація Task Watchdog Timer (TWDT) на 15 секунд для захисту від підвисань
+    esp_task_wdt_init(15, true);
+    esp_task_wdt_add(NULL);
 
     // 1. Ініціалізація сховища NVS та LittleFS
     storageService.initFs();
@@ -309,6 +327,7 @@ void setup() {
 }
 
 void loop() {
+    esp_task_wdt_reset();
     core1FastServices.tickAll();
     processEvents();
 

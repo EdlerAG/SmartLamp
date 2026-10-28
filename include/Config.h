@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 namespace Config {
-    constexpr const char* FW_VERSION  = "v4.5-Hallmark";
+    constexpr const char* FW_VERSION  = "v5.3-Hallmark";
     constexpr const char* DEVICE_NAME = "magicbox";
     constexpr const char* AP_SSID     = "MagicBox-AP";
 
