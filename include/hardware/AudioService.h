@@ -226,6 +226,7 @@ private:
         synth_sample_idx += samples_to_gen;
         if (synth_sample_idx >= synth_total_samples) {
             cur_synth = SynthType::NONE;
+            i2s_zero_dma_buffer(I2S_NUM_0);
         }
     }
 

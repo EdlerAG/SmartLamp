@@ -684,6 +684,31 @@ namespace ScreenRenderer {
             return;
         }
 
+        // --- ПРІОРИТЕТ 2.5: Найближча подія Google Календаря Насті (<= 15 хв до початку) ---
+        if (state.cal_active && state.cal_is_soon && !state.tg_unread && !state.spotify.playing) {
+            drawPerimeterTicks(canvas);
+
+            canvas.fillRoundRect(22, 28, 196, 148, 10, HallmarkTheme::BG_SURFACE);
+            canvas.drawRoundRect(22, 28, 196, 148, 10, HallmarkTheme::ACCENT_AMBER);
+
+            canvas.setFont(&fonts::efontCN_12);
+            canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
+            canvas.drawString("📅 КАЛЕНДАР НАСТІ", 80, 46);
+
+            canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+            canvas.drawString(state.cal_time[0] != '\0' ? state.cal_time : "--:--", 182, 46);
+            canvas.drawFastHLine(30, 60, 180, HallmarkTheme::BORDER_HAIRLINE);
+
+            canvas.setFont(&fonts::efontCN_14);
+            canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+            canvas.drawString(state.cal_summary, 120, 96);
+
+            canvas.setFont(&fonts::efontCN_12);
+            canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
+            canvas.drawString("Скоро початок (<= 15 хв)", 120, 148);
+            return;
+        }
+
         // --- ПРІОРИТЕТ 3: Історія повідомлень (Inbox Hub — 4 FPS) ---
         drawPerimeterTicks(canvas);
 

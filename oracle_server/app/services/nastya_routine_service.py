@@ -34,6 +34,15 @@ class NastyaRoutineService:
         self._last_alarm_date: str = ""
         self._last_morning_brief_date: str = ""
 
+    @staticmethod
+    def get_kyiv_now() -> datetime.datetime:
+        """Повертає точний локальний час за Києвом, незалежно від часового поясу сервера."""
+        try:
+            from zoneinfo import ZoneInfo
+            return datetime.datetime.now(ZoneInfo("Europe/Kyiv"))
+        except Exception:
+            return datetime.datetime.now()
+
     # --- 1. ТИХІ ГОДИНИ (QUIET HOURS) ---
     def get_quiet_hours(self) -> Dict[str, Any]:
         return {
@@ -54,7 +63,7 @@ class NastyaRoutineService:
             return False
 
         try:
-            now = datetime.datetime.now()
+            now = self.get_kyiv_now()
             cur_min = now.hour * 60 + now.minute
 
             s_h, s_m = map(int, cfg["start"].split(":"))
@@ -96,7 +105,7 @@ class NastyaRoutineService:
         if not cfg["enabled"]:
             return {"active": False}
 
-        now = datetime.datetime.now()
+        now = self.get_kyiv_now()
         weekday = now.weekday()
         if weekday not in cfg["days"]:
             return {"active": False}

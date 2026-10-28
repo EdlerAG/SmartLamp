@@ -95,6 +95,13 @@ struct AppState {
     volatile bool     audio_settings_dirty  = false;
     volatile bool     dnd_mode              = false; // Режим "Не турбувати" (DND)
 
+    // --- ОСОБИСТИЙ КАЛЕНДАР НАСТІ ТА ТИХІ ГОДИНИ (v5.0) ---
+    char              cal_summary[36]       = "";
+    char              cal_time[10]          = "";
+    volatile bool     cal_is_soon           = false;
+    volatile bool     cal_active            = false;
+    volatile bool     quiet_hours_active    = false;
+
     // Процедурні тригери синтезатора
     volatile bool     trig_touch_click      = false;
     volatile bool     trig_boot_chord       = false;
@@ -277,6 +284,42 @@ struct AppState {
         audio_settings_dirty = true;
         portEXIT_CRITICAL(&mux);
         registerActivity();
+    }
+
+    void setQuietHours(bool active) {
+        if (quiet_hours_active != active) {
+            quiet_hours_active = active;
+            dnd_mode = active;
+            ui_force_dirty = true;
+        }
+    }
+
+    void setCalendarEvent(const char* summary, const char* time_val, bool is_soon) {
+        portENTER_CRITICAL(&mux);
+        if (summary) {
+            strncpy(cal_summary, summary, sizeof(cal_summary) - 1);
+            cal_summary[sizeof(cal_summary) - 1] = '\0';
+        }
+        if (time_val) {
+            strncpy(cal_time, time_val, sizeof(cal_time) - 1);
+            cal_time[sizeof(cal_time) - 1] = '\0';
+        }
+        cal_is_soon = is_soon;
+        cal_active = (cal_summary[0] != '\0');
+        portEXIT_CRITICAL(&mux);
+        ui_force_dirty = true;
+    }
+
+    void clearCalendarEvent() {
+        if (cal_active) {
+            portENTER_CRITICAL(&mux);
+            cal_summary[0] = '\0';
+            cal_time[0] = '\0';
+            cal_is_soon = false;
+            cal_active = false;
+            portEXIT_CRITICAL(&mux);
+            ui_force_dirty = true;
+        }
     }
 
     void triggerLedNotification(NotifyLedType type, bool show_screen_overlay = false) {

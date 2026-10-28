@@ -85,34 +85,41 @@ async def logout_dashboard(response: Response, mb_session: Optional[str] = Cooki
 
 @router.get("/api/v1/box/state")
 @router.get("/api/v5/state")
-async def get_full_cloud_state(hours: int = 24, _: str = Depends(verify_access)):
-    return {
+async def get_full_cloud_state(hours: int = 24, fast: bool = False, _: str = Depends(verify_access)):
+    cal_event = None
+    if google_calendar_service.is_linked():
+        cal_event = await google_calendar_service.get_next_event()
+
+    resp = {
         "ok": True,
         "is_online": state_service.is_online(),
         "seconds_since_last_ping": state_service.seconds_since_seen(),
         "pending_commands": len(state_service.command_queue),
         "telemetry": state_service.latest_telemetry,
-        "climate_history": db_service.get_climate_series(hours=hours),
         "blackout": blackout_service.get_status(),
-        "custom_media": db_service.list_custom_media(),
         "spotify": spotify_service.get_cached_state(),
-        "ai_persona": {
-            "name": state_service.ai_persona_name,
-            "prompt": state_service.ai_system_prompt,
-            "temperature": state_service.ai_temperature,
-        },
-        "tts_config": {
-            "provider": db_service.get_setting("tts_provider", settings.TTS_PROVIDER),
-            "edge_voice": db_service.get_setting("tts_edge_voice", settings.TTS_EDGE_VOICE),
-            "clone_voice_id": db_service.get_setting("voice_clone_id", settings.VOICE_CLONE_ID),
-        },
-        "voice_presets": db_service.list_voice_presets(),
         "quiet_hours": nastya_routine_service.get_quiet_hours(),
         "alarm": nastya_routine_service.get_alarm_config(),
         "pomodoro": nastya_routine_service.get_pomodoro_status(),
         "google_calendar_linked": google_calendar_service.is_linked(),
+        "next_calendar_event": cal_event,
         "resources": memory_guard.get_telemetry(),
     }
+    if not fast:
+        resp["climate_history"] = db_service.get_climate_series(hours=hours)
+        resp["custom_media"] = db_service.list_custom_media()
+        resp["voice_presets"] = db_service.list_voice_presets()
+        resp["ai_persona"] = {
+            "name": state_service.ai_persona_name,
+            "prompt": state_service.ai_system_prompt,
+            "temperature": state_service.ai_temperature,
+        }
+        resp["tts_config"] = {
+            "provider": db_service.get_setting("tts_provider", settings.TTS_PROVIDER),
+            "edge_voice": db_service.get_setting("tts_edge_voice", settings.TTS_EDGE_VOICE),
+            "clone_voice_id": db_service.get_setting("voice_clone_id", settings.VOICE_CLONE_ID),
+        }
+    return resp
 
 
 @router.post("/api/v1/box/command")
@@ -449,3 +456,14 @@ async def get_system_health(_: str = Depends(verify_admin_access)):
 async def trigger_backup_now(_: str = Depends(verify_admin_access)):
     ok = await maintenance_service.send_weekly_backup_to_admin()
     return {"ok": ok, "message": "Бекап надіслано в Telegram" if ok else "Бекап збережено локально"}
+
+
+@router.get("/api/v5/admin/nastya-schedule")
+async def get_nastya_schedule(_: str = Depends(verify_admin_access)):
+    """Перегляд розкладу Google Календаря Насті (доступно виключно для Ярослава)."""
+    events = await google_calendar_service.get_upcoming_events(max_results=15)
+    return {
+        "ok": True,
+        "is_linked": google_calendar_service.is_linked(),
+        "events": events,
+    }

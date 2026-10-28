@@ -17,11 +17,12 @@ from app.services.spotify_service import spotify_service
 from app.services.infographic_service import infographic_service
 from app.services.nastya_routine_service import nastya_routine_service
 from app.services.maintenance_service import maintenance_service
+from app.services.google_calendar_service import google_calendar_service
 
 ADMIN_KB = {
     "keyboard": [
         [{"text": "🎨 Світло & Свічка"}, {"text": "🖼 Заставка & Гіфки"}, {"text": "🎵 Spotify Плеєр"}],
-        [{"text": "🔊 Гучність & Звук"}, {"text": "📊 Інфографіка & Стан"}, {"text": "🌤 Погода & Голос ШІ"}],
+        [{"text": "🔊 Гучність & Звук"}, {"text": "📊 Інфографіка & Стан"}, {"text": "📅 Розклад Насті"}],
         [{"text": "🩺 Здоров'я Лампи"}, {"text": "📦 Бекап БД"}, {"text": "⏹ Скинути екран / Стоп Гіф"}],
     ],
     "resize_keyboard": True,
@@ -865,6 +866,37 @@ class TelegramBotService:
             ok = await maintenance_service.send_weekly_backup_to_admin()
             if not ok:
                 await self._api("sendMessage", {"chat_id": chat_id, "text": "❌ Помилка створення чи відправки бекапу."})
+            return
+
+        if (text.startswith("/schedule") or "Розклад Насті" in text or "Розклад" in text) and is_admin:
+            if not google_calendar_service.is_linked():
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "📅 Google Календар Насті ще не підключено у Web Studio.",
+                    "reply_markup": ADMIN_KB,
+                })
+                return
+
+            events = await google_calendar_service.get_upcoming_events(max_results=10)
+            if not events:
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "📅 У календарі Насті на найближчий час немає запланованих подій.",
+                    "reply_markup": ADMIN_KB,
+                })
+                return
+
+            lines = ["📅 <b>Найближчий розклад Насті:</b>\n━━━━━━━━━━━━━━━━━━"]
+            for ev in events:
+                d_str = f" ({ev['date']})" if ev.get('date') else ""
+                lines.append(f"• <b>{ev['time']}{d_str}</b> — {ev['summary']}")
+
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": "\n".join(lines),
+                "parse_mode": "HTML",
+                "reply_markup": ADMIN_KB,
+            })
             return
 
         # 7. Звичайні текстові повідомлення від Насті чи Ярослава

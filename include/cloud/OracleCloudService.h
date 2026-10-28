@@ -287,6 +287,30 @@ private:
             state.sp_linked = false;
         }
 
+        // Обробка тихих годин для Насті (v5.0)
+        if (json.indexOf("\"quiet_hours\":true") != -1) {
+            state.setQuietHours(true);
+        } else if (json.indexOf("\"quiet_hours\":false") != -1) {
+            state.setQuietHours(false);
+        }
+
+        // Обробка найближчої події Google Календаря Насті (Zero-Knowledge Smart Hub)
+        int cal_idx = json.indexOf("\"cal_event\":{");
+        if (cal_idx != -1) {
+            int cal_end = json.indexOf("}", cal_idx);
+            if (cal_end != -1) {
+                String cal_block = json.substring(cal_idx, cal_end + 1);
+                String summary = TgJsonUtils::extractString(cal_block, "summary");
+                String time_str = TgJsonUtils::extractString(cal_block, "time");
+                bool is_soon = (cal_block.indexOf("\"is_soon\":true") != -1);
+                char s_dec[36];
+                TgJsonUtils::decodeJsonString(summary, s_dec, sizeof(s_dec));
+                state.setCalendarEvent(s_dec, time_str.c_str(), is_soon);
+            }
+        } else {
+            state.clearCalendarEvent();
+        }
+
         // Обробка Spotify стану від сервера (якщо передано)
         int sp_idx = json.indexOf("\"spotify\":{");
         if (sp_idx != -1) {
@@ -461,7 +485,7 @@ public:
         sec_client.setInsecure();
         sec_client.setNoDelay(true);
         http.setConnectTimeout(2500);
-        http.setTimeout(2500);
+        http.setTimeout(9000);
         http.setReuse(true);
     }
 
@@ -507,10 +531,15 @@ public:
         char status_json[480];
         CommandRouter::buildStatusJson(state, status_json, sizeof(status_json));
 
+        String req_url = sync_endpoint;
+        if (!state.has_more_cloud_cmds && !state.audio_playing) {
+            req_url += (req_url.indexOf('?') == -1 ? "?wait=6.0" : "&wait=6.0");
+        }
+
         state.tls_in_flight = true;
-        bool begun = sync_endpoint.startsWith("https://")
-                     ? http.begin(sec_client, sync_endpoint)
-                     : http.begin(net_client, sync_endpoint);
+        bool begun = req_url.startsWith("https://")
+                     ? http.begin(sec_client, req_url)
+                     : http.begin(net_client, req_url);
 
         if (begun) {
             http.addHeader("Content-Type", "application/json");

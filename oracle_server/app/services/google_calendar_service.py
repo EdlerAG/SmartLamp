@@ -1,7 +1,8 @@
 # Файл: oracle_server/app/services/google_calendar_service.py
 import time
+import datetime
 import urllib.parse
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import httpx
 
 from app.core.config import settings
@@ -164,27 +165,86 @@ class GoogleCalendarService:
 
                 start_ts = now
                 time_display = "--:--"
-                if start_raw and "T" in start_raw:
+                if start_raw:
                     try:
-                        # Парсимо час "2026-10-28T14:30:00+02:00"
-                        time_part = start_raw.split("T")[1][:5]
-                        time_display = time_part
+                        # Обробка формату ISO 8601 (з часовим поясом або UTC Z)
+                        dt = datetime.datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+                        start_ts = dt.timestamp()
+                        time_display = dt.strftime("%H:%M")
                     except Exception:
-                        pass
+                        if "T" in str(start_raw):
+                            time_display = str(start_raw).split("T")[1][:5]
 
-                min_until = max(0, int((start_ts - now) // 60))
+                diff_sec = start_ts - now
+                min_until = int(diff_sec // 60)
 
                 self._cached_event = {
                     "summary": summary[:32],
                     "time": time_display,
                     "is_today": True,
-                    "is_soon": 0 <= min_until <= 15,
+                    "is_soon": (0 <= diff_sec <= 15 * 60),
+                    "min_until": max(0, min_until),
                 }
                 self._last_poll_time = now
                 return self._cached_event
         except Exception as e:
             logger.warning("Google Calendar fetch error: %s", e)
             return None
+
+    async def get_upcoming_events(self, max_results: int = 10) -> List[Dict[str, Any]]:
+        """
+        Отримує розклад подій для адміністратора (Ярослава).
+        Використовує збережений refresh_token Насті.
+        """
+        if not self.is_linked():
+            return []
+
+        now = time.time()
+        if not self._access_token or now >= self._token_expires_at:
+            ok = await self._refresh_access_token()
+            if not ok:
+                return []
+
+        now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+        params = {
+            "timeMin": now_iso,
+            "maxResults": str(min(50, max(1, max_results))),
+            "singleEvents": "true",
+            "orderBy": "startTime",
+        }
+        headers = {"Authorization": f"Bearer {self._access_token}"}
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                res = await client.get(self.CALENDAR_API, params=params, headers=headers)
+                if res.status_code != 200:
+                    return []
+                data = res.json()
+                items = data.get("items", [])
+                result = []
+                for item in items:
+                    summary = item.get("summary", "Без назви")
+                    start_raw = item.get("start", {}).get("dateTime") or item.get("start", {}).get("date")
+                    time_display = "--:--"
+                    date_display = ""
+                    if start_raw:
+                        try:
+                            dt = datetime.datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+                            time_display = dt.strftime("%H:%M")
+                            date_display = dt.strftime("%d.%m")
+                        except Exception:
+                            if "T" in str(start_raw):
+                                time_display = str(start_raw).split("T")[1][:5]
+                    result.append({
+                        "summary": summary,
+                        "date": date_display,
+                        "time": time_display,
+                        "start_raw": start_raw,
+                    })
+                return result
+        except Exception as e:
+            logger.warning("Error fetching upcoming calendar events: %s", e)
+            return []
 
 
 google_calendar_service = GoogleCalendarService()

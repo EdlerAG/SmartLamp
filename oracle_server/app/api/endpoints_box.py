@@ -62,6 +62,7 @@ async def sync_box(
     # Перевірка світанкового будильника для Насті
     alarm_st = nastya_routine_service.check_alarm_state()
     if alarm_st.get("active"):
+        resp["has_cmd"] = True
         if alarm_st.get("phase") == "sunrise":
             resp["set_mode"] = 2  # Бурштиновий схід
             resp["set_brt"] = str(alarm_st.get("brightness_pct", 25))

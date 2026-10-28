@@ -1025,8 +1025,14 @@ function updateGoogleUI(linked, nextEvt) {
     if (badge) { badge.innerText = '🔗 ПІДКЛЮЧЕНО (Zero-Knowledge)'; badge.style.color = 'var(--accent-success)'; }
     if (btnLogin) btnLogin.style.display = 'none';
     if (btnDisc) btnDisc.style.display = 'inline-block';
-    if (nextEvtEl && nextEvt) {
-      nextEvtEl.innerText = `📅 ${nextEvt.title} (${nextEvt.start_time || ''})`;
+    if (nextEvtEl) {
+      if (nextEvt && (nextEvt.summary || nextEvt.title)) {
+        const s = nextEvt.summary || nextEvt.title;
+        const t = nextEvt.time || nextEvt.start_time || '';
+        nextEvtEl.innerText = `📅 ${s} (${t})`;
+      } else {
+        nextEvtEl.innerText = '📅 Немає подій найближчим часом';
+      }
     }
   } else {
     if (badge) { badge.innerText = 'НЕ ПІДКЛЮЧЕНО'; badge.style.color = 'var(--text-muted)'; }
@@ -1038,8 +1044,12 @@ function updateGoogleUI(linked, nextEvt) {
 
 let personaLoaded = false;
 let configLoaded = false;
-function pollState(){
-  fetch('/api/v5/state?hours=24').then(r => {
+let pollTickCount = 0;
+function pollState(forceFull = false){
+  pollTickCount++;
+  const isFull = forceFull || (pollTickCount % 10 === 1);
+  const url = isFull ? '/api/v5/state?hours=24' : '/api/v5/state?fast=true';
+  fetch(url).then(r => {
     if(r.status === 401) {
       document.getElementById('loginModal').style.display = 'flex';
       return null;
@@ -1078,7 +1088,7 @@ function pollState(){
 
     const t = d.telemetry || {};
     if(t.t !== undefined){
-      document.getElementById('fwBadge').innerText = `${t.fw || 'v4.5'} | ${t.rssi || -60} dBm`;
+      document.getElementById('fwBadge').innerText = `${t.fw || 'v5.0'} | ${t.rssi || -60} dBm`;
       document.getElementById('kTemp').innerText = t.t.toFixed(1) + ' °C';
       document.getElementById('kHum').innerText = t.h.toFixed(0) + ' %';
       document.getElementById('kPres').innerText = `${t.p.toFixed(0)} мм (${t.p_diff>=0?'+':''}${(t.p_diff||0).toFixed(1)})`;
@@ -1119,8 +1129,8 @@ function pollState(){
       onProviderChange();
     }
 
-    renderGallery(d.custom_media || []);
-    renderVoicePresets(d.voice_presets || []);
+    if(d.custom_media) renderGallery(d.custom_media);
+    if(d.voice_presets) renderVoicePresets(d.voice_presets);
 
     if(d.quiet_hours){
       updateQuietHoursUI(d.quiet_hours.enabled, d.quiet_hours.start, d.quiet_hours.end);
