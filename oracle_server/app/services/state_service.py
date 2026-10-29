@@ -128,7 +128,7 @@ class StateService:
             })
 
         # Миттєва трансляція телеметрії у реальному часі для SSE та дашбордів
-        realtime_hub.broadcast_sse("telemetry", dump)
+        realtime_hub.emit_to_dashboards({"type": "telemetry", "telemetry": dump})
 
         return prev_seen
 
@@ -164,6 +164,7 @@ class StateService:
 
         self.command_queue.append(data)
         realtime_hub.notify_new_command()
+        realtime_hub.emit_to_dashboards({"type": "command_queued", "pending_commands": len(self.command_queue)})
         return len(self.command_queue)
 
     def pop_next_sync_response(self) -> Dict[str, Any]:

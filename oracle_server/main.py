@@ -10,7 +10,6 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import ORJSONResponse
 
 from app.core.config import settings, validate_security_keys
 from app.core.logger import logger
@@ -61,7 +60,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
 

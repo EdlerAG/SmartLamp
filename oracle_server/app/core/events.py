@@ -89,6 +89,13 @@ class RealtimeHub:
             except Exception:
                 pass
 
+    def emit_to_dashboards(self, data: Dict[str, Any]) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.broadcast_to_dashboards(data))
+        except RuntimeError:
+            pass
+
     async def broadcast_to_dashboards(self, data: Dict[str, Any]) -> None:
         # 1. Трансляція для WebSocket
         if self._dashboard_clients:

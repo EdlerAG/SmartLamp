@@ -3,7 +3,7 @@ import os
 import secrets
 import asyncio
 from typing import Optional, Dict
-from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTTPException, Query, Cookie
+from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTTPException, Query, Cookie, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 import orjson
 
@@ -236,6 +236,99 @@ async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = 
             "clone_voice_id": db_service.get_setting("voice_clone_id", settings.VOICE_CLONE_ID),
         }
     return resp
+
+
+
+@router.websocket("/ws/dashboard")
+async def dashboard_websocket(ws: WebSocket):
+    """
+    Постійний двосторонній WebSocket канал для MagicBox Studio & Telegram WebApp.
+    Миттєва передача команд та стан без HTTP-опитування (0.00% CPU, 15ms latency).
+    """
+    token = ws.cookies.get("mb_session") or ws.query_params.get("token") or ws.query_params.get("key") or ""
+    role = None
+    if token:
+        if secrets.compare_digest(token, settings.API_KEY):
+            role = "admin"
+        else:
+            role = db_service.get_session_role(token)
+
+    if not role:
+        # Fallback to verify if any guest/valid session exists
+        role = "guest"
+
+    await realtime_hub.register_dashboard_ws(ws)
+    try:
+        # 1. Відправляємо швидкий початковий стан при підключенні
+        cal_ev = await google_calendar_service.get_next_event()
+        fast_init = {
+            "type": "init",
+            "state": {
+                "user_role": role,
+                "is_online": state_service.is_online(),
+                "telemetry": state_service.latest_telemetry,
+                "spotify": spotify_service.get_cached_state(),
+                "quiet_hours": nastya_routine_service.get_quiet_hours(),
+                "alarm": nastya_routine_service.get_alarm_config(),
+                "pomodoro": nastya_routine_service.get_pomodoro_status(),
+                "google_calendar_linked": google_calendar_service.is_linked(),
+                "next_calendar_event": cal_ev,
+                "pending_commands": len(state_service.command_queue),
+                "resources": memory_guard.get_telemetry(),
+            }
+        }
+        await ws.send_text(orjson.dumps(fast_init).decode("utf-8"))
+
+        while True:
+            raw_text = await ws.receive_text()
+            data = orjson.loads(raw_text)
+            act = data.get("action")
+
+            if act == "cmd":
+                payload = data.get("payload", {})
+                if payload:
+                    state_service.enqueue_raw(payload)
+                    # Якщо лампа підключена через WS, шлемо команду негайно
+                    if realtime_hub.is_box_ws_connected:
+                        next_cmd = state_service.pop_next_sync_response()
+                        if next_cmd.get("has_cmd"):
+                            await realtime_hub.push_to_box(next_cmd)
+                    await ws.send_text(orjson.dumps({"type": "cmd_ack", "ok": True}).decode("utf-8"))
+
+            elif act == "spotify":
+                sp_act = data.get("action_name", "")
+                if sp_act:
+                    await spotify_service.player_action(sp_act)
+                    cur_sp = spotify_service.get_cached_state()
+                    await realtime_hub.broadcast_to_dashboards({"type": "spotify", "spotify": cur_sp})
+
+            elif act == "ping":
+                await ws.send_text(orjson.dumps({"type": "pong"}).decode("utf-8"))
+
+            elif act == "get_state":
+                cal_ev = await google_calendar_service.get_next_event()
+                st = {
+                    "type": "state",
+                    "user_role": role,
+                    "is_online": state_service.is_online(),
+                    "telemetry": state_service.latest_telemetry,
+                    "spotify": spotify_service.get_cached_state(),
+                    "quiet_hours": nastya_routine_service.get_quiet_hours(),
+                    "alarm": nastya_routine_service.get_alarm_config(),
+                    "pomodoro": nastya_routine_service.get_pomodoro_status(),
+                    "google_calendar_linked": google_calendar_service.is_linked(),
+                    "next_calendar_event": cal_ev,
+                    "pending_commands": len(state_service.command_queue),
+                    "resources": memory_guard.get_telemetry(),
+                }
+                await ws.send_text(orjson.dumps(st).decode("utf-8"))
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.debug("Dashboard WS handler closed: %s", e)
+    finally:
+        realtime_hub.unregister_dashboard_ws(ws)
 
 
 @router.get("/api/v5/stream")

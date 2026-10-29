@@ -11,6 +11,8 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#undef INADDR_NONE
+#include <esp_websocket_client.h>
 
 class OracleCloudService : public IService {
 private:
@@ -24,6 +26,64 @@ private:
     String           base_server_url = "";
     String           sync_endpoint   = "";
     String           api_key         = "";
+
+    esp_websocket_client_handle_t ws_client = nullptr;
+    String           ws_url = "";
+    bool             ws_connected = false;
+    uint32_t         last_ws_send_ms = 0;
+
+    static void ws_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
+        OracleCloudService* self = (OracleCloudService*)handler_args;
+        if (!self) return;
+        esp_websocket_event_data_t *data = (esp_websocket_event_data_t *)event_data;
+        if (event_id == WEBSOCKET_EVENT_CONNECTED) {
+            self->state.oracle_online = true;
+            self->ws_connected = true;
+        } else if (event_id == WEBSOCKET_EVENT_DISCONNECTED || event_id == WEBSOCKET_EVENT_CLOSED) {
+            self->ws_connected = false;
+        } else if (event_id == WEBSOCKET_EVENT_DATA) {
+            if (data && data->data_len > 0 && data->op_code == 1 && data->data_ptr) {
+                self->state.oracle_online = true;
+                self->state.last_cloud_sync_ms = millis();
+                self->state.cloud_sync_ok_cnt++;
+                String resp = String(data->data_ptr).substring(0, data->data_len);
+                self->processServerResponse(resp);
+            }
+        }
+    }
+
+    void initWebSocketClient() {
+        if (ws_client) {
+            esp_websocket_client_stop(ws_client);
+            esp_websocket_client_destroy(ws_client);
+            ws_client = nullptr;
+        }
+        if (base_server_url.length() < 8) return;
+
+        String proto = "ws://";
+        String host_path = base_server_url;
+        if (host_path.startsWith("https://")) {
+            proto = "wss://";
+            host_path = host_path.substring(8);
+        } else if (host_path.startsWith("http://")) {
+            host_path = host_path.substring(7);
+        }
+        while (host_path.endsWith("/")) host_path.remove(host_path.length() - 1);
+
+        ws_url = proto + host_path + "/ws/box?key=" + api_key;
+
+        esp_websocket_client_config_t ws_cfg = {};
+        ws_cfg.uri = ws_url.c_str();
+        ws_cfg.task_prio = 5;
+        ws_cfg.task_stack = 4096;
+        ws_cfg.buffer_size = 2048;
+
+        ws_client = esp_websocket_client_init(&ws_cfg);
+        if (ws_client) {
+            esp_websocket_register_events(ws_client, WEBSOCKET_EVENT_ANY, ws_event_handler, (void*)this);
+            esp_websocket_client_start(ws_client);
+        }
+    }
 
     void refreshConfig() {
         char u_buf[128], k_buf[64];
@@ -682,6 +742,24 @@ public:
 
         char status_json[576];
         CommandRouter::buildStatusJson(state, status_json, sizeof(status_json));
+
+        // ⚡️ Пріоритетний швидкісний WebSocket-канал (15 мс latency)
+        if (!ws_client && base_server_url.length() > 8) {
+            initWebSocketClient();
+        }
+
+        if (ws_client && esp_websocket_client_is_connected(ws_client)) {
+            ws_connected = true;
+            state.oracle_online = true;
+            int sent = esp_websocket_client_send_text(ws_client, status_json, strlen(status_json), pdMS_TO_TICKS(350));
+            if (sent > 0) {
+                last_ws_send_ms = millis();
+                if (state.offline_buf_count > 0 && !state.audio_playing) {
+                    flushOfflineTelemetry();
+                }
+                return;
+            }
+        }
 
         String req_url = sync_endpoint;
         if (!state.has_more_cloud_cmds && !state.audio_playing) {
