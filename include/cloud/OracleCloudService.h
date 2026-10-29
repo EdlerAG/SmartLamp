@@ -11,6 +11,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <ArduinoJson.h>
 #undef INADDR_NONE
 #include <esp_websocket_client.h>
 
@@ -46,8 +47,7 @@ private:
                 self->state.oracle_online = true;
                 self->state.last_cloud_sync_ms = millis();
                 self->state.cloud_sync_ok_cnt++;
-                String resp = String(data->data_ptr).substring(0, data->data_len);
-                self->processServerResponse(resp);
+                self->processServerResponse(data->data_ptr, data->data_len);
             }
         }
     }
@@ -400,195 +400,169 @@ private:
         b_http.end();
     }
 
-    void processServerResponse(const String& json) {
-        state.oracle_manages_bot  = (json.indexOf("\"bot_managed\":true") != -1);
-        state.has_more_cloud_cmds = (json.indexOf("\"has_more\":true") != -1);
+    void processServerResponse(const String& json_str) {
+        processServerResponse(json_str.c_str(), json_str.length());
+    }
+
+    void processServerResponse(const char* json_buf, size_t buf_len) {
+        if (!json_buf || buf_len < 2) return;
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, json_buf, buf_len);
+        if (err) return;
+
+        state.oracle_manages_bot  = doc["bot_managed"] | false;
+        state.has_more_cloud_cmds = doc["has_more"] | false;
 
         // Статус підключення Spotify від сервера (для майстра Onboarding та плеєра)
-        if (json.indexOf("\"sp_linked\":true") != -1) {
-            state.sp_linked = true;
-        } else if (json.indexOf("\"sp_linked\":false") != -1) {
-            state.sp_linked = false;
+        if (doc["sp_linked"].is<bool>()) {
+            state.sp_linked = doc["sp_linked"].as<bool>();
         }
 
-        // Обробка тихих годин та режиму DND для Насті (v5.0-v5.3)
-        if (json.indexOf("\"quiet_hours\":true") != -1) {
-            if (!state.quiet_hours_active) {
-                state.setQuietHours(true);
-            }
-        } else if (json.indexOf("\"quiet_hours\":false") != -1) {
-            if (state.quiet_hours_active) {
-                state.setQuietHours(false);
+        // Обробка тихих годин та режиму DND для Насті
+        if (doc["quiet_hours"].is<bool>()) {
+            bool qh = doc["quiet_hours"].as<bool>();
+            if (qh != state.quiet_hours_active) {
+                state.setQuietHours(qh);
             }
         }
 
-        if (json.indexOf("\"dnd\":true") != -1) {
-            state.dnd_mode = true;
-            state.audio_muted = true;
-        } else if (json.indexOf("\"dnd\":false") != -1) {
-            state.dnd_mode = false;
+        if (doc["dnd"].is<bool>()) {
+            bool dnd = doc["dnd"].as<bool>();
+            state.dnd_mode = dnd;
+            if (dnd) state.audio_muted = true;
         }
 
         // Обробка найближчої події Google Календаря Насті (Zero-Knowledge Smart Hub)
-        int cal_idx = json.indexOf("\"cal_event\":{");
-        if (cal_idx != -1) {
-            int cal_end = json.indexOf("}", cal_idx);
-            if (cal_end != -1) {
-                String cal_block = json.substring(cal_idx, cal_end + 1);
-                String summary = TgJsonUtils::extractString(cal_block, "summary");
-                String time_str = TgJsonUtils::extractString(cal_block, "time");
-                bool is_soon = (cal_block.indexOf("\"is_soon\":true") != -1);
-                char s_dec[36];
-                TgJsonUtils::decodeJsonString(summary, s_dec, sizeof(s_dec));
-                state.setCalendarEvent(s_dec, time_str.c_str(), is_soon);
-                if (is_soon && !state.dnd_mode && state.light_mode != MODE_LIGHT_OFF) {
-                    state.triggerLedNotification(NOTIFY_AMBILIGHT, false);
-                }
+        if (doc["cal_event"].is<JsonObject>()) {
+            JsonObject cal = doc["cal_event"];
+            const char* summary = cal["summary"] | "";
+            const char* time_str = cal["time"] | (cal["start"] | "");
+            bool is_soon = cal["is_soon"] | false;
+            char s_dec[36];
+            TgJsonUtils::decodeJsonString(summary, s_dec, sizeof(s_dec));
+            state.setCalendarEvent(s_dec, time_str, is_soon);
+            if (is_soon && !state.dnd_mode && state.light_mode != MODE_LIGHT_OFF) {
+                state.triggerLedNotification(NOTIFY_AMBILIGHT, false);
             }
-        } else {
+        } else if (doc["cal_event"].is<JsonObject>() && doc["cal_event"].isNull()) {
             state.clearCalendarEvent();
         }
 
-        // Обробка Spotify стану від сервера (якщо передано)
-        int sp_idx = json.indexOf("\"spotify\":{");
-        if (sp_idx != -1) {
-            int sp_end = json.indexOf("}", sp_idx);
-            if (sp_end != -1) {
-                String sp_block = json.substring(sp_idx, sp_end + 1);
-                bool playing = (sp_block.indexOf("\"playing\":true") != -1);
-                state.spotify.playing = playing;
+        // Обробка Spotify стану від сервера (Zero Heap Allocation)
+        if (doc["spotify"].is<JsonObject>()) {
+            JsonObject sp = doc["spotify"];
+            state.spotify.playing = sp["playing"] | false;
 
-                String tr_id = TgJsonUtils::extractString(sp_block, "track_id");
-                bool track_changed = (tr_id.length() > 0 && strcmp(state.spotify.track_id, tr_id.c_str()) != 0);
-
-                if (track_changed) {
-                    strncpy(state.spotify.track_id, tr_id.c_str(), sizeof(state.spotify.track_id) - 1);
-                    state.spotify.vinyl_ready = false;
-                    state.spotify_vinyl_needed = true;
-                }
-
-                String title = TgJsonUtils::extractString(sp_block, "title");
-                if (title.length() > 0) {
-                    TgJsonUtils::decodeJsonString(title, state.spotify.title, sizeof(state.spotify.title));
-                }
-
-                String artist = TgJsonUtils::extractString(sp_block, "artist");
-                if (artist.length() > 0) {
-                    TgJsonUtils::decodeJsonString(artist, state.spotify.artist, sizeof(state.spotify.artist));
-                }
-
-                String prog_str = TgJsonUtils::extractIntStr(sp_block, "progress_ms");
-                if (prog_str.length() > 0) state.spotify.progress_ms = (uint32_t)prog_str.toInt();
-
-                String dur_str = TgJsonUtils::extractIntStr(sp_block, "duration_ms");
-                if (dur_str.length() > 0) state.spotify.duration_ms = (uint32_t)dur_str.toInt();
-
-                int ambi_idx = sp_block.indexOf("\"ambi_rgb\":[");
-                if (ambi_idx != -1) {
-                    int c1 = sp_block.indexOf(',', ambi_idx + 12);
-                    int c2 = (c1 != -1) ? sp_block.indexOf(',', c1 + 1) : -1;
-                    int end_brk = (c2 != -1) ? sp_block.indexOf(']', c2 + 1) : -1;
-                    if (c1 != -1 && c2 != -1 && end_brk != -1) {
-                        uint8_t r = (uint8_t)sp_block.substring(ambi_idx + 12, c1).toInt();
-                        uint8_t g = (uint8_t)sp_block.substring(c1 + 1, c2).toInt();
-                        uint8_t b = (uint8_t)sp_block.substring(c2 + 1, end_brk).toInt();
-                        state.spotify.ambi_r = r;
-                        state.spotify.ambi_g = g;
-                        state.spotify.ambi_b = b;
-                        state.ambi_r = r;
-                        state.ambi_g = g;
-                        state.ambi_b = b;
-                    }
-                }
-
-                state.spotify.last_sync_ms = millis();
+            const char* tr_id = sp["track_id"] | "";
+            if (tr_id && tr_id[0] != '\0' && strcmp(state.spotify.track_id, tr_id) != 0) {
+                strncpy(state.spotify.track_id, tr_id, sizeof(state.spotify.track_id) - 1);
+                state.spotify.vinyl_ready = false;
+                state.spotify_vinyl_needed = true;
             }
+
+            const char* title = sp["title"] | "";
+            if (title && title[0] != '\0') {
+                TgJsonUtils::decodeJsonString(title, state.spotify.title, sizeof(state.spotify.title));
+            }
+
+            const char* artist = sp["artist"] | "";
+            if (artist && artist[0] != '\0') {
+                TgJsonUtils::decodeJsonString(artist, state.spotify.artist, sizeof(state.spotify.artist));
+            }
+
+            if (sp["progress_ms"].is<uint32_t>()) state.spotify.progress_ms = sp["progress_ms"].as<uint32_t>();
+            if (sp["duration_ms"].is<uint32_t>()) state.spotify.duration_ms = sp["duration_ms"].as<uint32_t>();
+
+            if (sp["ambi_rgb"].is<JsonArray>()) {
+                JsonArray rgb = sp["ambi_rgb"];
+                if (rgb.size() >= 3) {
+                    uint8_t r = rgb[0].as<uint8_t>();
+                    uint8_t g = rgb[1].as<uint8_t>();
+                    uint8_t b = rgb[2].as<uint8_t>();
+                    state.spotify.ambi_r = r; state.spotify.ambi_g = g; state.spotify.ambi_b = b;
+                    state.ambi_r = r; state.ambi_g = g; state.ambi_b = b;
+                }
+            }
+            state.spotify.last_sync_ms = millis();
         }
 
-        if (json.indexOf("\"has_cmd\":true") == -1) return;
+        if (!doc["has_cmd"].as<bool>()) return;
         state.registerNetActivity();
 
         // 1. Команди світла та яскравості
-        String mode_str = TgJsonUtils::extractIntStr(json, "set_mode");
-        if (mode_str.length() > 0) {
-            CommandRouter::setLightMode(state, (uint8_t)mode_str.toInt());
+        if (doc["set_mode"].is<int>()) {
+            CommandRouter::setLightMode(state, doc["set_mode"].as<uint8_t>());
         }
 
-        String brt_str = TgJsonUtils::extractString(json, "set_brt");
-        if (brt_str.length() > 0) {
-            if (brt_str == "auto") CommandRouter::setBrightnessPreset(state, true);
-            else CommandRouter::setBrightnessPreset(state, false, (uint8_t)brt_str.toInt());
+        if (doc["set_brt"].is<int>()) {
+            if (doc["set_brt"].is<const char*>() && strcmp(doc["set_brt"].as<const char*>(), "auto") == 0) {
+                CommandRouter::setBrightnessPreset(state, true);
+            } else {
+                CommandRouter::setBrightnessPreset(state, false, doc["set_brt"].as<uint8_t>());
+            }
         }
 
         // 2. Команди звуку: гучність, Mute, тактильні кліки
-        String vol_str = TgJsonUtils::extractIntStr(json, "volume");
-        if (vol_str.length() > 0) {
-            uint8_t v = (uint8_t)constrain((int)vol_str.toInt(), 0, 21);
+        if (doc["volume"].is<int>()) {
+            uint8_t v = (uint8_t)constrain(doc["volume"].as<int>(), 0, 21);
             CommandRouter::setVolume(state, v);
             if (storage_srv) storage_srv->saveAudioSettings(v, state.audio_muted, state.touch_beep_enabled);
         }
 
-        if (json.indexOf("\"muted\":true") != -1) {
-            CommandRouter::setMute(state, true);
-            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, true, state.touch_beep_enabled);
-        } else if (json.indexOf("\"muted\":false") != -1) {
-            CommandRouter::setMute(state, false);
-            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, false, state.touch_beep_enabled);
+        if (doc["muted"].is<bool>()) {
+            bool m = doc["muted"].as<bool>();
+            CommandRouter::setMute(state, m);
+            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, m, state.touch_beep_enabled);
         }
 
-        if (json.indexOf("\"touch_beep\":true") != -1) {
-            CommandRouter::setTouchBeep(state, true);
-            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, true);
-        } else if (json.indexOf("\"touch_beep\":false") != -1) {
-            CommandRouter::setTouchBeep(state, false);
-            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, false);
+        if (doc["touch_beep"].is<bool>()) {
+            bool tb = doc["touch_beep"].as<bool>();
+            CommandRouter::setTouchBeep(state, tb);
+            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, tb);
         }
 
-        // 3. Команди керування показом медіа: таймер та зупинка
-        if (json.indexOf("\"stop_media\":true") != -1) {
+        // 3. Команди керування показом медіа
+        if (doc["stop_media"].as<bool>()) {
             CommandRouter::stopActiveMedia(state);
         }
 
-        // 4. Святкове привітання з днем народження (v5.1)
-        if (json.indexOf("\"birthday_celebrate\":true") != -1) {
+        // 4. Святкове привітання з днем народження
+        if (doc["birthday_celebrate"].as<bool>()) {
             state.triggerBirthdayCelebration(20000);
             state.trig_reaction_synth = NOTIFY_CROWN;
             state.light_mode = MODE_SUNSET_VIBE;
         }
 
-        // 5. Керування режимом Pomodoro (v5.1 - v5.3)
-        if (json.indexOf("\"pomo_action\":\"stop\"") != -1) {
-            state.pomoStop();
-        } else if (json.indexOf("\"pomo_action\":\"start\"") != -1) {
-            String p_min = TgJsonUtils::extractIntStr(json, "pomo_min");
-            bool is_brk = (json.indexOf("\"pomo_break\":true") != -1);
-            if (is_brk) {
-                if (p_min.length() > 0) {
-                    state.pomo_break_duration_min = (uint8_t)constrain((int)p_min.toInt(), 1, 30);
+        // 5. Керування Pomodoro
+        if (doc["pomo_action"].is<const char*>()) {
+            const char* act = doc["pomo_action"] | "";
+            if (strcmp(act, "stop") == 0) {
+                state.pomoStop();
+            } else if (strcmp(act, "start") == 0) {
+                bool is_brk = doc["pomo_break"] | false;
+                int p_min = doc["pomo_min"] | (is_brk ? 5 : 25);
+                if (is_brk) {
+                    state.pomo_break_duration_min = (uint8_t)constrain(p_min, 1, 30);
+                    state.pomo_end_ms = millis() + (uint32_t)state.pomo_break_duration_min * 60000UL;
+                } else {
+                    state.pomo_duration_min = (uint8_t)constrain(p_min, 5, 90);
+                    state.pomo_end_ms = millis() + (uint32_t)state.pomo_duration_min * 60000UL;
                 }
-                state.pomo_end_ms = millis() + (uint32_t)state.pomo_break_duration_min * 60000UL;
-            } else {
-                if (p_min.length() > 0) {
-                    state.pomo_duration_min = (uint8_t)constrain((int)p_min.toInt(), 5, 90);
-                }
-                state.pomo_end_ms = millis() + (uint32_t)state.pomo_duration_min * 60000UL;
+                state.screen_mode = SCREEN_POMODORO;
+                state.pomo_active = true;
+                state.pomo_paused = false;
+                state.pomo_is_break = is_brk;
+                state.light_mode = is_brk ? MODE_OCEAN_BREEZE : MODE_AMBER_EMBER;
+                state.ui_force_dirty = true;
             }
-            state.screen_mode = SCREEN_POMODORO;
-            state.pomo_active = true;
-            state.pomo_paused = false;
-            state.pomo_is_break = is_brk;
-            state.light_mode = is_brk ? MODE_OCEAN_BREEZE : MODE_AMBER_EMBER;
-            state.ui_force_dirty = true;
         }
 
-        // 6. Системні команди обслуговування (v5.3)
-        String sys_cmd = TgJsonUtils::extractString(json, "sys_cmd");
-        if (sys_cmd.length() > 0) {
-            if (sys_cmd == "reboot") {
-                state.cmd_reboot = true;
-            } else if (sys_cmd == "start_ap") {
-                state.cmd_start_ap = true;
-            } else if (sys_cmd == "clear_cache") {
+        // 6. Системні команди
+        if (doc["sys_cmd"].is<const char*>()) {
+            const char* sys_cmd = doc["sys_cmd"] | "";
+            if (strcmp(sys_cmd, "reboot") == 0) state.cmd_reboot = true;
+            else if (strcmp(sys_cmd, "start_ap") == 0) state.cmd_start_ap = true;
+            else if (strcmp(sys_cmd, "clear_cache") == 0) {
                 state.cmd_clear_cache = true;
                 state.saver_loaded = false;
                 state.saver_num_frames = 0;
@@ -597,67 +571,63 @@ private:
             }
         }
 
-        String med_timer_str = TgJsonUtils::extractIntStr(json, "media_timer");
-        if (med_timer_str.length() > 0) {
-            CommandRouter::setMediaTimer(state, (uint16_t)med_timer_str.toInt());
+        if (doc["media_timer"].is<uint32_t>()) {
+            CommandRouter::setMediaTimer(state, doc["media_timer"].as<uint16_t>());
         }
 
-        String sleep_str = TgJsonUtils::extractIntStr(json, "sleep");
-        if (sleep_str.length() > 0) {
-            CommandRouter::setSleepTimer(state, (uint16_t)sleep_str.toInt());
+        if (doc["sleep"].is<bool>()) {
+            CommandRouter::setSleepTimer(state, doc["sleep"].as<uint16_t>());
         }
 
-        String react_str = TgJsonUtils::extractIntStr(json, "react");
-        if (react_str.length() > 0) {
-            uint8_t r = (uint8_t)react_str.toInt();
+        if (doc["react"].is<const char*>()) {
+            uint8_t r = doc["react"].as<uint8_t>();
             if (r >= NOTIFY_FIRE && r <= NOTIFY_CROWN) {
                 CommandRouter::triggerReaction(state, (NotifyLedType)r, "Oracle Cloud", "CLOUD VIBE!");
                 state.trig_reaction_synth = r;
             }
         }
 
-        String msg = TgJsonUtils::extractString(json, "msg");
-        if (msg.length() > 0) {
-            String sender = TgJsonUtils::extractString(json, "sender");
-            if (sender.length() == 0) sender = "Oracle AI";
-            char s_utf8[28], m_utf8[96];
-            TgJsonUtils::decodeJsonString(sender, s_utf8, sizeof(s_utf8));
-            TgJsonUtils::decodeJsonString(msg, m_utf8, sizeof(m_utf8));
-            CommandRouter::pushMessage(state, s_utf8, m_utf8);
-            bool is_silent = (json.indexOf("\"silent\":true") >= 0 || json.indexOf("\"silent\": true") >= 0);
-            if (!is_silent) {
-                state.trig_notify_bell = true;
+        if (doc["msg"].is<const char*>()) {
+            const char* raw_msg = doc["msg"] | "";
+            if (raw_msg && raw_msg[0] != '\0') {
+                const char* raw_sender = doc["sender"] | "Oracle AI";
+                char s_utf8[28], m_utf8[96];
+                TgJsonUtils::decodeJsonString(raw_sender, s_utf8, sizeof(s_utf8));
+                TgJsonUtils::decodeJsonString(raw_msg, m_utf8, sizeof(m_utf8));
+                CommandRouter::pushMessage(state, s_utf8, m_utf8);
+                if (!doc["silent"].as<bool>()) {
+                    state.trig_notify_bell = true;
+                }
             }
         }
 
-        String play_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "play_url"));
-        if (play_url.length() > 8) {
-            state.setPendingAudioUrl(play_url.c_str());
-        }
-        if (play_url.indexOf("alarm.mp3") != -1 || msg.indexOf("ДОБРОГО РАНКУ") != -1 || json.indexOf("\"alarm_active\":true") != -1) {
-            state.alarm_active = true;
-            state.alarm_dismissed = false;
-            state.alarm_active_until_ms = millis() + 1200000UL;
-        }
-
-        bool is_saver = (json.indexOf("\"set_saver\":true") != -1);
-        String media_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "media_url"));
-        String media_name = TgJsonUtils::extractString(json, "media_name");
-        String media_crc = TgJsonUtils::extractString(json, "media_crc");
-
-        if (media_url.length() > 8) {
-            state.setPendingMedia(media_url.c_str(), media_name.c_str(), media_crc.c_str(), is_saver);
-        } else {
-            String img_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "img_url"));
-            if (img_url.length() > 8) {
-                state.setPendingImageUrl(img_url.c_str());
+        if (doc["play_url"].is<const char*>()) {
+            String play_url = normalizeMediaUrl(doc["play_url"].as<const char*>());
+            if (play_url.length() > 8) state.setPendingAudioUrl(play_url.c_str());
+            if (play_url.indexOf("alarm.mp3") != -1 || doc["alarm_active"].as<bool>()) {
+                state.alarm_active = true;
+                state.alarm_dismissed = false;
+                state.alarm_active_until_ms = millis() + 1200000UL;
             }
         }
 
-        String ota_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "ota_url"));
-        String ota_sha = TgJsonUtils::extractString(json, "ota_sha256");
-        if (ota_url.length() > 10) {
-            state.setPendingOtaUrl(ota_url.c_str(), ota_sha.c_str());
+        bool is_saver = doc["set_saver"] | false;
+        if (doc["media_url"].is<const char*>()) {
+            String media_url = normalizeMediaUrl(doc["media_url"].as<const char*>());
+            const char* media_name = doc["media_name"] | "";
+            const char* media_crc = doc["media_crc"] | "";
+            if (media_url.length() > 8) {
+                state.setPendingMedia(media_url.c_str(), media_name, media_crc, is_saver);
+            }
+        } else if (doc["img_url"].is<const char*>()) {
+            String img_url = normalizeMediaUrl(doc["img_url"].as<const char*>());
+            if (img_url.length() > 8) state.setPendingImageUrl(img_url.c_str());
+        }
+
+        if (doc["ota_url"].is<const char*>()) {
+            String ota_url = normalizeMediaUrl(doc["ota_url"].as<const char*>());
+            const char* ota_sha = doc["ota_sha256"] | "";
+            if (ota_url.length() > 10) state.setPendingOtaUrl(ota_url.c_str(), ota_sha);
         }
     }
 
