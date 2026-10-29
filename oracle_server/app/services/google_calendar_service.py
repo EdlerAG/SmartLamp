@@ -129,6 +129,7 @@ class GoogleCalendarService:
 
     def disconnect(self) -> None:
         db_service.set_setting("google_calendar_tokens", {})
+        db_service.set_setting("google_calendar_ical_url", "")
         db_service.purge_google_calendar_events()
         self._access_token = None
         self._cached_event = None
@@ -399,14 +400,6 @@ class GoogleCalendarService:
 
         self._cached_event = None
         return True
-
-    def disconnect(self) -> None:
-        """Відключає Google Календар та очищує збережені токени / iCal посилання."""
-        db_service.delete_setting("google_calendar_tokens")
-        db_service.delete_setting("google_calendar_ical_url")
-        self._access_token = None
-        self._cached_event = None
-        logger.info("Google Calendar disconnected and events purged")
 
     async def get_upcoming_events(self, max_results: int = 15) -> List[Dict[str, Any]]:
         """Повертає об'єднаний список майбутніх подій із сортуванням за часом."""
