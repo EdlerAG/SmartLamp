@@ -252,5 +252,11 @@ class InfographicService:
 
         return png_bytes
 
+    async def generate_infographic_png(self) -> str:
+        """Асинхронний фасад для збереження та повернення шляху до PNG інфографіки."""
+        import asyncio
+        await asyncio.to_thread(self.generate_status_infographic)
+        return settings.INFOGRAPHIC_PATH
+
 
 infographic_service = InfographicService()

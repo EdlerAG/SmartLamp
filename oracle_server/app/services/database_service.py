@@ -35,8 +35,9 @@ class DatabaseService:
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute("PRAGMA synchronous=NORMAL;")
             conn.execute("PRAGMA temp_store=MEMORY;")
-            conn.execute("PRAGMA cache_size=-1500;")  # 1.5 МБ кешу
-            conn.execute("PRAGMA mmap_size=0;")
+            conn.execute("PRAGMA cache_size=-2000;")  # 2.0 МБ кешу
+            conn.execute("PRAGMA mmap_size=16777216;") # 16 МБ пам'яті під відображення для надшвидкого читання
+            conn.execute("PRAGMA busy_timeout=5000;")
             self._conn = conn
         return self._conn
 
@@ -110,6 +111,48 @@ class DatabaseService:
                 created_at FLOAT NOT NULL
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS event_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts FLOAT NOT NULL,
+                actor VARCHAR(24) NOT NULL,
+                category VARCHAR(24) NOT NULL,
+                action VARCHAR(64) NOT NULL,
+                details TEXT DEFAULT '{}'
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS box_health_history (
+                ts INTEGER PRIMARY KEY,
+                rssi INTEGER NOT NULL,
+                heap INTEGER NOT NULL,
+                psram INTEGER NOT NULL,
+                uptime INTEGER NOT NULL,
+                reset_reason INTEGER DEFAULT 0
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS telemetry_rollups (
+                date_str VARCHAR(10) PRIMARY KEY,
+                temp_min FLOAT,
+                temp_max FLOAT,
+                temp_avg FLOAT,
+                hum_avg FLOAT,
+                pres_avg FLOAT,
+                outage_count INTEGER DEFAULT 0,
+                outage_sec FLOAT DEFAULT 0,
+                pomo_sessions INTEGER DEFAULT 0,
+                reboots_count INTEGER DEFAULT 0,
+                created_at FLOAT NOT NULL
+            );
+        """)
+        # Створення високопродуктивних B-Tree індексів
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_cal_start_ts ON calendar_events(start_ts);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_outages_disc ON power_outages(disconnected_at);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_media_slot ON custom_media(reaction_slot);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_climate_ts ON climate_history(ts);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_ts ON event_log(ts);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_cat ON event_log(category, ts);")
         conn.commit()
 
     # --- СЕСІЇ ТА АВТОРИЗАЦІЯ ---
@@ -462,6 +505,168 @@ class DatabaseService:
         except Exception as e:
             logger.warning("get_next_calendar_event error: %s", e)
             return None
+
+    def purge_google_calendar_events(self) -> int:
+        """Видаляє всі події, синхронізовані з Google Calendar."""
+        try:
+            conn = self._get_conn()
+            cur = conn.execute("DELETE FROM calendar_events WHERE source = 'google'")
+            conn.commit()
+            return cur.rowcount
+        except Exception as e:
+            logger.error("purge_google_calendar_events error: %s", e)
+            return 0
+
+    # --- ЖУРНАЛ ПОДІЙ ТА АУДИТ (EVENT LOG) ---
+    def log_event(self, actor: str, category: str, action: str, details: Optional[Dict[str, Any]] = None) -> None:
+        """Записує подію до аудиторського журналу."""
+        now = time.time()
+        d_str = orjson.dumps(details or {}).decode("utf-8")
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                "INSERT INTO event_log (ts, actor, category, action, details) VALUES (?, ?, ?, ?, ?)",
+                (now, actor[:24], category[:24], action[:64], d_str),
+            )
+            # Авто-ротація логу: видаляємо старіші ніж 14 днів або зберігаємо топ 1000
+            if int(now) % 3600 < 60:
+                conn.execute(
+                    "DELETE FROM event_log WHERE id NOT IN (SELECT id FROM event_log ORDER BY id DESC LIMIT 1000)"
+                )
+            conn.commit()
+        except Exception as e:
+            logger.warning("log_event error: %s", e)
+
+    def get_recent_events(self, limit: int = 50, category: Optional[str] = None) -> List[Dict[str, Any]]:
+        try:
+            conn = self._get_conn()
+            if category:
+                rows = conn.execute(
+                    "SELECT id, ts, actor, category, action, details FROM event_log "
+                    "WHERE category = ? ORDER BY id DESC LIMIT ?",
+                    (category, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, ts, actor, category, action, details FROM event_log ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            res = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    item["details"] = orjson.loads(item.get("details", "{}"))
+                except Exception:
+                    item["details"] = {}
+                res.append(item)
+            return res
+        except Exception as e:
+            logger.warning("get_recent_events error: %s", e)
+            return []
+
+    # --- ЗДОРОВ'Я ПЛАТИ ТА АПАРАТНА ТЕЛЕМЕТРІЯ ---
+    def record_box_health(self, rssi: int, heap: int, psram: int, uptime: int, reset_reason: int = 0) -> None:
+        now_ts = int(time.time())
+        cutoff = now_ts - (7 * 86400)
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO box_health_history (ts, rssi, heap, psram, uptime, reset_reason) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (now_ts, int(rssi), int(heap), int(psram), int(uptime), int(reset_reason)),
+            )
+            if now_ts % 7200 < 300:
+                conn.execute("DELETE FROM box_health_history WHERE ts < ?", (cutoff,))
+            conn.commit()
+        except Exception as e:
+            logger.warning("record_box_health error: %s", e)
+
+    def get_box_health_series(self, hours: int = 24) -> List[Dict[str, Any]]:
+        cutoff = int(time.time()) - (hours * 3600)
+        try:
+            rows = self._get_conn().execute(
+                "SELECT ts, rssi, heap, psram, uptime, reset_reason "
+                "FROM box_health_history WHERE ts >= ? ORDER BY ts ASC",
+                (cutoff,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception as e:
+            logger.warning("get_box_health_series error: %s", e)
+            return []
+
+    # --- ДОБОВА АГРЕГАЦІЯ ТА РОЛАПИ (ROLLUPS) ---
+    def save_daily_rollup(self, date_str: str, data: Dict[str, Any]) -> None:
+        now = time.time()
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                """
+                INSERT INTO telemetry_rollups
+                (date_str, temp_min, temp_max, temp_avg, hum_avg, pres_avg, outage_count, outage_sec, pomo_sessions, reboots_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(date_str) DO UPDATE SET
+                    temp_min=excluded.temp_min,
+                    temp_max=excluded.temp_max,
+                    temp_avg=excluded.temp_avg,
+                    hum_avg=excluded.hum_avg,
+                    pres_avg=excluded.pres_avg,
+                    outage_count=excluded.outage_count,
+                    outage_sec=excluded.outage_sec,
+                    pomo_sessions=excluded.pomo_sessions,
+                    reboots_count=excluded.reboots_count,
+                    created_at=excluded.created_at
+                """,
+                (
+                    date_str,
+                    data.get("temp_min"),
+                    data.get("temp_max"),
+                    data.get("temp_avg"),
+                    data.get("hum_avg"),
+                    data.get("pres_avg"),
+                    data.get("outage_count", 0),
+                    data.get("outage_sec", 0.0),
+                    data.get("pomo_sessions", 0),
+                    data.get("reboots_count", 0),
+                    now,
+                ),
+            )
+            conn.commit()
+        except Exception as e:
+            logger.error("save_daily_rollup error: %s", e)
+
+    def get_daily_rollups(self, days: int = 14) -> List[Dict[str, Any]]:
+        try:
+            rows = self._get_conn().execute(
+                "SELECT * FROM telemetry_rollups ORDER BY date_str DESC LIMIT ?",
+                (days,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception as e:
+            logger.warning("get_daily_rollups error: %s", e)
+            return []
+
+    # --- ЧИСТЕ ПЕРЕДПОДАРУНКОВЕ СКИДАННЯ (SANDBOX PURGE) ---
+    def purge_sandbox_test_data(self) -> Dict[str, int]:
+        """
+        Повне очищення тестових даних перед подарунком:
+        - Видаляє тестові події календаря, історію клімату, блекаути, здоров'я плати та лог подій.
+        - ЗБЕРІГАЄ завантажені кастомні медіа (.mbx, MP3 звуки), пресети голосу та сесії.
+        """
+        stats = {}
+        try:
+            conn = self._get_conn()
+            stats["calendar_events"] = conn.execute("DELETE FROM calendar_events").rowcount
+            stats["climate_history"] = conn.execute("DELETE FROM climate_history").rowcount
+            stats["power_outages"] = conn.execute("DELETE FROM power_outages").rowcount
+            stats["box_health"] = conn.execute("DELETE FROM box_health_history").rowcount
+            stats["event_log"] = conn.execute("DELETE FROM event_log").rowcount
+            stats["telemetry_rollups"] = conn.execute("DELETE FROM telemetry_rollups").rowcount
+            conn.commit()
+            logger.info("Sandbox test data purged successfully: %s", stats)
+            return stats
+        except Exception as e:
+            logger.error("purge_sandbox_test_data error: %s", e)
+            return stats
 
 
 db_service = DatabaseService()

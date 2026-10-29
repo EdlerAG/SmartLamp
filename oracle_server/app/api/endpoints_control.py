@@ -118,7 +118,7 @@ async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = 
     if not fast:
         resp["climate_history"] = db_service.get_climate_series(hours=hours)
         resp["custom_media"] = db_service.list_custom_media()
-        resp["voice_presets"] = db_service.list_voice_presets()
+        resp["voice_presets"] = audio_service.list_voice_presets()
         resp["ai_persona"] = {
             "name": state_service.ai_persona_name,
             "prompt": state_service.ai_system_prompt,
@@ -249,6 +249,13 @@ async def get_spotify_state(_: str = Depends(verify_access)):
     return {"ok": True, "spotify": spotify_service.get_cached_state()}
 
 
+@router.post("/api/v5/spotify/disconnect")
+async def disconnect_spotify(_: str = Depends(verify_access)):
+    """Відключити Spotify акаунт та очистити токени/вініл."""
+    spotify_service.disconnect()
+    return {"ok": True}
+
+
 @router.post("/api/v1/audio/upload-sound")
 async def upload_custom_sound(
     request: Request,
@@ -327,16 +334,16 @@ async def configure_voice(req: VoiceConfigRequest, _: str = Depends(verify_acces
 @router.get("/api/v5/audio/presets")
 async def list_voice_presets(_: str = Depends(verify_access)):
     """Список збережених голосових пресетів."""
-    return {"ok": True, "presets": db_service.list_voice_presets()}
+    return {"ok": True, "presets": audio_service.list_voice_presets()}
 
 
 @router.post("/api/v5/audio/preset/{name}/play")
 async def play_voice_preset(name: str, request: Request, _: str = Depends(verify_access)):
     """Озвучити збережену фразу на лампі."""
-    res = await audio_service.play_voice_preset(name, str(request.base_url))
-    if not res.get("ok"):
-        raise HTTPException(status_code=404, detail=res.get("error", "Preset not found"))
-    return res
+    ok = await audio_service.play_voice_preset(name, str(request.base_url))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Пресет не знайдено або файл відсутній")
+    return {"ok": True, "played": name}
 
 
 # ====================================================================
@@ -593,6 +600,55 @@ async def get_nastya_schedule(_: str = Depends(verify_admin_access)):
         "is_linked": google_calendar_service.is_linked(),
         "events": events,
     }
+
+
+@router.post("/api/v5/admin/sandbox-reset")
+async def reset_sandbox_for_nastya(_: str = Depends(verify_admin_access)):
+    """
+    Передподарункове скидання:
+    - Відключає тестові Spotify та Google Calendar.
+    - Видаляє тестові події, клімат, блекаути та історію здоров'я плати.
+    - Встановлює TG ID Насті (1294097414).
+    - Зберігає кастомні наліпки/гіфки, звуки та налаштування AI.
+    """
+    spotify_service.disconnect()
+    google_calendar_service.disconnect()
+    purged = db_service.purge_sandbox_test_data()
+    state_service.save_auth_ids(girl_id="1294097414")
+    db_service.log_event("admin", "sandbox", "reset_to_nastya", {"purged": purged, "girl_id": "1294097414"})
+    return {
+        "ok": True,
+        "message": "Тестові сервіси відключено, тестові дані очищено. Власницею встановлено Настю (1294097414).",
+        "purged": purged,
+    }
+
+
+@router.get("/api/v5/admin/events")
+async def get_event_audit_log(
+    limit: int = Query(50, ge=1, le=200),
+    category: Optional[str] = Query(None),
+    _: str = Depends(verify_admin_access),
+):
+    """Журнал системного аудиту та дій користувачів."""
+    return {"ok": True, "events": db_service.get_recent_events(limit=limit, category=category)}
+
+
+@router.get("/api/v5/admin/box-health")
+async def get_box_health_history(
+    hours: int = Query(24, ge=1, le=168),
+    _: str = Depends(verify_admin_access),
+):
+    """Історія апаратного стану ESP32-S3 (Wi-Fi RSSI, Heap, PSRAM, ребути)."""
+    return {"ok": True, "health": db_service.get_box_health_series(hours=hours)}
+
+
+@router.get("/api/v5/admin/rollups")
+async def get_telemetry_rollups(
+    days: int = Query(14, ge=1, le=60),
+    _: str = Depends(verify_admin_access),
+):
+    """Добова агрегована статистика мікроклімату, Pomodoro та блекаутів."""
+    return {"ok": True, "rollups": db_service.get_daily_rollups(days=days)}
 
 
 # ====================================================================

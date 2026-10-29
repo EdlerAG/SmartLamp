@@ -1,6 +1,7 @@
 # Файл: oracle_server/app/api/endpoints_box.py
 import os
 import re
+from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import FileResponse, RedirectResponse
 import orjson
@@ -21,6 +22,80 @@ from app.services.google_calendar_service import google_calendar_service
 router = APIRouter(tags=["ESP32-S3 Box Gateway v5.0"])
 
 
+async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any]:
+    """Уніфікований обробник синхронізації та формування пакету для HTTP та WebSocket."""
+    # 1. Обробка команд плеєра Spotify з кнопок лампи
+    if payload.sp_act > 0:
+        if payload.sp_act == 1:
+            await spotify_service.player_action("next")
+        elif payload.sp_act == 2:
+            await spotify_service.player_action("previous")
+        elif payload.sp_act == 3:
+            cur_p = spotify_service.get_cached_state().get("playing", False)
+            await spotify_service.player_action("pause" if cur_p else "play")
+
+    # 2. Якщо лампа повідомила про скидання будильника фізичною кнопкою
+    if payload.alarm_off:
+        nastya_routine_service.dismiss_alarm()
+
+    # 3. Двостороння синхронізація режиму Pomodoro
+    has_pomo_cmd = any("pomo_action" in cmd for cmd in state_service.command_queue)
+    if not has_pomo_cmd:
+        cur_pomo = nastya_routine_service.get_pomodoro_status()
+        if payload.pomo:
+            nastya_routine_service.sync_pomodoro_from_box(
+                active=True,
+                remaining_sec=payload.pomo_rem,
+                is_break=payload.pomo_brk,
+                duration_min=payload.pomo_dur,
+            )
+        elif cur_pomo.get("active", False):
+            nastya_routine_service.sync_pomodoro_from_box(
+                active=False,
+                remaining_sec=0,
+                is_break=False,
+                duration_min=payload.pomo_dur,
+            )
+
+    # 4. Demand-driven опитування Spotify
+    sp_data = await spotify_service.get_sync_state(
+        box_screen=payload.scr,
+        box_unread=payload.unread,
+        box_led_mode=payload.m,
+    )
+
+    resp = state_service.pop_next_sync_response()
+    resp["sp_linked"] = spotify_service.is_linked()
+    if sp_data and (payload.scr == 2 or payload.m == 11):
+        resp["spotify"] = sp_data
+
+    # 5. Перевірка світанкового будильника для Насті
+    alarm_st = nastya_routine_service.check_alarm_state()
+    if alarm_st.get("active"):
+        resp["has_cmd"] = True
+        resp["alarm_active"] = True
+        if alarm_st.get("phase") == "sunrise":
+            resp["set_mode"] = 2  # Бурштиновий схід
+            ramp_pct = alarm_st.get("brightness_pct", 25)
+            p_idx = "0" if ramp_pct <= 25 else ("1" if ramp_pct <= 50 else ("2" if ramp_pct <= 75 else "3"))
+            resp["set_brt"] = p_idx
+        elif alarm_st.get("phase") == "alarm_ring":
+            resp["set_mode"] = 0  # Теплий затишок 100%
+            resp["set_brt"] = "3"
+            resp["msg"] = "ДОБРОГО РАНКУ, НАСТЮ!"
+            resp["play_url"] = f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3"
+
+    # 6. Перевірка тихих годин
+    resp["quiet_hours"] = nastya_routine_service.is_quiet_hours_now()
+
+    # 7. Перевірка найближчої події календаря Насті для Smart Hub
+    cal_ev = await google_calendar_service.get_next_event()
+    if cal_ev:
+        resp["cal_event"] = cal_ev
+
+    return resp
+
+
 @router.post("/api/v5/box/sync")
 @router.post("/api/v1/box/sync")
 async def sync_box(
@@ -33,83 +108,11 @@ async def sync_box(
     prev_seen = state_service.update_telemetry(payload)
     await blackout_service.on_box_ping(prev_seen, ack=bool(payload.ack), ping_type=payload.ping or 0)
 
-    # Обробка команд плеєра Spotify з кнопок лампи
-    if payload.sp_act > 0:
-        if payload.sp_act == 1:
-            await spotify_service.player_action("next")
-        elif payload.sp_act == 2:
-            await spotify_service.player_action("previous")
-        elif payload.sp_act == 3:
-            cur_p = spotify_service.get_cached_state().get("playing", False)
-            await spotify_service.player_action("pause" if cur_p else "play")
-
-    # Якщо лампа повідомила про скидання будильника фізичною кнопкою
-    if payload.alarm_off:
-        nastya_routine_service.dismiss_alarm()
-
-    # Двостороння синхронізація режиму Pomodoro з екрана 5 / кнопок лампи
-    # Перевіряємо, чи немає активної команди pomo_action у черзі сервера, щоб уникнути race condition
-    has_pomo_cmd = any("pomo_action" in cmd for cmd in state_service.command_queue)
-    if not has_pomo_cmd:
-        cur_pomo = nastya_routine_service.get_pomodoro_status()
-        if payload.pomo:
-            nastya_routine_service.sync_pomodoro_from_box(
-                active=True,
-                remaining_sec=payload.pomo_rem,
-                is_break=payload.pomo_brk,
-                duration_min=payload.pomo_dur,
-            )
-        elif cur_pomo.get("active", False):
-            # Шкатулка зупинила Pomodoro фізичною кнопкою
-            nastya_routine_service.sync_pomodoro_from_box(
-                active=False,
-                remaining_sec=0,
-                is_break=False,
-                duration_min=payload.pomo_dur,
-            )
-
-    # Demand-driven опитування Spotify (0.00 мс якщо не відкритий Хаб)
-    sp_data = await spotify_service.get_sync_state(
-        box_screen=payload.scr,
-        box_unread=payload.unread,
-        box_led_mode=payload.m,
-    )
-
     # Якщо черга порожня, але лампа просить Long-Poll очікування — спимо з 0% CPU до моменту кліку користувача
     if not state_service.command_queue and wait > 0:
         await realtime_hub.wait_for_command(timeout=wait)
 
-    resp = state_service.pop_next_sync_response()
-    resp["sp_linked"] = spotify_service.is_linked()
-    if sp_data and (payload.scr == 2 or payload.m == 11):
-        resp["spotify"] = sp_data
-
-    # Перевірка світанкового будильника для Насті
-    alarm_st = nastya_routine_service.check_alarm_state()
-    if alarm_st.get("active"):
-        resp["has_cmd"] = True
-        resp["alarm_active"] = True
-        if alarm_st.get("phase") == "sunrise":
-            resp["set_mode"] = 2  # Бурштиновий схід
-            ramp_pct = alarm_st.get("brightness_pct", 25)
-            # Мапимо відсотки на індекси пресетів яскравості лампи (0..3)
-            p_idx = "0" if ramp_pct <= 25 else ("1" if ramp_pct <= 50 else ("2" if ramp_pct <= 75 else "3"))
-            resp["set_brt"] = p_idx
-        elif alarm_st.get("phase") == "alarm_ring":
-            resp["set_mode"] = 0  # Теплий затишок 100%
-            resp["set_brt"] = "3"
-            resp["msg"] = "ДОБРОГО РАНКУ, НАСТЮ!"
-            resp["play_url"] = f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3"
-
-    # Перевірка тихих годин
-    resp["quiet_hours"] = nastya_routine_service.is_quiet_hours_now()
-
-    # Перевірка найближчої події календаря Насті для Smart Hub (Zero-Knowledge)
-    cal_ev = await google_calendar_service.get_next_event()
-    if cal_ev:
-        resp["cal_event"] = cal_ev
-
-    return resp
+    return await build_box_sync_response(payload)
 
 
 @router.websocket("/ws/box")
@@ -129,10 +132,8 @@ async def box_websocket_endpoint(ws: WebSocket):
             prev_seen = state_service.update_telemetry(payload)
             await blackout_service.on_box_ping(prev_seen, ack=bool(payload.ack), ping_type=payload.ping or 0)
 
-            if state_service.command_queue:
-                resp = state_service.pop_next_sync_response()
-                resp["sp_linked"] = spotify_service.is_linked()
-                await ws.send_text(orjson.dumps(resp).decode("utf-8"))
+            resp = await build_box_sync_response(payload)
+            await ws.send_text(orjson.dumps(resp).decode("utf-8"))
     except WebSocketDisconnect:
         pass
     except Exception:
@@ -197,13 +198,22 @@ async def download_ram_audio(filename: str):
     return FileResponse(path, media_type=m_type, filename=safe_fname)
 
 
-@router.get("/api/v1/media/sound/{name}.mp3")
+@router.get("/api/v1/media/sound/{name}")
 async def download_custom_sound(name: str):
-    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", name)[:24].lower()
-    path = os.path.join(settings.SOUNDS_DIR, f"{safe_name}.mp3")
+    """Роздача MP3, OGG та WAV звуків реакцій та збережених голосових пресетів."""
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "", name)[:36].lower()
+    path = os.path.join(settings.SOUNDS_DIR, safe_name)
+    if not os.path.exists(path):
+        for ext in (".mp3", ".ogg", ".wav"):
+            cand = os.path.join(settings.SOUNDS_DIR, f"{safe_name}{ext}")
+            if os.path.exists(cand):
+                path = cand
+                safe_name = f"{safe_name}{ext}"
+                break
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Sound not found")
-    return FileResponse(path, media_type="audio/mpeg", filename=f"{safe_name}.mp3")
+    m_type = "audio/ogg" if safe_name.endswith(".ogg") else ("audio/wav" if safe_name.endswith(".wav") else "audio/mpeg")
+    return FileResponse(path, media_type=m_type, filename=safe_name)
 
 
 @router.get("/api/v1/ota/latest")

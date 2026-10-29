@@ -92,9 +92,11 @@ class GoogleCalendarService:
 
     def disconnect(self) -> None:
         db_service.set_setting("google_calendar_tokens", {})
+        db_service.purge_google_calendar_events()
         self._access_token = None
         self._cached_event = None
-        logger.info("Google Calendar disconnected")
+        db_service.log_event("system", "calendar", "disconnect", {"status": "unlinked_and_purged"})
+        logger.info("Google Calendar disconnected and events purged")
 
     async def _refresh_access_token(self) -> bool:
         tokens = db_service.get_setting("google_calendar_tokens", {})

@@ -341,7 +341,8 @@ input::placeholder, textarea::placeholder {
         <button class="btn" style="padding:6px 12px" onclick="spotifyAction('previous')">⏮</button>
         <button class="btn btn-emerald" style="padding:6px 14px" id="spPlayBtn" onclick="spotifyAction('toggle')">⏯</button>
         <button class="btn" style="padding:6px 12px" onclick="spotifyAction('next')">⏭</button>
-        <button class="btn btn-cool" style="padding:6px 12px" onclick="loginSpotify()">🔗 Підключити Spotify</button>
+        <button class="btn btn-cool" style="padding:6px 12px" id="spLoginBtn" onclick="loginSpotify()">🔗 Підключити Spotify</button>
+        <button class="btn btn-danger" style="padding:6px 10px;font-size:11px;display:none" id="spDisconnectBtn" onclick="disconnectSpotify()">🔌 Відключити</button>
       </div>
     </div>
   </div>
@@ -648,6 +649,7 @@ input::placeholder, textarea::placeholder {
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn" onclick="triggerAdminBackup()">📦 Створити та надіслати бекап БД в Telegram</button>
       <button class="btn" onclick="loadHealthReport()">🩺 Повний звіт про здоров'я системи</button>
+      <button class="btn btn-danger" onclick="triggerSandboxReset()">🎁 Скинути тестові дані -> Настя (1294097414)</button>
     </div>
     <div id="healthReportBox" style="margin-top:8px;font-size:11px;font-family:var(--font-mono);background:var(--bg-primary);border:1px solid var(--border-hairline);padding:10px;border-radius:6px;display:none;white-space:pre-wrap"></div>
   </div>
@@ -922,6 +924,27 @@ function loginSpotify(){
     .then(d => {
       if(d.auth_url) window.open(d.auth_url, '_blank');
       else toast('Client ID не налаштований');
+    });
+}
+
+function disconnectSpotify(){
+  if(!confirm('Відключити Spotify акаунт?')) return;
+  fetch('/api/v5/spotify/disconnect', {method:'POST'})
+    .then(r => r.json())
+    .then(() => {
+      toast('Spotify відключено');
+      pollState();
+    });
+}
+
+function triggerSandboxReset(){
+  if(!confirm('Ви дійсно хочете виконати передподарункове скидання?\n\n• Spotify та Google Calendar буде відключено\n• Тестові події, клімат та історію буде видалено\n• Власницю буде закріплено за Настею (1294097414)')) return;
+  toast('Виконую скидання...');
+  fetch('/api/v5/admin/sandbox-reset', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      toast(d.message || 'Скидання завершено');
+      pollState();
     });
 }
 
@@ -1321,6 +1344,8 @@ function pollState(forceFull = false){
     const spArtistEl = document.getElementById('spArtist');
     const spBadgeEl = document.getElementById('spBadge');
     const spPlayBtn = document.getElementById('spPlayBtn');
+    const spLoginBtn = document.getElementById('spLoginBtn');
+    const spDisconnectBtn = document.getElementById('spDisconnectBtn');
     if(sp.title){
       spTitleEl.innerText = sp.title;
       const prog_m = Math.floor((sp.progress_ms || 0) / 60000);
@@ -1331,6 +1356,11 @@ function pollState(forceFull = false){
       spBadgeEl.innerText = sp.playing ? '▶️ PLAYING' : '⏸ PAUSED';
       spBadgeEl.style.color = sp.playing ? 'var(--accent-success)' : 'var(--text-secondary)';
       spPlayBtn.innerText = sp.playing ? '⏸ Пауза' : '▶️ Пуск';
+      if(spLoginBtn) spLoginBtn.style.display = 'none';
+      if(spDisconnectBtn) spDisconnectBtn.style.display = 'inline-block';
+    } else {
+      if(spLoginBtn) spLoginBtn.style.display = 'inline-block';
+      if(spDisconnectBtn) spDisconnectBtn.style.display = 'none';
     }
 
     const t = d.telemetry || {};

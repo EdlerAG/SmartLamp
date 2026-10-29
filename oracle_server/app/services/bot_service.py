@@ -23,6 +23,7 @@ ADMIN_KB = {
         [{"text": "💡 Освітлення"}, {"text": "⏱ Фокус Pomodoro"}, {"text": "🎵 Spotify"}],
         [{"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}, {"text": "🌙 Режим DND"}],
         [{"text": "🔊 Гучність & Звук"}, {"text": "🩺 Діагностика лампи"}, {"text": "📦 Бекап БД"}],
+        [{"text": "🎁 Скинути для Насті"}],
     ],
     "resize_keyboard": True,
 }
@@ -239,6 +240,8 @@ class TelegramBotService:
             auth_url = google_calendar_service.get_authorize_url(base_url)
             if auth_url:
                 buttons.append([{"text": "🔗 Підключити Google Календар", "url": auth_url}])
+        else:
+            buttons.append([{"text": "🔌 Відключити Google Календар", "callback_data": "cal_act:disconnect"}])
 
         return text, {"inline_keyboard": buttons}
 
@@ -345,6 +348,9 @@ class TelegramBotService:
                 [
                     {"text": "🎨 Увімкнути Spotify AmbiLight", "callback_data": "mode:11"},
                     {"text": "🔄 Оновити", "callback_data": "spotify:refresh"},
+                ],
+                [
+                    {"text": "🔌 Відключити Spotify", "callback_data": "sp_act:disconnect"},
                 ],
             ]
         }
@@ -532,18 +538,32 @@ class TelegramBotService:
                 cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🗑 Подію видалено!"})
                 await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": cal_t, "parse_mode": "HTML", "reply_markup": cal_k})
+            elif sub == "disconnect":
+                google_calendar_service.disconnect()
+                cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Google Календар відключено"})
+                await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": cal_t, "parse_mode": "HTML", "reply_markup": cal_k})
 
         elif data.startswith("sp_act:"):
             action = data.split(":")[1]
-            if action == "play_pause":
+            if action == "disconnect":
+                spotify_service.disconnect()
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Spotify відключено"})
+                sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
+                await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": sp_t, "parse_mode": "HTML", "reply_markup": sp_k})
+            elif action == "play_pause":
                 cur_p = spotify_service.get_cached_state().get("playing", False)
                 await spotify_service.player_action("pause" if cur_p else "play")
+                await asyncio.sleep(0.4)
+                sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Spotify: play/pause"})
+                await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": sp_t, "parse_mode": "HTML", "reply_markup": sp_k})
             else:
                 await spotify_service.player_action(action)
-            await asyncio.sleep(0.4)
-            sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Spotify: {action}"})
-            await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": sp_t, "parse_mode": "HTML", "reply_markup": sp_k})
+                await asyncio.sleep(0.4)
+                sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Spotify: {action}"})
+                await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": sp_t, "parse_mode": "HTML", "reply_markup": sp_k})
 
         elif data == "spotify:refresh":
             await asyncio.sleep(0.3)
@@ -617,10 +637,30 @@ class TelegramBotService:
                 "reply_markup": self._sleep_inline_kb(),
             })
 
+        elif data == "menu:infographic_get":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Генерую графік..."})
+            png_bytes = infographic_service.generate_status_infographic()
+            await self._send_photo_bytes(chat_id, png_bytes, caption="📊 Мікроклімат за останні 24 години.")
+
     async def _handle_message(self, msg: Dict[str, Any]) -> None:
         chat_id = str((msg.get("chat") or {}).get("id", ""))
         sender = (msg.get("from") or {}).get("first_name", "Telegram")
         text = (msg.get("text") or msg.get("caption") or "").strip()
+
+        # Авторизація через Deep-Link або прямий ID Насті (1294097414)
+        if text.startswith("/start"):
+            args = text.split(maxsplit=1)
+            token = args[1] if len(args) > 1 else ""
+            if token.startswith("box_link_") or token.startswith("link_") or chat_id == "1294097414":
+                state_service.save_auth_ids(girl_id=chat_id)
+                db_service.log_event("user", "auth", "bind_girl_deeplink", {"chat_id": chat_id, "token": token})
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "✨ <b>Привіт, Настю!</b> 💖\n\nТвоя розумна шкатулка SmartLamp успішно підключена до цього чату!\nТут ти можеш вмикати затишні режими світла, запускати сесії фокусу Pomodoro, дивитися мікроклімат кімнати та керувати музикою Spotify.",
+                    "parse_mode": "HTML",
+                    "reply_markup": GIRL_KB,
+                })
+                return
 
         # Авторизація ролей
         if text.lower() == "/iam_admin":
@@ -631,9 +671,11 @@ class TelegramBotService:
                 await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Адміністратор вже зареєстрований."})
             return
 
-        if text.lower() in ("/iam_nastia", "/iam_girl"):
-            if not state_service.girl_id or chat_id in (state_service.girl_id, state_service.admin_id):
+        if text.lower() in ("/iam_nastia", "/iam_girl") or chat_id == "1294097414":
+            # Дозволяємо переприв'язку якщо запитує адмін, або поточна Настя, або якщо ще не налаштовано
+            if not state_service.girl_id or chat_id in (state_service.girl_id, state_service.admin_id, "1294097414"):
                 state_service.save_auth_ids(girl_id=chat_id)
+                db_service.log_event("user", "auth", "bind_girl", {"chat_id": chat_id})
                 await self._api("sendMessage", {
                     "chat_id": chat_id,
                     "text": "✅ Вітаю, Настю! Пульт керування SmartLamp активовано.",
@@ -645,6 +687,44 @@ class TelegramBotService:
 
         is_admin = (chat_id == state_service.admin_id)
         is_girl = (chat_id == state_service.girl_id)
+
+        # Адміністративне керування передподарунковим скиданням та ID Насті
+        if is_admin:
+            if text.startswith("/set_girl"):
+                parts = text.split()
+                new_id = parts[1] if len(parts) > 1 else "1294097414"
+                state_service.save_auth_ids(girl_id=new_id)
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": f"👑 TG ID власниці (Насті) встановлено: <code>{new_id}</code>",
+                    "parse_mode": "HTML",
+                    "reply_markup": ADMIN_KB,
+                })
+                return
+
+            if text.startswith("/sandbox_reset") or "Скинути для Насті" in text:
+                spotify_service.disconnect()
+                google_calendar_service.disconnect()
+                purged = db_service.purge_sandbox_test_data()
+                state_service.save_auth_ids(girl_id="1294097414")
+                db_service.log_event("admin", "sandbox", "reset_to_nastya", {"purged": purged, "girl_id": "1294097414"})
+                rep_msg = (
+                    "🎁 <b>ПЕРЕДПОДАРУНКОВЕ СКИДАННЯ ВИКОНАНО!</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    "• Тестовий Spotify та Google Calendar відключено 🔌\n"
+                    f"• Очищено: події календаря ({purged.get('calendar_events', 0)}), "
+                    f"клімат ({purged.get('climate_history', 0)}), "
+                    f"блекаути ({purged.get('power_outages', 0)})\n"
+                    "• Збережено: кастомні .mbx гіфки, звуки та налаштування AI\n"
+                    "• TG ID власниці закріплено за Настею: <b>1294097414</b>"
+                )
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": rep_msg,
+                    "parse_mode": "HTML",
+                    "reply_markup": ADMIN_KB,
+                })
+                return
 
         if not is_admin and not is_girl:
             await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Доступ обмежено. Приватна система SmartLamp."})

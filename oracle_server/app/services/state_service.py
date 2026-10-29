@@ -29,6 +29,8 @@ class StateService:
         "last_seen",
         "latest_telemetry",
         "last_history_sample",
+        "last_health_sample",
+        "last_known_rst",
         "command_queue",
         "admin_id",
         "girl_id",
@@ -48,6 +50,8 @@ class StateService:
         self.last_seen: float = 0.0
         self.latest_telemetry: Dict[str, Any] = {}
         self.last_history_sample: float = 0.0
+        self.last_health_sample: float = 0.0
+        self.last_known_rst: str = ""
         self.command_queue: Deque[Dict[str, Any]] = deque(maxlen=32)
 
         self.admin_id: str = db_service.get_setting("admin_id", settings.TG_ADMIN_ID) or settings.TG_ADMIN_ID
@@ -99,6 +103,29 @@ class StateService:
         if now - self.last_history_sample >= 300.0:
             self.last_history_sample = now
             db_service.add_climate_sample(payload.t, payload.h, payload.p, payload.l)
+
+        # Фіксація апаратного здоров'я плати кожні 15 хвилин
+        if now - self.last_health_sample >= 900.0:
+            self.last_health_sample = now
+            db_service.record_box_health(
+                rssi=payload.rssi,
+                heap=payload.heap,
+                psram=payload.psram_free,
+                uptime=0,
+                reset_reason=0,
+            )
+
+        # Аудит перезавантажень плати (ESP32 Reset Reason)
+        rst = (payload.rst or "").strip()
+        if rst and rst != "UNKNOWN" and rst != self.last_known_rst:
+            self.last_known_rst = rst
+            db_service.log_event("esp32", "boot", "reset", {
+                "reason": rst,
+                "fw": payload.fw,
+                "heap": payload.heap,
+                "psram": payload.psram_free,
+                "rssi": payload.rssi,
+            })
 
         return prev_seen
 

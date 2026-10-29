@@ -2,7 +2,7 @@
 import os
 import sqlite3
 import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import httpx
 
 from app.core.config import settings
@@ -130,6 +130,55 @@ class MaintenanceService:
                 "total_outage_time_min": int(total_outage_sec // 60),
             },
         }
+
+
+    def calculate_and_save_daily_rollup(self, target_date: Optional[datetime.date] = None) -> None:
+        """Розраховує добові підсумки (Rollup) для клімату, блекаутів та ребутів."""
+        if target_date is None:
+            target_date = datetime.date.today()
+        date_str = target_date.strftime("%Y-%m-%d")
+
+        start_dt = datetime.datetime.combine(target_date, datetime.time.min)
+        end_dt = datetime.datetime.combine(target_date, datetime.time.max)
+        start_ts = int(start_dt.timestamp())
+        end_ts = int(end_dt.timestamp())
+
+        try:
+            conn = db_service._get_conn()
+            # 1. Клімат за добу
+            clim = conn.execute(
+                "SELECT MIN(temp) as min_t, MAX(temp) as max_t, AVG(temp) as avg_t, "
+                "AVG(hum) as avg_h, AVG(pres) as avg_p FROM climate_history "
+                "WHERE ts >= ? AND ts <= ?",
+                (start_ts, end_ts),
+            ).fetchone()
+
+            # 2. Відключення світла за добу
+            outg = conn.execute(
+                "SELECT COUNT(*) as cnt, COALESCE(SUM(duration_sec), 0) as sec "
+                "FROM power_outages WHERE disconnected_at >= ? AND disconnected_at <= ?",
+                (start_ts, end_ts),
+            ).fetchone()
+
+            # 3. Ребути плати за добу
+            reboots = conn.execute(
+                "SELECT COUNT(*) as cnt FROM event_log WHERE category = 'boot' AND ts >= ? AND ts <= ?",
+                (float(start_ts), float(end_ts)),
+            ).fetchone()
+
+            rollup_data = {
+                "temp_min": round(clim["min_t"], 1) if clim and clim["min_t"] is not None else None,
+                "temp_max": round(clim["max_t"], 1) if clim and clim["max_t"] is not None else None,
+                "temp_avg": round(clim["avg_t"], 1) if clim and clim["avg_t"] is not None else None,
+                "hum_avg": round(clim["avg_h"], 0) if clim and clim["avg_h"] is not None else None,
+                "pres_avg": round(clim["avg_p"], 1) if clim and clim["avg_p"] is not None else None,
+                "outage_count": outg["cnt"] if outg else 0,
+                "outage_sec": round(outg["sec"], 1) if outg else 0.0,
+                "reboots_count": reboots["cnt"] if reboots else 0,
+            }
+            db_service.save_daily_rollup(date_str, rollup_data)
+        except Exception as e:
+            logger.warning("calculate_and_save_daily_rollup error: %s", e)
 
 
 maintenance_service = MaintenanceService()

@@ -45,7 +45,7 @@ class Settings:
     # Telegram
     TG_BOT_TOKEN: str = os.getenv("TG_BOT_TOKEN", "")
     TG_ADMIN_ID: str = os.getenv("TG_ADMIN_ID", "")
-    TG_GIRL_ID: str = os.getenv("TG_GIRL_ID", "")
+    TG_GIRL_ID: str = os.getenv("TG_GIRL_ID", "1294097414")
     SERVER_MANAGES_BOT: bool = os.getenv("SERVER_MANAGES_BOT", "true").lower() == "true"
 
     # Spotify OAuth2 та Vinyl Hub (v4.5)

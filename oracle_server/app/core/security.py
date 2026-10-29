@@ -59,13 +59,17 @@ async def verify_access(
     if role:
         return role
 
-    # 2. Пряма перевірка апаратного ключа плати
-    if secrets.compare_digest(token, settings.API_KEY):
-        return "device"
-
-    # 3. Пряма перевірка пароля панелі адміністратора
+    # 2. Пряма перевірка пароля панелі адміністратора
     if secrets.compare_digest(token, settings.DASHBOARD_PASSWORD):
         return "admin"
+
+    # 3. Якщо запит надійшов із заголовком Authorization: Bearer <API_KEY> (адміністративний API-доступ)
+    if bearer_token and secrets.compare_digest(bearer_token, settings.API_KEY):
+        return "admin"
+
+    # 4. Пряма перевірка апаратного ключа плати
+    if secrets.compare_digest(token, settings.API_KEY):
+        return "device"
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

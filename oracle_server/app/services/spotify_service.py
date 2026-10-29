@@ -1,4 +1,5 @@
 import io
+import os
 import time
 import base64
 import urllib.parse
@@ -77,6 +78,28 @@ class SpotifyService:
     def is_linked(self) -> bool:
         refresh_tok = db_service.get_setting("spotify_refresh_token", "")
         return bool(refresh_tok and settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CLIENT_SECRET)
+
+    def disconnect(self) -> None:
+        """Повністю відв'язує Spotify-акаунт та очищує кеш."""
+        db_service.set_setting("spotify_refresh_token", "")
+        self._access_token = None
+        self._token_expires_at = 0.0
+        self._last_track_id = ""
+        self._cached_state = {
+            "playing": False,
+            "title": "",
+            "artist": "",
+            "track_id": "",
+            "progress_ms": 0,
+            "duration_ms": 0,
+            "ambi_rgb": [56, 189, 248],
+        }
+        if os.path.exists(settings.SPOTIFY_VINYL_PATH):
+            try:
+                os.remove(settings.SPOTIFY_VINYL_PATH)
+            except OSError:
+                pass
+        db_service.log_event("system", "spotify", "disconnect", {"status": "unlinked"})
 
     async def handle_callback(self, code: str, base_url: str = "") -> bool:
         if not settings.SPOTIFY_CLIENT_ID or not settings.SPOTIFY_CLIENT_SECRET:
