@@ -29,7 +29,7 @@ ADMIN_KB = {
         ],
         [{"text": "🎵 Spotify"}, {"text": "⏱ Фокус Pomodoro"}, {"text": "📊 Клімат кімнати"}],
         [{"text": "📅 Календар & Розклад"}, {"text": "🌙 Режим DND"}, {"text": "🔊 Гучність & Звук"}],
-        [{"text": "🖼 Екран & Заставка"}, {"text": "🩺 Діагностика лампи"}, {"text": "📌 Інструкція"}],
+        [{"text": "🩺 Діагностика лампи"}, {"text": "🔄 Оновити сервер"}, {"text": "📌 Інструкція"}],
     ],
     "resize_keyboard": True,
 }
@@ -1428,7 +1428,6 @@ class TelegramBotService:
 
         if text.startswith("/set_calendar") or ("calendar.google.com/calendar/ical" in text) or (text.strip().startswith("https://") and ".ics" in text):
             raw_url = text.split(maxsplit=1)[1] if text.startswith("/set_calendar") and len(text.split(maxsplit=1)) > 1 else text
-            import re
             m = re.search(r'https?://[^\s]+', raw_url)
             if m:
                 target_url = m.group(0).strip()
