@@ -3,12 +3,98 @@
 #include "Config.h"
 #include "core/AppState.h"
 #include <Wire.h>
-#include <Adafruit_BMP280.h>
+
+// ⚡️ Легкий Zero-Dependency драйвер BMP280 по I2C (без сторонніх бібліотек Adafruit)
+struct Bmp280Wire {
+    uint8_t addr = 0x76;
+    bool ready = false;
+    uint16_t dig_T1 = 0;
+    int16_t  dig_T2 = 0, dig_T3 = 0;
+    uint16_t dig_P1 = 0;
+    int16_t  dig_P2 = 0, dig_P3 = 0, dig_P4 = 0, dig_P5 = 0;
+    int16_t  dig_P6 = 0, dig_P7 = 0, dig_P8 = 0, dig_P9 = 0;
+    int32_t  t_fine = 0;
+
+    bool begin(uint8_t a = 0x76) {
+        addr = a;
+        Wire.beginTransmission(addr);
+        Wire.write(0xD0);
+        if (Wire.endTransmission() != 0) return false;
+        Wire.requestFrom((int)addr, 1);
+        if (Wire.available() < 1) return false;
+        uint8_t chip_id = Wire.read();
+        if (chip_id != 0x58 && chip_id != 0x56 && chip_id != 0x57) return false;
+
+        Wire.beginTransmission(addr);
+        Wire.write(0x88);
+        if (Wire.endTransmission() != 0) return false;
+        Wire.requestFrom((int)addr, 24);
+        if (Wire.available() < 24) return false;
+
+        dig_T1 = Wire.read() | (Wire.read() << 8);
+        dig_T2 = Wire.read() | (Wire.read() << 8);
+        dig_T3 = Wire.read() | (Wire.read() << 8);
+        dig_P1 = Wire.read() | (Wire.read() << 8);
+        dig_P2 = Wire.read() | (Wire.read() << 8);
+        dig_P3 = Wire.read() | (Wire.read() << 8);
+        dig_P4 = Wire.read() | (Wire.read() << 8);
+        dig_P5 = Wire.read() | (Wire.read() << 8);
+        dig_P6 = Wire.read() | (Wire.read() << 8);
+        dig_P7 = Wire.read() | (Wire.read() << 8);
+        dig_P8 = Wire.read() | (Wire.read() << 8);
+        dig_P9 = Wire.read() | (Wire.read() << 8);
+
+        Wire.beginTransmission(addr);
+        Wire.write(0xF5);
+        Wire.write(0xB0); // Standby 1000ms, filter x8
+        Wire.endTransmission();
+
+        Wire.beginTransmission(addr);
+        Wire.write(0xF4);
+        Wire.write(0x33); // Normal mode, osrs_t x1, osrs_p x8
+        Wire.endTransmission();
+
+        ready = true;
+        return true;
+    }
+
+    float readPressure() {
+        if (!ready) return NAN;
+        Wire.beginTransmission(addr);
+        Wire.write(0xF7);
+        if (Wire.endTransmission() != 0) return NAN;
+        Wire.requestFrom((int)addr, 6);
+        if (Wire.available() < 6) return NAN;
+
+        int32_t adc_P = ((int32_t)Wire.read() << 12) | ((int32_t)Wire.read() << 4) | (Wire.read() >> 4);
+        int32_t adc_T = ((int32_t)Wire.read() << 12) | ((int32_t)Wire.read() << 4) | (Wire.read() >> 4);
+
+        int32_t var1 = ((((adc_T >> 3) - ((int32_t)dig_T1 << 1))) * ((int32_t)dig_T2)) >> 11;
+        int32_t var2 = (((((adc_T >> 4) - ((int32_t)dig_T1)) * ((adc_T >> 4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
+        t_fine = var1 + var2;
+
+        int64_t p_var1 = ((int64_t)t_fine) - 128000;
+        int64_t p_var2 = p_var1 * p_var1 * (int64_t)dig_P6;
+        p_var2 = p_var2 + ((p_var1 * (int64_t)dig_P5) << 17);
+        p_var2 = p_var2 + (((int64_t)dig_P4) << 35);
+        p_var1 = ((p_var1 * p_var1 * (int64_t)dig_P3) >> 8) + ((p_var1 * (int64_t)dig_P2) << 12);
+        p_var1 = (((((int64_t)1) << 47) + p_var1)) * ((int64_t)dig_P1) >> 33;
+        if (p_var1 == 0) return NAN;
+
+        int64_t p = 1048576 - adc_P;
+        p = (((p << 31) - p_var2) * 3125) / p_var1;
+        p_var1 = (((int64_t)dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+        p_var2 = (((int64_t)dig_P8) * p) >> 19;
+        p = ((p + p_var1 + p_var2) >> 8) + (((int64_t)dig_P7) << 4);
+
+        return (float)p / 256.0f;
+    }
+};
 
 class SensorService : public IService {
 private:
     AppState& state;
-    Adafruit_BMP280 bmp280;
+    Bmp280Wire bmp280;
 
     uint8_t  sht_addr         = 0x44;
     bool     sht_waiting_data = false;
@@ -49,11 +135,6 @@ public:
 
         if (bmp280.begin(0x76) || bmp280.begin(0x77)) {
             state.bmp_connected = true;
-            bmp280.setSampling(Adafruit_BMP280::MODE_NORMAL,
-                               Adafruit_BMP280::SAMPLING_X1,
-                               Adafruit_BMP280::SAMPLING_X8,
-                               Adafruit_BMP280::FILTER_X8,
-                               Adafruit_BMP280::STANDBY_MS_1000);
         }
 
         if (probeSht31(0x44)) {

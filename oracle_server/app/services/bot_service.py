@@ -1613,6 +1613,10 @@ class TelegramBotService:
                 start_dt=event_dt,
                 source="tg_bot",
             )
+            from app.api.endpoints_box import invalidate_calendar_cache
+            from app.core.events import realtime_hub
+            invalidate_calendar_cache()
+            realtime_hub.emit_to_box_immediate()
             cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
             await self._api("sendMessage", {
                 "chat_id": chat_id,

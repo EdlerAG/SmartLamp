@@ -715,6 +715,9 @@ async def create_calendar_event(req: CreateCalendarEventRequest, _: str = Depend
         description=req.description or "",
         source=req.source or "api",
     )
+    from app.api.endpoints_box import invalidate_calendar_cache
+    invalidate_calendar_cache()
+    realtime_hub.emit_to_box_immediate()
     return {"ok": True, "event": saved}
 
 
@@ -722,6 +725,9 @@ async def create_calendar_event(req: CreateCalendarEventRequest, _: str = Depend
 async def delete_calendar_event(event_id: str, _: str = Depends(verify_access)):
     """Видалити подію за її ідентифікатором."""
     ok = await google_calendar_service.delete_event(event_id)
+    from app.api.endpoints_box import invalidate_calendar_cache
+    invalidate_calendar_cache()
+    realtime_hub.emit_to_box_immediate()
     return {"ok": ok}
 
 

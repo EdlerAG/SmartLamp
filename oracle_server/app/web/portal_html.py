@@ -321,14 +321,26 @@ input::placeholder, textarea::placeholder {
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: radial-gradient(circle, #252a3a 15%, #08090d 16%, #08090d 45%, #181c28 46%, #08090d 48%, #1f2535 70%);
-  border: 2px solid var(--accent-warm);
+  background: radial-gradient(circle, #252a3a 14%, #08090d 15%, #08090d 30%, #1e2230 31%, #08090d 33%, #181c28 50%, #08090d 52%, #1f2535 70%);
+  border: 2px solid rgba(255,255,255,0.15);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 26px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.6);
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+.vinyl-disc::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #08090d;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.3);
+  z-index: 3;
 }
 .vinyl-disc.spinning {
   animation: spinVinyl 5s linear infinite;
@@ -1468,6 +1480,13 @@ function updateSpotifyUI(sp) {
     if (spDisc) {
       if (sp.playing) spDisc.classList.add('spinning');
       else spDisc.classList.remove('spinning');
+      if (sp.cover_url) {
+        if (!spDisc.querySelector('img') || spDisc.querySelector('img').src !== sp.cover_url) {
+          spDisc.innerHTML = `<img src="${sp.cover_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #08090d;pointer-events:none;box-shadow:0 0 4px rgba(0,0,0,0.8)" alt="Vinyl Cover">`;
+        }
+      } else if (!sp.title) {
+        spDisc.innerText = '🎵';
+      }
     }
 
     if (sp.title) {

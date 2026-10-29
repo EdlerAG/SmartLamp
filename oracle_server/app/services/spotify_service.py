@@ -61,6 +61,7 @@ class SpotifyService:
             "title": "",
             "artist": "",
             "track_id": "",
+            "cover_url": "",
             "progress_ms": 0,
             "duration_ms": 0,
             "ambi_rgb": [56, 189, 248],
@@ -368,11 +369,15 @@ class SpotifyService:
                 progress_ms = int(data.get("progress_ms", 0))
                 duration_ms = int(item.get("duration_ms", 0))
 
+                images = (item.get("album") or {}).get("images", [])
+                art_url = images[0].get("url") if images else ""
+
                 self._cached_state = {
                     "playing": is_playing,
                     "title": title[:60],
                     "artist": artist[:45],
                     "track_id": track_id[:32],
+                    "cover_url": art_url,
                     "progress_ms": progress_ms,
                     "duration_ms": duration_ms,
                     "ambi_rgb": self._last_ambi_rgb,
