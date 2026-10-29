@@ -1,12 +1,15 @@
 # Файл: oracle_server/app/api/endpoints_control.py
 import os
 import secrets
+import asyncio
 from typing import Optional, Dict
 from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTTPException, Query, Cookie
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+import orjson
 
 from app.core.config import settings
 from app.core.logger import logger
+from app.core.events import realtime_hub
 from app.core.security import (
     verify_access,
     verify_admin_access,
@@ -37,6 +40,7 @@ from app.services.infographic_service import infographic_service
 from app.services.nastya_routine_service import nastya_routine_service
 from app.services.google_calendar_service import google_calendar_service
 from app.services.maintenance_service import maintenance_service
+from app.services.server_updater import server_updater
 from app.web.portal_html import PORTAL_HTML
 
 router = APIRouter(tags=["Web Studio & Remote Control v5.0"])
@@ -130,6 +134,52 @@ async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = 
             "clone_voice_id": db_service.get_setting("voice_clone_id", settings.VOICE_CLONE_ID),
         }
     return resp
+
+
+@router.get("/api/v5/stream")
+async def event_stream(request: Request, _: str = Depends(verify_access)):
+    """
+    Потоковий SSE-канал реального часу (0% CPU у простої):
+    - Відправляє початковий стан системи (init).
+    - Транслює зміни телеметрії та черги команд при появі.
+    - Підтримує heartbeat-пінг кожні 15 секунд для утримання з'єднання.
+    """
+    q = realtime_hub.register_sse_queue()
+
+    async def sse_generator():
+        try:
+            init_state = {
+                "is_online": state_service.is_online(),
+                "telemetry": state_service.latest_telemetry,
+                "pending_commands": len(state_service.command_queue),
+                "spotify": spotify_service.get_cached_state(),
+                "blackout": blackout_service.get_status(),
+                "quiet_hours": nastya_routine_service.get_quiet_hours(),
+            }
+            yield f"event: init\ndata: {orjson.dumps(init_state).decode('utf-8')}\n\n"
+
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield msg
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        finally:
+            realtime_hub.unregister_sse_queue(q)
+
+    return StreamingResponse(
+        sse_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/api/v1/box/command")
@@ -649,6 +699,22 @@ async def get_telemetry_rollups(
 ):
     """Добова агрегована статистика мікроклімату, Pomodoro та блекаутів."""
     return {"ok": True, "rollups": db_service.get_daily_rollups(days=days)}
+
+
+# ====================================================================
+# САМООНОВЛЕННЯ СЕРВЕРА (OTA ДЛЯ СЕРВЕРА v5.0)
+# ====================================================================
+
+@router.get("/api/v5/admin/server-update/status")
+async def get_server_update_status(_: str = Depends(verify_admin_access)):
+    """Перевіряє наявність нових оновлень на GitHub."""
+    return server_updater.check_for_updates()
+
+
+@router.post("/api/v5/admin/server-update")
+async def trigger_server_update(_: str = Depends(verify_admin_access)):
+    """Запускає процес самооновлення сервера з GitHub та перезапуск служби."""
+    return await server_updater.perform_server_update()
 
 
 # ====================================================================

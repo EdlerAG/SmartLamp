@@ -22,10 +22,10 @@ if [ ! -f .env ]; then
     echo "⚠️ Створено файл .env із шаблону. Відредагуй його: nano .env"
 fi
 
-echo "⚙️ [3/4] Налаштування фонової служби magicbox.service (HyperLight v5.0, ліміт RAM: 110MB)..."
-sudo tee /etc/systemd/system/magicbox.service > /dev/null <<EOF
+echo "⚙️ [3/4] Налаштування фонової служби smartlamp.service (HyperLight v5.0, ліміт RAM: 110MB)..."
+sudo tee /etc/systemd/system/smartlamp.service > /dev/null <<EOF
 [Unit]
-Description=MagicBox Sovereign Cloud v5.0
+Description=SmartLamp Sovereign Cloud v5.0
 After=network.target network-online.target
 
 [Service]
@@ -49,10 +49,20 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-echo "🔥 [4/4] Перезапуск служби magicbox..."
-sudo systemctl daemon-reload
-sudo systemctl enable magicbox
-sudo systemctl restart magicbox
+# Сумісність для magicbox.service
+sudo ln -sf /etc/systemd/system/smartlamp.service /etc/systemd/system/magicbox.service
 
-echo "✅ MagicBox Sovereign Cloud v5.0 запущено! Перевірка статусу:"
-sudo systemctl status magicbox --no-pager
+# Дозвіл для фонового самооновлення сервера ("OTA для Сервера") без паролю sudo
+echo "$USER_NAME ALL=(ALL) NOPASSWD: /bin/systemctl restart smartlamp, /bin/systemctl restart magicbox, /bin/systemctl status smartlamp, /bin/systemctl status magicbox" | sudo tee /etc/sudoers.d/smartlamp > /dev/null
+sudo chmod 0440 /etc/sudoers.d/smartlamp
+
+# Безпека для Git операцій від імені процесу
+git config --global --add safe.directory "$(cd "$APP_DIR/.." && pwd)" 2>/dev/null || true
+
+echo "🔥 [4/4] Перезапуск служби smartlamp..."
+sudo systemctl daemon-reload
+sudo systemctl enable smartlamp
+sudo systemctl restart smartlamp
+
+echo "✅ SmartLamp Sovereign Cloud v5.0 запущено! Перевірка статусу:"
+sudo systemctl status smartlamp --no-pager

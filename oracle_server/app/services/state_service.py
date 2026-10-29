@@ -127,6 +127,9 @@ class StateService:
                 "rssi": payload.rssi,
             })
 
+        # Миттєва трансляція телеметрії у реальному часі для SSE та дашбордів
+        realtime_hub.broadcast_sse("telemetry", dump)
+
         return prev_seen
 
     def enqueue_command(self, cmd: CommandPayload) -> int:

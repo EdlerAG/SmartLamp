@@ -17,13 +17,14 @@ from app.services.infographic_service import infographic_service
 from app.services.nastya_routine_service import nastya_routine_service
 from app.services.maintenance_service import maintenance_service
 from app.services.google_calendar_service import google_calendar_service
+from app.services.server_updater import server_updater
 
 ADMIN_KB = {
     "keyboard": [
         [{"text": "💡 Освітлення"}, {"text": "⏱ Фокус Pomodoro"}, {"text": "🎵 Spotify"}],
         [{"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}, {"text": "🌙 Режим DND"}],
         [{"text": "🔊 Гучність & Звук"}, {"text": "🩺 Діагностика лампи"}, {"text": "📦 Бекап БД"}],
-        [{"text": "🎁 Скинути для Насті"}],
+        [{"text": "🔄 Оновити сервер"}, {"text": "🎁 Скинути для Насті"}],
     ],
     "resize_keyboard": True,
 }
@@ -724,6 +725,40 @@ class TelegramBotService:
                     "parse_mode": "HTML",
                     "reply_markup": ADMIN_KB,
                 })
+                return
+
+            if text.startswith("/server_update") or text.startswith("/update_server") or "Оновити сервер" in text:
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "🔍 <b>Перевірка оновлень на GitHub...</b>",
+                    "parse_mode": "HTML",
+                })
+                st = server_updater.check_for_updates()
+                if not st.get("update_available"):
+                    await self._api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"✅ <b>Сервер вже має найновішу версію!</b>\n• Поточний коміт: <code>{st.get('current_commit')}</code>\n• Опис: <i>{st.get('current_message')}</i>",
+                        "parse_mode": "HTML",
+                        "reply_markup": ADMIN_KB,
+                    })
+                    return
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": (
+                        f"🚀 <b>Знайдено оновлення!</b> (відставання: {st.get('commits_behind')} комітів)\n"
+                        f"• Новий коміт: <code>{st.get('remote_commit')}</code>\n"
+                        f"• Опис: <i>{st.get('remote_message')}</i>\n\n"
+                        f"⏳ Створюю бекап бази та застосовую оновлення..."
+                    ),
+                    "parse_mode": "HTML",
+                })
+                res = await server_updater.perform_server_update()
+                if not res.get("ok"):
+                    await self._api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"❌ Помилка оновлення: {res.get('error')}",
+                        "reply_markup": ADMIN_KB,
+                    })
                 return
 
         if not is_admin and not is_girl:

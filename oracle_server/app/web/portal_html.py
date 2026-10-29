@@ -649,6 +649,7 @@ input::placeholder, textarea::placeholder {
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn" onclick="triggerAdminBackup()">📦 Створити та надіслати бекап БД в Telegram</button>
       <button class="btn" onclick="loadHealthReport()">🩺 Повний звіт про здоров'я системи</button>
+      <button class="btn btn-cool" onclick="triggerServerUpdate()">🔄 Оновити сервер з GitHub</button>
       <button class="btn btn-danger" onclick="triggerSandboxReset()">🎁 Скинути тестові дані -> Настя (1294097414)</button>
     </div>
     <div id="healthReportBox" style="margin-top:8px;font-size:11px;font-family:var(--font-mono);background:var(--bg-primary);border:1px solid var(--border-hairline);padding:10px;border-radius:6px;display:none;white-space:pre-wrap"></div>
@@ -945,6 +946,35 @@ function triggerSandboxReset(){
     .then(d => {
       toast(d.message || 'Скидання завершено');
       pollState();
+    });
+}
+
+function triggerServerUpdate(){
+  if(!confirm('Перевірити наявність оновлень на GitHub та оновити сервер?')) return;
+  toast('Перевіряю GitHub...');
+  fetch('/api/v5/admin/server-update/status')
+    .then(r => r.json())
+    .then(st => {
+      if(!st.ok){
+        alert('Помилка перевірки оновлень: ' + (st.error || 'невідома'));
+        return;
+      }
+      if(!st.update_available){
+        alert(`Сервер уже має найновішу версію!\nПоточний коміт: ${st.current_commit} (${st.current_message})`);
+        return;
+      }
+      if(!confirm(`Знайдено оновлення! Відставання: ${st.commits_behind} комітів.\nНовий коміт: ${st.remote_commit} (${st.remote_message})\n\nВстановити оновлення та перезапустити службу?`)) return;
+      toast('Оновлюю сервер з GitHub...');
+      fetch('/api/v5/admin/server-update', {method:'POST'})
+        .then(r => r.json())
+        .then(d => {
+          if(d.ok){
+            alert('✅ ' + d.message);
+            setTimeout(() => window.location.reload(), 3500);
+          } else {
+            alert('❌ Помилка оновлення: ' + (d.error || 'невідомо'));
+          }
+        });
     });
 }
 
@@ -1463,8 +1493,18 @@ function pollState(forceFull = false){
 
 pollState();
 loadCalendarEvents();
-setInterval(pollState, 3000);
+setInterval(pollState, 8000);
 setInterval(loadCalendarEvents, 30000);
+
+// Ініціалізація потокового SSE-каналу (/api/v5/stream)
+if (window.EventSource) {
+  try {
+    const sse = new EventSource('/api/v5/stream');
+    sse.addEventListener('telemetry', () => { pollState(false); });
+    sse.addEventListener('command', () => { pollState(false); });
+    sse.addEventListener('state', () => { pollState(false); });
+  } catch (_) {}
+}
 </script>
 </body>
 </html>

@@ -68,7 +68,9 @@ public:
     void update() override {
         uint32_t now = millis();
 
-        uint32_t ldr_interval = state.auto_brt ? 60 : 300;
+        // Адаптивне опитування: під час DND/тихих годин знижуємо частоту опитування для 0% саморозігріву
+        bool is_quiet = state.dnd_mode || state.quiet_hours_active;
+        uint32_t ldr_interval = is_quiet ? 1000 : (state.auto_brt ? 60 : 300);
         if (now - last_ldr_ms >= ldr_interval) {
             last_ldr_ms = now;
             int raw = analogRead(Config::PIN_LDR);
@@ -107,7 +109,8 @@ public:
             }
         }
 
-        if (now - last_climate_ms >= 2500) {
+        uint32_t climate_interval = is_quiet ? 12000 : 2500;
+        if (now - last_climate_ms >= climate_interval) {
             last_climate_ms = now;
 
             // Динамічна компенсація теплового розігріву корпусу від світлодіодів

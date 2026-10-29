@@ -110,6 +110,31 @@ class TestStage1AndStage2(unittest.TestCase):
         self.assertEqual(r_resp.status_code, 200)
         self.assertTrue(r_resp.json().get("ok"))
 
+    def test_08_sse_stream(self):
+        """Перевірка SSE потокового каналу /api/v5/stream (Етап 3)."""
+        with self.client.stream("GET", "/api/v5/stream", headers=self.headers) as response:
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers.get("content-type"), "text/event-stream; charset=utf-8")
+            # Читаємо першу подію (init)
+            lines = []
+            for line in response.iter_lines():
+                if line:
+                    lines.append(line)
+                if len(lines) >= 2:
+                    break
+            content = "\n".join(lines)
+            self.assertIn("event: init", content)
+            self.assertIn("data:", content)
+
+    def test_09_server_updater_status(self):
+        """Перевірка статусу самооновлення сервера /api/v5/admin/server-update/status (Етап 4)."""
+        resp = self.client.get("/api/v5/admin/server-update/status", headers=self.admin_headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertIn("current_commit", data)
+        self.assertIn("update_available", data)
+
 
 if __name__ == "__main__":
     unittest.main()
