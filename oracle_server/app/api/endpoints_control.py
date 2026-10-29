@@ -166,7 +166,19 @@ async def login_telegram_webapp(request: Request, response: Response):
             max_age=86400 * 14,
             samesite="lax",
         )
-        return {"ok": True, "token": session_token, "role": role, "user": user}
+
+        fast_state = {
+            "ok": True,
+            "user_role": role,
+            "is_online": state_service.is_online(),
+            "telemetry": state_service.latest_telemetry,
+            "spotify": spotify_service.get_cached_state(),
+            "alarm": nastya_routine_service.get_alarm_config(),
+            "pomodoro": nastya_routine_service.get_pomodoro_status(),
+            "google_calendar_linked": google_calendar_service.is_linked(),
+            "next_calendar_event": google_calendar_service._cached_event,
+        }
+        return {"ok": True, "token": session_token, "role": role, "user": user, "state": fast_state}
     except HTTPException:
         raise
     except Exception as e:

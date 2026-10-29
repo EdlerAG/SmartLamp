@@ -4,7 +4,7 @@ PORTAL_HTML: str = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<title>MagicBox Sovereign Studio • v5.1.0</title>
+<title>MagicBox Sovereign Studio • v5.2.0</title>
 <!-- Hallmark & Sovereign Protocol v5.0 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -462,7 +462,7 @@ input::placeholder, textarea::placeholder {
         <div style="display:flex;align-items:center;gap:6px">
           <span id="onlineDot" class="pulse on"></span>
           <b id="onlineTxt" style="font-size:13px;letter-spacing:0.4px">MAGICBOX SOVEREIGN</b>
-          <span class="mono" style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8" id="verBadge">v5.1.0 ⚡ Live</span>
+          <span class="mono" style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8" id="verBadge">v5.2.0 ⚡ Live</span>
         </div>
         <div class="mono" style="font-size:10px;color:var(--text-secondary);margin-top:2px">
           FW: <span id="fwBadge">--</span> | RAM: <b id="ramTxt" style="color:var(--accent-success)">-- MB</b> | Диск: <b id="diskTxt">-- MB</b> | Черга: <b id="queueTxt">0</b>
@@ -1835,10 +1835,161 @@ function systemAction(action) {
 let personaLoaded = false;
 let configLoaded = false;
 let pollTickCount = 0;
+
+function applyState(d) {
+  if (!d) return;
+  // Cache fast slice to localStorage for 0ms instant startup next time
+  try {
+    localStorage.setItem('mb_cached_state', JSON.stringify({
+      user_role: d.user_role,
+      is_online: d.is_online,
+      telemetry: d.telemetry,
+      spotify: d.spotify,
+      google_calendar_linked: d.google_calendar_linked,
+      next_calendar_event: d.next_calendar_event,
+      alarm: d.alarm,
+      pomodoro: d.pomodoro
+    }));
+  } catch(_) {}
+
+  const on = d.is_online !== undefined ? d.is_online : true;
+  const oDot = document.getElementById('onlineDot');
+  if (oDot) oDot.className = 'pulse ' + (on ? 'on' : 'off');
+  const oTxt = document.getElementById('onlineTxt');
+  if (oTxt) oTxt.innerText = on ? 'MAGICBOX SOVEREIGN' : 'MAGICBOX OFFLINE';
+  const qTxt = document.getElementById('queueTxt');
+  if (qTxt && d.pending_commands !== undefined) qTxt.innerText = d.pending_commands;
+
+  const res = d.resources || {};
+  const ramEl = document.getElementById('ramTxt');
+  if (ramEl && (res.ram_rss_mb !== undefined || res.rss_mb !== undefined)) {
+    ramEl.innerText = (res.ram_rss_mb !== undefined ? res.ram_rss_mb : (res.rss_mb || 0)).toFixed(1) + ' MB';
+  }
+  const diskEl = document.getElementById('diskTxt');
+  if (diskEl && (res.storage_used_mb !== undefined || res.disk_used_mb !== undefined)) {
+    diskEl.innerText = (res.storage_used_mb !== undefined ? res.storage_used_mb : (res.disk_used_mb || 0)).toFixed(1) + ' MB';
+  }
+
+  // Spotify Hub Update
+  if (d.spotify) updateSpotifyUI(d.spotify);
+
+  const t = d.telemetry || {};
+  if (t.t !== undefined) {
+    const fwEl = document.getElementById('fwBadge');
+    if (fwEl) fwEl.innerText = `${t.fw || 'v5.0'} (${t.rssi || -60} dBm)`;
+    const tStr = t.t.toFixed(1) + ' °C';
+    const hStr = t.h.toFixed(0) + ' %';
+    const pStr = `${t.p.toFixed(0)} мм (${t.p_diff>=0?'+':''}${(t.p_diff||0).toFixed(1)})`;
+    const mStr = `${t.m_name || '--'} (${t.b_pct || 0}%)`;
+
+    const kt = document.getElementById('kTemp'); if (kt) kt.innerText = tStr;
+    const kh = document.getElementById('kHum'); if (kh) kh.innerText = hStr;
+    const kp = document.getElementById('kPres'); if (kp) kp.innerText = pStr;
+    const km = document.getElementById('kMode'); if (km) km.innerText = mStr;
+
+    const ktc = document.getElementById('kTempCard'); if (ktc) ktc.innerText = tStr;
+    const khc = document.getElementById('kHumCard'); if (khc) khc.innerText = hStr;
+    const kpc = document.getElementById('kPresCard'); if (kpc) kpc.innerText = pStr;
+
+    MODES.forEach((_,i)=>{
+      const el = document.getElementById('mBtn'+i);
+      if(el) el.className = (t.m === i) ? 'btn active' : 'btn';
+    });
+
+    if(t.vol !== undefined && !document.getElementById('volSlider').matches(':active')){
+      document.getElementById('volSlider').value = t.vol;
+      document.getElementById('volVal').innerText = `${t.vol} / 21`;
+    }
+    if(t.muted !== undefined){
+      currentMuted = Boolean(t.muted);
+      updateMuteUI(currentMuted);
+    }
+    if(t.t_beep !== undefined){
+      currentTouchBeep = Boolean(t.t_beep);
+      updateTouchBeepUI(currentTouchBeep);
+    }
+    if(t.dnd !== undefined){
+      updateDndUI(Boolean(t.dnd));
+    }
+    if(t.heap !== undefined){
+      const dh = document.getElementById('diagHeap');
+      if(dh) dh.innerText = Math.round(t.heap / 1024);
+      const dp = document.getElementById('diagPsram');
+      if(dp) dp.innerText = Math.round((t.psram_free || 0) / 1024);
+      const dr = document.getElementById('diagRst');
+      if(dr) dr.innerText = t.rst || 'NORMAL';
+    }
+  }
+
+  if(!personaLoaded && d.ai_persona){
+    personaLoaded = true;
+    document.getElementById('aiName').value = d.ai_persona.name;
+    document.getElementById('aiPrompt').value = d.ai_persona.prompt;
+  }
+
+  if(!configLoaded && d.tts_config){
+    configLoaded = true;
+    document.getElementById('ttsProviderSelect').value = d.tts_config.provider || 'edge-tts';
+    document.getElementById('edgeVoiceSelect').value = d.tts_config.edge_voice || 'uk-UA-OstapNeural';
+    if(d.tts_config.clone_voice_id){
+      document.getElementById('cloneVoiceIdInput').value = d.tts_config.clone_voice_id;
+    }
+    onProviderChange();
+  }
+
+  if(d.custom_media) renderGallery(d.custom_media);
+  if(d.voice_presets) renderVoicePresets(d.voice_presets);
+
+  if(d.quiet_hours){
+    updateQuietHoursUI(d.quiet_hours.enabled, d.quiet_hours.start, d.quiet_hours.end);
+  }
+  if(d.alarm){
+    updateAlarmUI(d.alarm.enabled, d.alarm.time);
+  }
+  if(d.pomodoro){
+    updatePomodoroUI(d.pomodoro);
+  }
+  if(d.google_calendar_linked !== undefined){
+    updateGoogleUI(Boolean(d.google_calendar_linked), d.next_calendar_event);
+  }
+
+  if (d.user_role === 'admin') {
+    const ap = document.getElementById('adminPanel');
+    if (ap) ap.style.display = 'block';
+    const rb = document.getElementById('roleBadge');
+    if (rb) { rb.innerText = '🛡️ ЯРОСЛАВ'; rb.style.color = 'var(--accent-cool)'; }
+  } else if (d.user_role === 'nastya') {
+    const ap = document.getElementById('adminPanel');
+    if (ap) ap.style.display = 'none';
+    const rb = document.getElementById('roleBadge');
+    if (rb) { rb.innerText = '🌸 НАСТЯ'; rb.style.color = 'var(--accent-pink)'; }
+  }
+
+  const ch = d.climate_history || [];
+  if(ch.length > 1){
+    ensurePlotly(() => {
+      const times = ch.map(x => new Date(x.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+      Plotly.react('climateChart',[
+        {x:times, y:ch.map(x=>x.t), name:'Темп (°C)', type:'scatter', mode:'lines', line:{color:'#38bdf8',width:2.5}},
+        {x:times, y:ch.map(x=>x.p), name:'Барометр (мм)', type:'scatter', mode:'lines', line:{color:'#f59e0b',width:2,dash:'dot'}, yaxis:'y2'}
+      ],{
+        paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(7,9,14,0.6)',
+        font:{color:'#94a3b8', family:'JetBrains Mono', size:10},
+        margin:{l:35,r:35,t:10,b:25}, legend:{orientation:'h',y:1.15},
+        xaxis:{gridcolor:'#1e2536'},
+        yaxis:{gridcolor:'#1e2536'},
+        yaxis2:{overlaying:'y', side:'right', gridcolor:'rgba(0,0,0,0)'}
+      },{responsive:true, displayModeBar:false});
+    });
+  }
+}
+
 function pollState(forceFull = false){
   pollTickCount++;
-  const isFull = forceFull || (pollTickCount % 10 === 1);
-  const url = isFull ? '/api/v5/state?hours=24' : '/api/v5/state?fast=true';
+  // Never block initial render with heavy 24h SQL series; only load full series on climate tab
+  const activeTab = localStorage.getItem('mb_active_tab') || 'music';
+  const needFull = forceFull || (activeTab === 'climate' && pollTickCount % 5 === 1);
+  const url = needFull ? '/api/v5/state?hours=24' : '/api/v5/state?fast=true';
   fetch(url).then(r => {
     if(r.status === 401) {
       if(!window.Telegram?.WebApp?.initData) {
@@ -1848,137 +1999,23 @@ function pollState(forceFull = false){
     }
     return r.json();
   }).then(d => {
-    if(!d) return;
-
-    const on = d.is_online;
-    document.getElementById('onlineDot').className = 'pulse ' + (on ? 'on' : 'off');
-    document.getElementById('onlineTxt').innerText = on ? 'MAGICBOX SOVEREIGN' : 'MAGICBOX OFFLINE';
-    document.getElementById('queueTxt').innerText = d.pending_commands;
-
-    const res = d.resources || {};
-    document.getElementById('ramTxt').innerText = (res.ram_rss_mb !== undefined ? res.ram_rss_mb : (res.rss_mb || 0)).toFixed(1) + ' MB';
-    document.getElementById('diskTxt').innerText = (res.storage_used_mb !== undefined ? res.storage_used_mb : (res.disk_used_mb || 0)).toFixed(1) + ' MB';
-
-    // Spotify Hub Update
-    updateSpotifyUI(d.spotify || {});
-
-    const t = d.telemetry || {};
-    if(t.t !== undefined){
-      document.getElementById('fwBadge').innerText = `${t.fw || 'v5.0'} (${t.rssi || -60} dBm)`;
-      const tStr = t.t.toFixed(1) + ' °C';
-      const hStr = t.h.toFixed(0) + ' %';
-      const pStr = `${t.p.toFixed(0)} мм (${t.p_diff>=0?'+':''}${(t.p_diff||0).toFixed(1)})`;
-      const mStr = `${t.m_name || '--'} (${t.b_pct || 0}%)`;
-
-      document.getElementById('kTemp').innerText = tStr;
-      document.getElementById('kHum').innerText = hStr;
-      document.getElementById('kPres').innerText = pStr;
-      document.getElementById('kMode').innerText = mStr;
-
-      const ktc = document.getElementById('kTempCard');
-      const khc = document.getElementById('kHumCard');
-      const kpc = document.getElementById('kPresCard');
-      if (ktc) ktc.innerText = tStr;
-      if (khc) khc.innerText = hStr;
-      if (kpc) kpc.innerText = pStr;
-
-      MODES.forEach((_,i)=>{
-        const el = document.getElementById('mBtn'+i);
-        if(el) el.className = (t.m === i) ? 'btn active' : 'btn';
-      });
-
-      if(t.vol !== undefined && !document.getElementById('volSlider').matches(':active')){
-        document.getElementById('volSlider').value = t.vol;
-        document.getElementById('volVal').innerText = `${t.vol} / 21`;
-      }
-      if(t.muted !== undefined){
-        currentMuted = Boolean(t.muted);
-        updateMuteUI(currentMuted);
-      }
-      if(t.t_beep !== undefined){
-        currentTouchBeep = Boolean(t.t_beep);
-        updateTouchBeepUI(currentTouchBeep);
-      }
-      if(t.dnd !== undefined){
-        updateDndUI(Boolean(t.dnd));
-      }
-      if(t.heap !== undefined){
-        const dh = document.getElementById('diagHeap');
-        if(dh) dh.innerText = Math.round(t.heap / 1024);
-        const dp = document.getElementById('diagPsram');
-        if(dp) dp.innerText = Math.round((t.psram_free || 0) / 1024);
-        const dr = document.getElementById('diagRst');
-        if(dr) dr.innerText = t.rst || 'NORMAL';
-      }
-    }
-
-    if(!personaLoaded && d.ai_persona){
-      personaLoaded = true;
-      document.getElementById('aiName').value = d.ai_persona.name;
-      document.getElementById('aiPrompt').value = d.ai_persona.prompt;
-    }
-
-    if(!configLoaded && d.tts_config){
-      configLoaded = true;
-      document.getElementById('ttsProviderSelect').value = d.tts_config.provider || 'edge-tts';
-      document.getElementById('edgeVoiceSelect').value = d.tts_config.edge_voice || 'uk-UA-OstapNeural';
-      if(d.tts_config.clone_voice_id){
-        document.getElementById('cloneVoiceIdInput').value = d.tts_config.clone_voice_id;
-      }
-      onProviderChange();
-    }
-
-    if(d.custom_media) renderGallery(d.custom_media);
-    if(d.voice_presets) renderVoicePresets(d.voice_presets);
-
-    if(d.quiet_hours){
-      updateQuietHoursUI(d.quiet_hours.enabled, d.quiet_hours.start, d.quiet_hours.end);
-    }
-    if(d.alarm){
-      updateAlarmUI(d.alarm.enabled, d.alarm.time);
-    }
-    if(d.pomodoro){
-      updatePomodoroUI(d.pomodoro);
-    }
-    updateGoogleUI(Boolean(d.google_calendar_linked), d.next_calendar_event);
-
-    if (d.user_role === 'admin') {
-      const ap = document.getElementById('adminPanel');
-      if (ap) ap.style.display = 'block';
-      const rb = document.getElementById('roleBadge');
-      if (rb) { rb.innerText = '🛡️ ЯРОСЛАВ'; rb.style.color = 'var(--accent-cool)'; }
-    } else {
-      const ap = document.getElementById('adminPanel');
-      if (ap) ap.style.display = 'none';
-      const rb = document.getElementById('roleBadge');
-      if (rb) { rb.innerText = '🌸 НАСТЯ'; rb.style.color = 'var(--accent-pink)'; }
-    }
-
-    const ch = d.climate_history || [];
-    if(ch.length > 1){
-      ensurePlotly(() => {
-        const times = ch.map(x => new Date(x.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
-        Plotly.react('climateChart',[
-          {x:times, y:ch.map(x=>x.t), name:'Темп (°C)', type:'scatter', mode:'lines', line:{color:'#38bdf8',width:2.5}},
-          {x:times, y:ch.map(x=>x.p), name:'Барометр (мм)', type:'scatter', mode:'lines', line:{color:'#f59e0b',width:2,dash:'dot'}, yaxis:'y2'}
-        ],{
-          paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(7,9,14,0.6)',
-          font:{color:'#94a3b8', family:'JetBrains Mono', size:10},
-          margin:{l:35,r:35,t:10,b:25}, legend:{orientation:'h',y:1.15},
-          xaxis:{gridcolor:'#1e2536'},
-          yaxis:{gridcolor:'#1e2536'},
-          yaxis2:{overlaying:'y', side:'right', gridcolor:'rgba(0,0,0,0)'}
-        },{responsive:true, displayModeBar:false});
-      });
-    }
+    applyState(d);
   }).catch(()=>{});
+}
+
+// ⚡️ ZERO-LATENCY INSTANT HYDRATION (0.00s Paint from Local Cache)
+const _cachedStateRaw = localStorage.getItem('mb_cached_state');
+if (_cachedStateRaw) {
+  try {
+    applyState(JSON.parse(_cachedStateRaw));
+  } catch(_) {}
 }
 
 // Restore saved tab or default to 'music'
 const savedTab = localStorage.getItem('mb_active_tab') || 'music';
 switchTab(savedTab);
 
-// Telegram Mini App Auto-Auth (Zero-Click, No Login Modal)
+// Telegram Mini App Auto-Auth (Zero-Click, Single-Roundtrip Auth + State)
 const isTelegramApp = Boolean(window.Telegram?.WebApp?.initData);
 if (isTelegramApp) {
   try {
@@ -1992,7 +2029,7 @@ if (isTelegramApp) {
     .then(r => r.json())
     .then(d => {
       if (d && d.ok) {
-        pollState(true);
+        if (d.state) applyState(d.state);
         loadCalendarEvents();
       }
     })
