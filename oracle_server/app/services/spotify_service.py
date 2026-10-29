@@ -239,7 +239,7 @@ class SpotifyService:
 
                 try:
                     from app.core.events import realtime_hub
-                    realtime_hub.broadcast_sse("spotify", self.get_cached_state())
+                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": self.get_cached_state()})
                 except Exception:
                     pass
             return ok
@@ -414,7 +414,7 @@ class SpotifyService:
 
                 try:
                     from app.core.events import realtime_hub
-                    realtime_hub.broadcast_sse("spotify", self.get_cached_state())
+                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": self.get_cached_state()})
                 except Exception:
                     pass
 

@@ -288,12 +288,7 @@ async def dashboard_websocket(ws: WebSocket):
                 payload = data.get("payload", {})
                 if payload:
                     state_service.enqueue_raw(payload)
-                    # Якщо лампа підключена через WS, шлемо команду негайно
-                    if realtime_hub.is_box_ws_connected:
-                        next_cmd = state_service.pop_next_sync_response()
-                        if next_cmd.get("has_cmd"):
-                            await realtime_hub.push_to_box(next_cmd)
-                    await ws.send_text(orjson.dumps({"type": "cmd_ack", "ok": True}).decode("utf-8"))
+                await ws.send_text(orjson.dumps({"type": "cmd_ack", "ok": True}).decode("utf-8"))
 
             elif act == "spotify":
                 sp_act = data.get("action_name", "")
@@ -315,10 +310,6 @@ async def dashboard_websocket(ws: WebSocket):
                     cmd["touch_beep"] = bool(touch_beep)
                 if cmd:
                     state_service.enqueue_raw(cmd)
-                    if realtime_hub.is_box_ws_connected:
-                        next_cmd = state_service.pop_next_sync_response()
-                        if next_cmd.get("has_cmd"):
-                            await realtime_hub.push_to_box(next_cmd)
                 await ws.send_text(orjson.dumps({"type": "volume_ack", "ok": True}).decode("utf-8"))
 
             elif act == "pomo":
@@ -330,21 +321,13 @@ async def dashboard_websocket(ws: WebSocket):
                 else:
                     res = nastya_routine_service.stop_pomodoro()
                     state_service.enqueue_raw({"pomo_action": "stop"})
-                if realtime_hub.is_box_ws_connected:
-                    next_cmd = state_service.pop_next_sync_response()
-                    if next_cmd.get("has_cmd"):
-                        await realtime_hub.push_to_box(next_cmd)
                 await ws.send_text(orjson.dumps({"type": "pomo_ack", "pomodoro": res}).decode("utf-8"))
 
             elif act == "silent_push":
                 msg = data.get("message", "").strip()
                 if msg:
                     state_service.enqueue_raw({"msg": msg, "sender": "Studio", "silent": True})
-                    if realtime_hub.is_box_ws_connected:
-                        next_cmd = state_service.pop_next_sync_response()
-                        if next_cmd.get("has_cmd"):
-                            await realtime_hub.push_to_box(next_cmd)
-                    await ws.send_text(orjson.dumps({"type": "silent_push_ack", "ok": True}).decode("utf-8"))
+                await ws.send_text(orjson.dumps({"type": "silent_push_ack", "ok": True}).decode("utf-8"))
 
             elif act == "ping":
                 await ws.send_text(orjson.dumps({"type": "pong"}).decode("utf-8"))

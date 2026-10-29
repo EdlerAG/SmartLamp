@@ -66,6 +66,24 @@ class RealtimeHub:
 
 
 
+    def emit_to_box_immediate(self) -> None:
+        """Миттєвий пуш команд у WebSocket лампи при будь-якій дії (з Telegram-бота, розкладу чи API)."""
+        if self._box_ws is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._async_push_pending_to_box())
+        except RuntimeError:
+            pass
+
+    async def _async_push_pending_to_box(self) -> None:
+        if self._box_ws is None:
+            return
+        from app.services.state_service import state_service
+        next_cmd = state_service.pop_next_sync_response()
+        if next_cmd.get("has_cmd"):
+            await self.push_to_box(next_cmd)
+
     def emit_to_dashboards(self, data: Dict[str, Any]) -> None:
         try:
             loop = asyncio.get_running_loop()
@@ -86,8 +104,7 @@ class RealtimeHub:
             for ws in dead:
                 self._dashboard_clients.discard(ws)
 
-        # 2. Трансляція для SSE підписників
-        self.broadcast_sse("state", data)
+
 
 
 realtime_hub = RealtimeHub()

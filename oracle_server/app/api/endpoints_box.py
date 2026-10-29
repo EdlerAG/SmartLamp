@@ -225,7 +225,7 @@ async def receive_batch_telemetry(payload: Dict[str, Any], _=Depends(verify_acce
             "light": p.get("l", 50),
         })
     count = db_service.add_climate_batch(samples)
-    realtime_hub.broadcast("telemetry", {"type": "batch", "count": count})
+    realtime_hub.emit_to_dashboards({"type": "batch", "count": count})
     return {"ok": True, "count": count}
 
 

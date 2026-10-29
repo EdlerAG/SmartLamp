@@ -160,11 +160,14 @@ class StateService:
                 if not any(k in last for k in ("msg", "media_url", "play_url", "ota_url", "stop_media")):
                     last.update(data)
                     realtime_hub.notify_new_command()
+                    realtime_hub.emit_to_box_immediate()
                     return len(self.command_queue)
 
         self.command_queue.append(data)
         realtime_hub.notify_new_command()
         realtime_hub.emit_to_dashboards({"type": "command_queued", "pending_commands": len(self.command_queue)})
+        # ⚡️ Миттєвий пуш на лампу через WebSocket, якщо вона на зв'язку (з бота, розкладу або API)
+        realtime_hub.emit_to_box_immediate()
         return len(self.command_queue)
 
     def pop_next_sync_response(self) -> Dict[str, Any]:
