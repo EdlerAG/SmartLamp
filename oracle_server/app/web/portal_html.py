@@ -369,6 +369,9 @@ input::placeholder, textarea::placeholder {
           <div id="spArtist" class="mono" style="font-size:11px;color:var(--text-secondary);margin-top:2px">
             Синхронізація обкладинки для вінілового плеєра шкатулки (Вікно 3)
           </div>
+          <div style="width:100%;height:4px;background:var(--border-hairline);border-radius:2px;margin-top:6px;overflow:hidden">
+            <div id="spProgressBar" style="width:0%;height:100%;background:var(--accent-success);transition:width 0.4s linear;border-radius:2px"></div>
+          </div>
         </div>
       </div>
       <div style="display:flex;gap:6px;align-items:center" id="spControls">
@@ -1009,6 +1012,45 @@ function disconnectSpotify(){
     });
 }
 
+let spotifyPlayback = {
+  linked: false,
+  playing: false,
+  title: '',
+  artist: '',
+  progress_ms: 0,
+  duration_ms: 0,
+  last_sync_ts: 0
+};
+
+function tickSpotifyProgress() {
+  const spArtistEl = document.getElementById('spArtist');
+  const spBarEl = document.getElementById('spProgressBar');
+  if (!spArtistEl) return;
+
+  if (!spotifyPlayback.linked || !spotifyPlayback.title) {
+    if (spBarEl) spBarEl.style.width = '0%';
+    return;
+  }
+
+  let currentMs = spotifyPlayback.progress_ms;
+  if (spotifyPlayback.playing && spotifyPlayback.last_sync_ts > 0) {
+    const elapsed = Date.now() - spotifyPlayback.last_sync_ts;
+    currentMs = Math.min(spotifyPlayback.duration_ms || (currentMs + elapsed), spotifyPlayback.progress_ms + elapsed);
+  }
+
+  const prog_m = Math.floor(currentMs / 60000);
+  const prog_s = ('0' + Math.floor((currentMs % 60000) / 1000)).slice(-2);
+  const dur_m = Math.floor((spotifyPlayback.duration_ms || 0) / 60000);
+  const dur_s = ('0' + Math.floor(((spotifyPlayback.duration_ms || 0) % 60000) / 1000)).slice(-2);
+  spArtistEl.innerText = `${spotifyPlayback.artist || 'Unknown'} · ${prog_m}:${prog_s} / ${dur_m}:${dur_s}`;
+
+  if (spBarEl && spotifyPlayback.duration_ms > 0) {
+    const pct = Math.min(100, Math.max(0, (currentMs / spotifyPlayback.duration_ms) * 100));
+    spBarEl.style.width = pct.toFixed(1) + '%';
+  }
+}
+setInterval(tickSpotifyProgress, 500);
+
 function triggerSandboxReset(){
   if(!confirm('Ви дійсно хочете виконати передподарункове скидання?\n\n• Spotify та Google Calendar буде відключено\n• Тестові події, клімат та історію буде видалено\n• Власницю буде закріплено за Настею (1294097414)')) return;
   toast('Виконую скидання...');
@@ -1488,30 +1530,40 @@ function pollState(forceFull = false){
     if(sp.linked){
       if(spLoginBtn) spLoginBtn.style.display = 'none';
       if(spDisconnectBtn) spDisconnectBtn.style.display = 'inline-block';
+      spotifyPlayback.linked = true;
+      spotifyPlayback.playing = sp.playing || false;
+      spotifyPlayback.title = sp.title || '';
+      spotifyPlayback.artist = sp.artist || '';
+      spotifyPlayback.progress_ms = sp.progress_ms || 0;
+      spotifyPlayback.duration_ms = sp.duration_ms || 0;
+      spotifyPlayback.last_sync_ts = Date.now();
+
       if(sp.title){
         spTitleEl.innerText = sp.title;
-        const prog_m = Math.floor((sp.progress_ms || 0) / 60000);
-        const prog_s = ('0' + Math.floor(((sp.progress_ms || 0) % 60000) / 1000)).slice(-2);
-        const dur_m = Math.floor((sp.duration_ms || 0) / 60000);
-        const dur_s = ('0' + Math.floor(((sp.duration_ms || 0) % 60000) / 1000)).slice(-2);
-        spArtistEl.innerText = `${sp.artist || 'Unknown'} · ${prog_m}:${prog_s} / ${dur_m}:${dur_s}`;
         spBadgeEl.innerText = sp.playing ? '▶️ PLAYING' : '⏸ PAUSED';
         spBadgeEl.style.color = sp.playing ? 'var(--accent-success)' : 'var(--text-secondary)';
         spPlayBtn.innerText = sp.playing ? '⏸ Пауза' : '▶️ Пуск';
+        tickSpotifyProgress();
       } else {
         spTitleEl.innerText = 'Spotify підключено ✅';
         spArtistEl.innerText = 'Увімкніть трек у додатку Spotify на телефоні чи ПК';
         spBadgeEl.innerText = '⏸ ОЧІКУВАННЯ ТРЕКУ';
         spBadgeEl.style.color = 'var(--accent-cool)';
         spPlayBtn.innerText = '▶️ Пуск';
+        const spBarEl = document.getElementById('spProgressBar');
+        if (spBarEl) spBarEl.style.width = '0%';
       }
     } else {
+      spotifyPlayback.linked = false;
+      spotifyPlayback.title = '';
       spTitleEl.innerText = 'Немає треку';
       spArtistEl.innerText = 'Spotify не підключено';
       spBadgeEl.innerText = 'НЕАКТИВНИЙ';
       spBadgeEl.style.color = 'var(--text-muted)';
       if(spLoginBtn) spLoginBtn.style.display = 'inline-block';
       if(spDisconnectBtn) spDisconnectBtn.style.display = 'none';
+      const spBarEl = document.getElementById('spProgressBar');
+      if (spBarEl) spBarEl.style.width = '0%';
     }
 
     const t = d.telemetry || {};
