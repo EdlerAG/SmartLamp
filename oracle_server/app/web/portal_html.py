@@ -1078,8 +1078,82 @@ function tickSpotifyProgress() {
     const pct = Math.min(100, Math.max(0, (currentMs / spotifyPlayback.duration_ms) * 100));
     spBarEl.style.width = pct.toFixed(1) + '%';
   }
+
+  // Якщо трек завершився — миттєво підтягуємо новий трек без очікування циклу
+  if (spotifyPlayback.duration_ms > 0 && currentMs >= spotifyPlayback.duration_ms && spotifyPlayback.playing) {
+    if (!window._songEndTimer) {
+      window._songEndTimer = setTimeout(() => {
+        pollState(true);
+        window._songEndTimer = null;
+      }, 700);
+    }
+  }
 }
 setInterval(tickSpotifyProgress, 500);
+
+function updateSpotifyUI(sp) {
+  if (!sp) return;
+  const spTitleEl = document.getElementById('spTitle');
+  const spArtistEl = document.getElementById('spArtist');
+  const spBadgeEl = document.getElementById('spBadge');
+  const spPlayBtn = document.getElementById('spPlayBtn');
+  const spLoginBtn = document.getElementById('spLoginBtn');
+  const spDisconnectBtn = document.getElementById('spDisconnectBtn');
+  const spBarEl = document.getElementById('spProgressBar');
+
+  if (sp.linked) {
+    if (spLoginBtn) spLoginBtn.style.display = 'none';
+    if (spDisconnectBtn) spDisconnectBtn.style.display = 'inline-block';
+
+    const isNewTrack = Boolean(sp.track_id && sp.track_id !== spotifyPlayback.track_id);
+    spotifyPlayback.linked = true;
+    spotifyPlayback.playing = Boolean(sp.playing);
+    spotifyPlayback.title = sp.title || '';
+    spotifyPlayback.artist = sp.artist || '';
+    spotifyPlayback.duration_ms = sp.duration_ms || 0;
+    spotifyPlayback.track_id = sp.track_id || '';
+
+    let estimatedLocalMs = spotifyPlayback.progress_ms;
+    if (spotifyPlayback.playing && spotifyPlayback.last_sync_ts > 0) {
+      estimatedLocalMs += (Date.now() - spotifyPlayback.last_sync_ts);
+    }
+    if (isNewTrack || Math.abs(estimatedLocalMs - (sp.progress_ms || 0)) > 2500 || !spotifyPlayback.last_sync_ts) {
+      spotifyPlayback.progress_ms = sp.progress_ms || 0;
+      spotifyPlayback.last_sync_ts = Date.now();
+    }
+
+    if (sp.title) {
+      if (spTitleEl) spTitleEl.innerText = sp.title;
+      if (spBadgeEl) {
+        spBadgeEl.innerText = sp.playing ? '▶️ PLAYING' : '⏸ PAUSED';
+        spBadgeEl.style.color = sp.playing ? 'var(--accent-success)' : 'var(--text-secondary)';
+      }
+      if (spPlayBtn) spPlayBtn.innerText = sp.playing ? '⏸ Пауза' : '▶️ Пуск';
+      tickSpotifyProgress();
+    } else {
+      if (spTitleEl) spTitleEl.innerText = 'Spotify підключено ✅';
+      if (spArtistEl) spArtistEl.innerText = 'Увімкніть трек у додатку Spotify на телефоні чи ПК';
+      if (spBadgeEl) {
+        spBadgeEl.innerText = '⏸ ОЧІКУВАННЯ ТРЕКУ';
+        spBadgeEl.style.color = 'var(--accent-cool)';
+      }
+      if (spPlayBtn) spPlayBtn.innerText = '▶️ Пуск';
+      if (spBarEl) spBarEl.style.width = '0%';
+    }
+  } else {
+    spotifyPlayback.linked = false;
+    spotifyPlayback.title = '';
+    if (spTitleEl) spTitleEl.innerText = 'Немає треку';
+    if (spArtistEl) spArtistEl.innerText = 'Spotify не підключено';
+    if (spBadgeEl) {
+      spBadgeEl.innerText = 'НЕАКТИВНИЙ';
+      spBadgeEl.style.color = 'var(--text-muted)';
+    }
+    if (spLoginBtn) spLoginBtn.style.display = 'inline-block';
+    if (spDisconnectBtn) spDisconnectBtn.style.display = 'none';
+    if (spBarEl) spBarEl.style.width = '0%';
+  }
+}
 
 function triggerSandboxReset(){
   if(!confirm('Ви дійсно хочете виконати передподарункове скидання?\n\n• Spotify та Google Calendar буде відключено\n• Тестові події, клімат та історію буде видалено\n• Власницю буде закріплено за Настею (1294097414)')) return;
@@ -1549,61 +1623,7 @@ function pollState(forceFull = false){
     document.getElementById('diskTxt').innerText = (res.storage_used_mb !== undefined ? res.storage_used_mb : (res.disk_used_mb || 0)).toFixed(1) + ' MB';
 
     // Spotify Hub Update
-    const sp = d.spotify || {};
-    window.lastSpotifyPlaying = sp.playing || false;
-    const spTitleEl = document.getElementById('spTitle');
-    const spArtistEl = document.getElementById('spArtist');
-    const spBadgeEl = document.getElementById('spBadge');
-    const spPlayBtn = document.getElementById('spPlayBtn');
-    const spLoginBtn = document.getElementById('spLoginBtn');
-    const spDisconnectBtn = document.getElementById('spDisconnectBtn');
-    if(sp.linked){
-      if(spLoginBtn) spLoginBtn.style.display = 'none';
-      if(spDisconnectBtn) spDisconnectBtn.style.display = 'inline-block';
-      const isNewTrack = (sp.track_id && sp.track_id !== spotifyPlayback.track_id);
-      spotifyPlayback.linked = true;
-      spotifyPlayback.playing = sp.playing || false;
-      spotifyPlayback.title = sp.title || '';
-      spotifyPlayback.artist = sp.artist || '';
-      spotifyPlayback.duration_ms = sp.duration_ms || 0;
-      spotifyPlayback.track_id = sp.track_id || '';
-
-      let estimatedLocalMs = spotifyPlayback.progress_ms;
-      if (spotifyPlayback.playing && spotifyPlayback.last_sync_ts > 0) {
-        estimatedLocalMs += (Date.now() - spotifyPlayback.last_sync_ts);
-      }
-      if (isNewTrack || Math.abs(estimatedLocalMs - (sp.progress_ms || 0)) > 2500 || !spotifyPlayback.last_sync_ts) {
-        spotifyPlayback.progress_ms = sp.progress_ms || 0;
-        spotifyPlayback.last_sync_ts = Date.now();
-      }
-
-      if(sp.title){
-        spTitleEl.innerText = sp.title;
-        spBadgeEl.innerText = sp.playing ? '▶️ PLAYING' : '⏸ PAUSED';
-        spBadgeEl.style.color = sp.playing ? 'var(--accent-success)' : 'var(--text-secondary)';
-        spPlayBtn.innerText = sp.playing ? '⏸ Пауза' : '▶️ Пуск';
-        tickSpotifyProgress();
-      } else {
-        spTitleEl.innerText = 'Spotify підключено ✅';
-        spArtistEl.innerText = 'Увімкніть трек у додатку Spotify на телефоні чи ПК';
-        spBadgeEl.innerText = '⏸ ОЧІКУВАННЯ ТРЕКУ';
-        spBadgeEl.style.color = 'var(--accent-cool)';
-        spPlayBtn.innerText = '▶️ Пуск';
-        const spBarEl = document.getElementById('spProgressBar');
-        if (spBarEl) spBarEl.style.width = '0%';
-      }
-    } else {
-      spotifyPlayback.linked = false;
-      spotifyPlayback.title = '';
-      spTitleEl.innerText = 'Немає треку';
-      spArtistEl.innerText = 'Spotify не підключено';
-      spBadgeEl.innerText = 'НЕАКТИВНИЙ';
-      spBadgeEl.style.color = 'var(--text-muted)';
-      if(spLoginBtn) spLoginBtn.style.display = 'inline-block';
-      if(spDisconnectBtn) spDisconnectBtn.style.display = 'none';
-      const spBarEl = document.getElementById('spProgressBar');
-      if (spBarEl) spBarEl.style.width = '0%';
-    }
+    updateSpotifyUI(d.spotify || {});
 
     const t = d.telemetry || {};
     if(t.t !== undefined){
@@ -1728,8 +1748,17 @@ if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData
 
 pollState();
 loadCalendarEvents();
-setInterval(pollState, 8000);
 setInterval(loadCalendarEvents, 30000);
+
+// Адаптивний опитувач: 2.5 сек під час гри музики (миттєве оновлення), 8 сек у простої
+function scheduleAdaptivePoll(){
+  const delay = (spotifyPlayback && spotifyPlayback.playing && spotifyPlayback.linked) ? 2500 : 8000;
+  setTimeout(() => {
+    pollState();
+    scheduleAdaptivePoll();
+  }, delay);
+}
+scheduleAdaptivePoll();
 
 // Ініціалізація потокового SSE-каналу (/api/v5/stream)
 if (window.EventSource) {
@@ -1738,6 +1767,12 @@ if (window.EventSource) {
     sse.addEventListener('telemetry', () => { pollState(false); });
     sse.addEventListener('command', () => { pollState(false); });
     sse.addEventListener('state', () => { pollState(false); });
+    sse.addEventListener('spotify', (e) => {
+      try {
+        const sp = JSON.parse(e.data);
+        updateSpotifyUI(sp);
+      } catch (_) {}
+    });
   } catch (_) {}
 }
 </script>

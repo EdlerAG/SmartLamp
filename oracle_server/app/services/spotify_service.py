@@ -354,7 +354,8 @@ class SpotifyService:
                 }
 
                 # Якщо змінився трек — генеруємо нове вінілове коло з обкладинкою
-                if track_id and track_id != self._last_track_id:
+                track_changed = bool(track_id and track_id != self._last_track_id)
+                if track_changed:
                     self._last_track_id = track_id
                     images = (item.get("album") or {}).get("images", [])
                     art_url = images[0].get("url") if images else ""
@@ -369,6 +370,12 @@ class SpotifyService:
                             with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
                                 f.write(vinyl_bytes)
                             memory_guard.trim_ram()
+
+                try:
+                    from app.core.events import realtime_hub
+                    realtime_hub.broadcast_sse("spotify", self.get_cached_state())
+                except Exception:
+                    pass
 
                 return self.get_cached_state()
         except Exception as e:
