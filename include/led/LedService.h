@@ -134,9 +134,15 @@ public:
                 target_lcd = lcd_levels[idx];
             }
 
-            // Якщо світло вимкнене і ніхто не чіпає кнопки понад 20 с — м'яко приглушуємо екран до нічного рівня
-            if (state.light_mode == MODE_LIGHT_OFF && (now - state.last_user_activity_ms > 20000)) {
-                target_lcd = 18;
+            // Якщо світло вимкнене:
+            // - під час тихих годин (Quiet Hours) після 2 хв неактивності гасимо екран повністю (глибокий сон)
+            // - вдень після 20 с м'яко приглушуємо до 18
+            if (state.light_mode == MODE_LIGHT_OFF) {
+                if (state.quiet_hours_active && (now - state.last_user_activity_ms > 120000)) {
+                    target_lcd = 0;
+                } else if (now - state.last_user_activity_ms > 20000) {
+                    target_lcd = 18;
+                }
             }
 
             if (state.sleep_timer_active && state.sleep_timer_total_ms > 0) {

@@ -90,10 +90,13 @@ public:
         qr_cache.setColorDepth(8);
         qr_cache.createSprite(110, 110);
 
-        // Spotify Vinyl Sprite 136x136 у PSRAM (36992 байти)
-        vinylSprite.setPsram(true);
+        // Spotify Vinyl Sprite 136x136 (37 KB): пріоритет швидкої внутрішньої SRAM для 30 FPS
+        vinylSprite.setPsram(false);
         vinylSprite.setColorDepth(16);
-        vinylSprite.createSprite(Config::VINYL_DIAMETER, Config::VINYL_DIAMETER);
+        if (!vinylSprite.createSprite(Config::VINYL_DIAMETER, Config::VINYL_DIAMETER)) {
+            vinylSprite.setPsram(true);
+            vinylSprite.createSprite(Config::VINYL_DIAMETER, Config::VINYL_DIAMETER);
+        }
         vinylSprite.fillScreen(HallmarkTheme::BG_PRIMARY);
         // Початкові канавки вінілу
         for (int r = 10; r < 66; r += 3) {
@@ -140,8 +143,15 @@ public:
         updateCpuPerformance(high_perf);
 
         if (applied_lcd_brt != state.current_lcd_brt) {
+            bool was_off = (applied_lcd_brt == 0);
             applied_lcd_brt = state.current_lcd_brt;
-            lcd.setBrightness(applied_lcd_brt);
+            if (applied_lcd_brt == 0) {
+                lcd.setBrightness(0);
+                lcd.sleep();
+            } else {
+                if (was_off) lcd.wakeup();
+                lcd.setBrightness(applied_lcd_brt);
+            }
         }
 
         // ====================================================================

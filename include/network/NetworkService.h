@@ -96,8 +96,8 @@ private:
     }
 
     void onWifiConnected() {
-        WiFi.setSleep(false);
-        modem_sleep_now = false;
+        WiFi.setSleep(WIFI_PS_MIN_MODEM);
+        modem_sleep_now = true;
         state.registerNetActivity();
 
         state.wifi_connected = true;

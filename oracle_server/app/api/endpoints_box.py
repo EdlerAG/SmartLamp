@@ -67,8 +67,11 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
 
     resp = state_service.pop_next_sync_response()
     resp["sp_linked"] = spotify_service.is_linked()
-    if sp_data and (payload.scr == 2 or payload.m == 11):
+    # Always include cached spotify state if playing or linked so screen switch is instant
+    if sp_data:
         resp["spotify"] = sp_data
+    elif spotify_service.is_linked():
+        resp["spotify"] = spotify_service.get_cached_state()
 
     # 5. Перевірка світанкового будильника для Насті
     alarm_st = nastya_routine_service.check_alarm_state()

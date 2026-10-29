@@ -367,7 +367,6 @@ private:
             state.audio_muted = true;
         } else if (json.indexOf("\"dnd\":false") != -1) {
             state.dnd_mode = false;
-            state.audio_muted = false;
         }
 
         // Обробка найближчої події Google Календаря Насті (Zero-Knowledge Smart Hub)
@@ -382,6 +381,9 @@ private:
                 char s_dec[36];
                 TgJsonUtils::decodeJsonString(summary, s_dec, sizeof(s_dec));
                 state.setCalendarEvent(s_dec, time_str.c_str(), is_soon);
+                if (is_soon && !state.dnd_mode && state.light_mode != MODE_LIGHT_OFF) {
+                    state.triggerLedNotification(NOTIFY_AMBILIGHT, false);
+                }
             }
         } else {
             state.clearCalendarEvent();
@@ -683,7 +685,7 @@ public:
 
         String req_url = sync_endpoint;
         if (!state.has_more_cloud_cmds && !state.audio_playing) {
-            float wait_sec = (state.cmd_spotify_action != 0 || state.btn_l_pressed || state.btn_r_pressed || state.btn_t_pressed) ? 1.0f : 6.0f;
+            float wait_sec = (state.cmd_spotify_action != 0 || state.btn_l_pressed || state.btn_r_pressed || state.btn_t_pressed) ? 0.2f : 6.0f;
             char wait_param[16];
             snprintf(wait_param, sizeof(wait_param), "?wait=%.1f", wait_sec);
             req_url += (req_url.indexOf('?') == -1 ? wait_param : String("&") + (wait_param + 1));

@@ -50,6 +50,7 @@ private:
         }
 
         if (audio.isRunning()) return; // Якщо грає стрім MP3 — не перебиваємо його
+        i2s_start(I2S_NUM_0);
         cur_synth = type;
         synth_sample_idx = 0;
         synth_phase1 = 0.0f;
@@ -227,6 +228,7 @@ private:
         if (synth_sample_idx >= synth_total_samples) {
             cur_synth = SynthType::NONE;
             i2s_zero_dma_buffer(I2S_NUM_0);
+            i2s_stop(I2S_NUM_0);
         }
     }
 
@@ -240,6 +242,8 @@ public:
         applied_volume = state.audio_volume;
         applied_muted  = state.audio_muted;
         audio.setVolume(applied_muted ? 0 : applied_volume);
+        i2s_zero_dma_buffer(I2S_NUM_0);
+        i2s_stop(I2S_NUM_0);
     }
 
     bool isPlaying() {

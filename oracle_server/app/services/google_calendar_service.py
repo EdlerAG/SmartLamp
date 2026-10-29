@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 import httpx
 
 from app.core.config import settings
+from app.core.http_client import http_pool
 from app.core.logger import logger
 from app.services.database_service import db_service
 from app.services.state_service import state_service
@@ -108,21 +109,21 @@ class GoogleCalendarService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.post(self.TOKEN_ENDPOINT, data=data)
-                if res.status_code != 200:
-                    logger.error("Google token exchange error %d: %s", res.status_code, res.text)
-                    return False
-                payload = res.json()
-                self._access_token = payload.get("access_token")
-                self._token_expires_at = time.time() + float(payload.get("expires_in", 3600)) - 60
+            client = http_pool.get()
+            res = await client.post(self.TOKEN_ENDPOINT, data=data, timeout=10.0)
+            if res.status_code != 200:
+                logger.error("Google token exchange error %d: %s", res.status_code, res.text)
+                return False
+            payload = res.json()
+            self._access_token = payload.get("access_token")
+            self._token_expires_at = time.time() + float(payload.get("expires_in", 3600)) - 60
 
-                saved = db_service.get_setting("google_calendar_tokens", {})
-                saved["refresh_token"] = payload.get("refresh_token", saved.get("refresh_token", ""))
-                db_service.set_setting("google_calendar_tokens", saved)
-                self._cached_event = None
-                logger.info("Google Calendar successfully linked for Nastya!")
-                return True
+            saved = db_service.get_setting("google_calendar_tokens", {})
+            saved["refresh_token"] = payload.get("refresh_token", saved.get("refresh_token", ""))
+            db_service.set_setting("google_calendar_tokens", saved)
+            self._cached_event = None
+            logger.info("Google Calendar successfully linked for Nastya!")
+            return True
         except Exception as e:
             logger.error("Google callback exception: %s", e)
             return False
@@ -151,15 +152,15 @@ class GoogleCalendarService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                res = await client.post(self.TOKEN_ENDPOINT, data=data)
-                if res.status_code == 200:
-                    payload = res.json()
-                    self._access_token = payload.get("access_token")
-                    self._token_expires_at = time.time() + float(payload.get("expires_in", 3600)) - 60
-                    return True
-                logger.warning("Google token refresh failed (%d): %s", res.status_code, res.text)
-                return False
+            client = http_pool.get()
+            res = await client.post(self.TOKEN_ENDPOINT, data=data, timeout=8.0)
+            if res.status_code == 200:
+                payload = res.json()
+                self._access_token = payload.get("access_token")
+                self._token_expires_at = time.time() + float(payload.get("expires_in", 3600)) - 60
+                return True
+            logger.warning("Google token refresh failed (%d): %s", res.status_code, res.text)
+            return False
         except Exception as e:
             logger.warning("Google token refresh exception: %s", e)
             return False
@@ -169,11 +170,11 @@ class GoogleCalendarService:
         if not url:
             return []
         try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-                res = await client.get(url)
-                if res.status_code != 200:
-                    return []
-                content = res.text
+            client = http_pool.get()
+            res = await client.get(url, timeout=10.0, follow_redirects=True)
+            if res.status_code != 200:
+                return []
+            content = res.text
         except Exception as e:
             logger.warning("Failed to fetch iCal: %s", e)
             return []
@@ -252,13 +253,13 @@ class GoogleCalendarService:
         headers = {"Authorization": f"Bearer {self._access_token}"}
 
         try:
-            async with httpx.AsyncClient(timeout=6.0) as client:
-                res = await client.get(self.CALENDAR_API, params=params, headers=headers)
-                if res.status_code != 200:
-                    return None
-                items = res.json().get("items", [])
-                if not items:
-                    return None
+            client = http_pool.get()
+            res = await client.get(self.CALENDAR_API, params=params, headers=headers, timeout=6.0)
+            if res.status_code != 200:
+                return None
+            items = res.json().get("items", [])
+            if not items:
+                return None
 
                 item = items[0]
                 summary = item.get("summary", "Подія")

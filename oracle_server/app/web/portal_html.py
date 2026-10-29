@@ -1202,6 +1202,15 @@ function spotifyAction(act){
     const spBadgeEl = document.getElementById('spBadge');
     const spPlayBtn = document.getElementById('spPlayBtn');
     const spDisc = document.getElementById('spDisc');
+  const spLyricEl = document.getElementById('spLyric');
+  if (spLyricEl) {
+    if (sp.lyric) {
+      spLyricEl.innerText = `“${sp.lyric}”`;
+      spLyricEl.style.display = 'block';
+    } else {
+      spLyricEl.innerText = '';
+    }
+  }
     if (spBadgeEl) { spBadgeEl.innerText = '⏸ PAUSED'; spBadgeEl.style.color = 'var(--text-secondary)'; }
     if (spPlayBtn) spPlayBtn.innerText = '▶️ Пуск';
     if (spDisc) spDisc.classList.remove('spinning');
@@ -1212,6 +1221,15 @@ function spotifyAction(act){
     const spBadgeEl = document.getElementById('spBadge');
     const spPlayBtn = document.getElementById('spPlayBtn');
     const spDisc = document.getElementById('spDisc');
+  const spLyricEl = document.getElementById('spLyric');
+  if (spLyricEl) {
+    if (sp.lyric) {
+      spLyricEl.innerText = `“${sp.lyric}”`;
+      spLyricEl.style.display = 'block';
+    } else {
+      spLyricEl.innerText = '';
+    }
+  }
     if (spBadgeEl) { spBadgeEl.innerText = '▶️ PLAYING'; spBadgeEl.style.color = 'var(--accent-success)'; }
     if (spPlayBtn) spPlayBtn.innerText = '⏸ Пауза';
     if (spDisc) spDisc.classList.add('spinning');
@@ -1323,6 +1341,15 @@ function updateSpotifyUI(sp) {
   const spDisconnectBtn = document.getElementById('spDisconnectBtn');
   const spBarEl = document.getElementById('spProgressBar');
   const spDisc = document.getElementById('spDisc');
+  const spLyricEl = document.getElementById('spLyric');
+  if (spLyricEl) {
+    if (sp.lyric) {
+      spLyricEl.innerText = `“${sp.lyric}”`;
+      spLyricEl.style.display = 'block';
+    } else {
+      spLyricEl.innerText = '';
+    }
+  }
 
   if (sp.linked) {
     if (spLoginBtn) spLoginBtn.style.display = 'none';

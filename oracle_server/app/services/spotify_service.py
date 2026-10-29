@@ -38,6 +38,9 @@ class SpotifyService:
         "_last_track_id",
         "_cached_state",
         "_last_ambi_rgb",
+        "_vinyl_cache",
+        "_lyrics_cache",
+        "_current_lyrics",
     )
 
     SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state"
@@ -71,6 +74,9 @@ class SpotifyService:
             "ambi_rgb": [56, 189, 248],
         }
         self._last_ambi_rgb: List[int] = [56, 189, 248]
+        self._vinyl_cache: Dict[str, Tuple[bytes, List[int]]] = {}
+        self._lyrics_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._current_lyrics: List[Dict[str, Any]] = []
 
     def _get_redirect_uri(self, base_url: str = "") -> str:
         if settings.SPOTIFY_REDIRECT_URI:
@@ -373,23 +379,39 @@ class SpotifyService:
                     "ambi_rgb": self._last_ambi_rgb,
                 }
 
-                # Якщо змінився трек — генеруємо нове вінілове коло з обкладинкою
+                # Якщо змінився трек — перевіряємо LRU кеш або генеруємо нове вінілове коло
                 track_changed = bool(track_id and track_id != self._last_track_id)
                 if track_changed:
                     self._last_track_id = track_id
-                    images = (item.get("album") or {}).get("images", [])
-                    art_url = images[0].get("url") if images else ""
+                    if track_id in self._vinyl_cache:
+                        vinyl_bytes, ambi = self._vinyl_cache[track_id]
+                        self._last_ambi_rgb = ambi
+                        self._cached_state["ambi_rgb"] = ambi
+                        with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
+                            f.write(vinyl_bytes)
+                    else:
+                        images = (item.get("album") or {}).get("images", [])
+                        art_url = images[0].get("url") if images else ""
+                        if art_url:
+                            art_resp = await http_pool.get().get(art_url, timeout=7.0)
+                            if art_resp.status_code == 200:
+                                vinyl_bytes, ambi = self._create_vinyl_art_bytes(art_resp.content)
+                                self._last_ambi_rgb = ambi
+                                self._cached_state["ambi_rgb"] = ambi
+                                if len(self._vinyl_cache) > 20:
+                                    self._vinyl_cache.pop(next(iter(self._vinyl_cache)))
+                                self._vinyl_cache[track_id] = (vinyl_bytes, ambi)
+                                with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
+                                    f.write(vinyl_bytes)
+                                memory_guard.trim_ram()
 
-                    if art_url:
-                        art_resp = await http_pool.get().get(art_url, timeout=7.0)
-                        if art_resp.status_code == 200:
-                            vinyl_bytes, ambi = self._create_vinyl_art_bytes(art_resp.content)
-                            self._last_ambi_rgb = ambi
-                            self._cached_state["ambi_rgb"] = ambi
+                    # Асинхронне підвантаження синхронізованих рядків пісні (LRCLIB)
+                    asyncio.create_task(self._fetch_lyrics(track_id, title, artist, duration_ms // 1000))
 
-                            with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
-                                f.write(vinyl_bytes)
-                            memory_guard.trim_ram()
+                # Визначаємо поточний рядок тексту за прогресом
+                cur_lyric = self._get_active_lyric(progress_ms)
+                if cur_lyric:
+                    self._cached_state["lyric"] = cur_lyric
 
                 try:
                     from app.core.events import realtime_hub
@@ -421,6 +443,52 @@ class SpotifyService:
             return self.get_cached_state()
 
         return await self.fetch_current_playback()
+
+    async def _fetch_lyrics(self, track_id: str, title: str, artist: str, duration_sec: int) -> None:
+        if track_id in self._lyrics_cache:
+            self._current_lyrics = self._lyrics_cache[track_id]
+            return
+        clean_title = re.sub(r"\s*\(.*?\)|\s*\[.*?\]", "", title).strip()
+        first_artist = artist.split(",")[0].strip()
+        params = {
+            "track_name": clean_title,
+            "artist_name": first_artist,
+        }
+        if duration_sec > 10:
+            params["duration"] = str(duration_sec)
+        try:
+            resp = await http_pool.get().get("https://lrclib.net/api/get", params=params, timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                synced = data.get("syncedLyrics") or ""
+                parsed = []
+                for line in synced.splitlines():
+                    m = re.match(r"\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)", line)
+                    if m:
+                        sec = int(m.group(1)) * 60 + float(m.group(2))
+                        txt = m.group(3).strip()
+                        if txt:
+                            parsed.append({"sec": sec, "text": txt})
+                if len(self._lyrics_cache) > 20:
+                    self._lyrics_cache.pop(next(iter(self._lyrics_cache)))
+                self._lyrics_cache[track_id] = parsed
+                self._current_lyrics = parsed
+            else:
+                self._current_lyrics = []
+        except Exception:
+            self._current_lyrics = []
+
+    def _get_active_lyric(self, progress_ms: int) -> str:
+        if not self._current_lyrics:
+            return ""
+        cur_sec = progress_ms / 1000.0
+        active = ""
+        for item in self._current_lyrics:
+            if item["sec"] <= cur_sec:
+                active = item["text"]
+            else:
+                break
+        return active
 
     def get_cached_state(self) -> Dict[str, Any]:
         st = dict(self._cached_state)
