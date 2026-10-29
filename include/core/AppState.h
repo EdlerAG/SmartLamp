@@ -102,13 +102,19 @@ struct AppState {
     volatile bool     cal_active            = false;
     volatile bool     quiet_hours_active    = false;
 
-    // --- POMODORO ФОКУС-ТАЙМЕР (v5.1) ---
+    // --- POMODORO ФОКУС-ТАЙМЕР (v5.1 - v5.3) ---
     volatile bool     pomo_active           = false;
     volatile bool     pomo_paused           = false;
     volatile uint8_t  pomo_duration_min     = 25;  // 5..90 хв (налаштовується кнопками ◄/►)
+    volatile uint8_t  pomo_break_duration_min = 5;
     volatile uint32_t pomo_end_ms           = 0;
     volatile uint32_t pomo_paused_rem_ms    = 0;
+    volatile uint32_t pomo_paused_at_ms     = 0;
     volatile bool     pomo_is_break         = false; // false: фокус, true: перерва
+
+    // --- РАНКОВИЙ БУДИЛЬНИК (v5.3) ---
+    volatile bool     alarm_active          = false;
+    volatile bool     alarm_dismissed       = false;
 
     // --- ПРИВІТАННЯ З ДНЕМ НАРОДЖЕННЯ (v5.1) ---
     volatile bool     birthday_greeted          = false;
@@ -368,6 +374,7 @@ struct AppState {
             pomo_end_ms = now + pomo_paused_rem_ms;
         } else {
             pomo_paused = true;
+            pomo_paused_at_ms = now;
             pomo_paused_rem_ms = (pomo_end_ms > now) ? (pomo_end_ms - now) : 0;
         }
         portEXIT_CRITICAL(&mux);
@@ -382,13 +389,14 @@ struct AppState {
         pomo_is_break = false;
         pomo_end_ms = 0;
         pomo_paused_rem_ms = 0;
+        pomo_paused_at_ms = 0;
         portEXIT_CRITICAL(&mux);
         ui_force_dirty = true;
         registerActivity();
     }
 
     uint16_t getPomoRemainingSeconds() const {
-        if (!pomo_active) return (uint16_t)pomo_duration_min * 60;
+        if (!pomo_active) return 0;
         if (pomo_paused) return (uint16_t)(pomo_paused_rem_ms / 1000);
         uint32_t now = millis();
         if (now >= pomo_end_ms) return 0;
@@ -396,12 +404,19 @@ struct AppState {
     }
 
     void updatePomodoroLifecycle(uint32_t now) {
-        if (!pomo_active || pomo_paused) return;
+        if (!pomo_active) return;
+        if (pomo_paused) {
+            // Захист від зависання: авто-скасування сесії після 60 хвилин паузи
+            if (pomo_paused_at_ms > 0 && (now - pomo_paused_at_ms >= 3600000UL)) {
+                pomoStop();
+            }
+            return;
+        }
         if (now >= pomo_end_ms) {
             portENTER_CRITICAL(&mux);
             if (!pomo_is_break) {
                 pomo_is_break = true;
-                pomo_end_ms = now + (5 * 60000UL);
+                pomo_end_ms = now + ((uint32_t)pomo_break_duration_min * 60000UL);
                 light_mode = MODE_OCEAN_BREEZE;
                 trig_notify_bell = true;
             } else {

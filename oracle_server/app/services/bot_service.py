@@ -465,7 +465,6 @@ class TelegramBotService:
             act = data.split(":", 1)[1]
             if act == "stop":
                 nastya_routine_service.stop_pomodoro()
-                state_service.enqueue_raw({"pomo_action": "stop"})
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🛑 Pomodoro зупинено"})
                 await self._api("editMessageText", {
                     "chat_id": chat_id,
@@ -489,7 +488,6 @@ class TelegramBotService:
                 except ValueError:
                     dur = 25
                 nastya_routine_service.start_pomodoro(dur)
-                state_service.enqueue_raw({"pomo_action": "start", "pomo_min": dur})
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"⏳ Фокус {dur} хв запущено!"})
                 await self._api("editMessageText", {
                     "chat_id": chat_id,
@@ -512,8 +510,6 @@ class TelegramBotService:
                 "dnd": new_dnd,
                 "muted": new_dnd,
                 "set_brt": "0" if new_dnd else "auto",
-                "sender": "DND",
-                "msg": "DND Увімкнено" if new_dnd else "DND Вимкнено",
             })
             ans = "🌙 Режим DND увімкнено (Нічник + MUTE)" if new_dnd else "☀️ Режим DND вимкнено"
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans})

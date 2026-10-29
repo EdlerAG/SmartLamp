@@ -5,7 +5,7 @@ import time
 import zlib
 import struct
 import asyncio
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 import numpy as np
 from fastapi import UploadFile, HTTPException
 

@@ -5,6 +5,7 @@
 #include "core/IService.h"
 #include "core/AppState.h"
 #include "core/StorageService.h"
+#include "utils/Crc32.h"
 
 class DisplayService : public IService {
 private:
@@ -49,6 +50,15 @@ public:
         if (bytes_read >= sizeof(MbxHeader)) {
             MbxHeader* hdr = (MbxHeader*)state.psram_saver_buf;
             if (memcmp(hdr->magic, "MBX5", 4) == 0 && hdr->num_frames > 0) {
+                // Перевірка цілісності CRC32 збереженої заставки у LittleFS
+                if (hdr->crc32 != 0 && bytes_read > sizeof(MbxHeader)) {
+                    uint32_t calc_crc = Crc32::calculate(state.psram_saver_buf + sizeof(MbxHeader), bytes_read - sizeof(MbxHeader));
+                    if (calc_crc != hdr->crc32) {
+                        state.saver_loaded = false;
+                        state.saver_num_frames = 0;
+                        return;
+                    }
+                }
                 state.saver_num_frames = hdr->num_frames;
                 state.saver_fps        = hdr->fps > 0 ? hdr->fps : 12;
                 state.saver_crc        = hdr->crc32;

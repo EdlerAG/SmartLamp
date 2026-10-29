@@ -162,6 +162,7 @@ public:
         bool ack_flag = false;
         uint8_t ping_val = 0;
         int8_t sp_act = 0;
+        bool alarm_off_flag = false;
 
         portENTER_CRITICAL(&state.mux);
         if (state.oracle_online && state.oracle_manages_bot) {
@@ -172,6 +173,8 @@ public:
         }
         sp_act = state.cmd_spotify_action;
         state.cmd_spotify_action = 0;
+        alarm_off_flag = state.alarm_dismissed;
+        state.alarm_dismissed = false;
         portEXIT_CRITICAL(&state.mux);
 
         snprintf(out, max_len,
@@ -185,6 +188,7 @@ public:
                  "\"sp_act\":%d,\"sp_playing\":%s,"
                  "\"heap\":%lu,\"psram_free\":%lu,"
                  "\"rst\":\"%s\","
+                 "\"alarm_off\":%s,"
                  "\"ack\":%s,\"ping\":%u}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
@@ -200,6 +204,7 @@ public:
                  (int)sp_act, state.spotify.playing ? "true" : "false",
                  (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
                  state.reset_reason,
+                 alarm_off_flag ? "true" : "false",
                  ack_flag ? "true" : "false", ping_val);
     }
 

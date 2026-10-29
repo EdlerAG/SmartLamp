@@ -816,7 +816,7 @@ namespace ScreenRenderer {
         drawPerimeterTicks(canvas);
 
         uint16_t rem_sec = state.getPomoRemainingSeconds();
-        uint16_t tot_sec = (uint16_t)state.pomo_duration_min * 60;
+        uint16_t tot_sec = state.pomo_is_break ? ((uint16_t)state.pomo_break_duration_min * 60) : ((uint16_t)state.pomo_duration_min * 60);
         float prog = (tot_sec > 0) ? ((float)rem_sec / (float)tot_sec) : 0.0f;
         prog = constrain(prog, 0.0f, 1.0f);
 

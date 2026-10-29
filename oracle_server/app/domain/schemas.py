@@ -35,6 +35,7 @@ class BoxTelemetryPayload(BaseModel):
     ping: int = 0  # 2..6 = натиснута фізична кнопка реакції на лампі
     sp_act: int = 0 # 1: next, 2: prev, 3: play_pause від кнопок лампи
     rst: Optional[str] = "UNKNOWN" # Причина останнього перезапуску ESP32
+    alarm_off: bool = False # Будильник вимкнено фізичною кнопкою на шкатулці
 
 
 class CommandPayload(BaseModel):

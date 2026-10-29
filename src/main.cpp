@@ -156,6 +156,17 @@ void processEvents() {
             continue;
         }
 
+        // 0.1. Якщо активний ранковий будильник — дотик до БУДЬ-ЯКОЇ кнопки вимикає звук будильника і ставить комфортне світло
+        if (appState.alarm_active) {
+            appState.alarm_active = false;
+            appState.alarm_dismissed = true;
+            appState.stopActiveMedia();
+            CommandRouter::setLightMode(appState, MODE_WARM_COZY);
+            CommandRouter::setBrightnessPreset(appState, false, 2); // 65% комфортне світло
+            appState.registerActivity();
+            continue;
+        }
+
         // 1. Якщо відкритий майстер Onboarding — кнопки мають специфічну навігацію
         if (appState.sys_ui_state == SystemUiState::SYS_ONBOARDING_WIZARD) {
             handleOnboardingButton(ev.type);

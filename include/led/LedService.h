@@ -15,6 +15,11 @@ private:
     uint16_t notify_frames      = 0;
     uint8_t  active_notify_type = NOTIFY_NONE;
 
+    float    cur_r              = 0.0f;
+    float    cur_g              = 0.0f;
+    float    cur_b              = 0.0f;
+    uint32_t last_lerp_ms       = 0;
+
     const uint8_t manual_levels[4] = {20, 48, 88, Config::MAX_SAFE_BRT};
     const uint8_t lcd_levels[4]    = {60, 130, 200, 255};
 
@@ -23,14 +28,31 @@ private:
         bool mode_changed = (state.light_mode != last_mode);
         last_mode = state.light_mode;
 
-        uint8_t eff_r = state.ambi_r;
-        uint8_t eff_g = state.ambi_g;
-        uint8_t eff_b = state.ambi_b;
+        uint8_t target_r = state.ambi_r;
+        uint8_t target_g = state.ambi_g;
+        uint8_t target_b = state.ambi_b;
         if (state.light_mode == MODE_SPOTIFY_AMBI && state.spotify.playing) {
-            eff_r = state.spotify.ambi_r;
-            eff_g = state.spotify.ambi_g;
-            eff_b = state.spotify.ambi_b;
+            target_r = state.spotify.ambi_r;
+            target_g = state.spotify.ambi_g;
+            target_b = state.spotify.ambi_b;
         }
+
+        // Преміальний плавний перехід кольору (RGB lerp ~350мс) замість різкого стрибка
+        if (mode_changed || force) {
+            cur_r = (float)target_r;
+            cur_g = (float)target_g;
+            cur_b = (float)target_b;
+            last_lerp_ms = now;
+        } else if (now - last_lerp_ms >= 20) {
+            last_lerp_ms = now;
+            cur_r += ((float)target_r - cur_r) * 0.15f;
+            cur_g += ((float)target_g - cur_g) * 0.15f;
+            cur_b += ((float)target_b - cur_b) * 0.15f;
+        }
+
+        uint8_t eff_r = (uint8_t)constrain((int)(cur_r + 0.5f), 0, 255);
+        uint8_t eff_g = (uint8_t)constrain((int)(cur_g + 0.5f), 0, 255);
+        uint8_t eff_b = (uint8_t)constrain((int)(cur_b + 0.5f), 0, 255);
 
         if (notify_frames > 0) {
             if (now - last_anim_ms >= 20) {

@@ -22,7 +22,9 @@ class NastyaRoutineService:
         "_pomodoro_mode",
         "_pomodoro_end_time",
         "_pomodoro_duration_min",
+        "_pomodoro_work_duration_min",
         "_last_alarm_date",
+        "_alarm_dismissed_date",
         "_last_morning_brief_date",
     )
 
@@ -31,7 +33,9 @@ class NastyaRoutineService:
         self._pomodoro_mode: str = "idle" # "work", "break", "idle"
         self._pomodoro_end_time: float = 0.0
         self._pomodoro_duration_min: int = 25
+        self._pomodoro_work_duration_min: int = 25
         self._last_alarm_date: str = ""
+        self._alarm_dismissed_date: str = ""
         self._last_morning_brief_date: str = ""
 
     @staticmethod
@@ -111,6 +115,9 @@ class NastyaRoutineService:
             return {"active": False}
 
         today_str = now.strftime("%Y-%m-%d")
+        if self._alarm_dismissed_date == today_str:
+            return {"active": False}
+
         try:
             a_h, a_m = map(int, cfg["time"].split(":"))
             alarm_total = a_h * 60 + a_m
@@ -134,12 +141,19 @@ class NastyaRoutineService:
 
         return {"active": False}
 
+    def dismiss_alarm(self) -> None:
+        """Скидає будильник/схід сонця на сьогодні за дотиком до шкатулки або через інтерфейс."""
+        today_str = self.get_kyiv_now().strftime("%Y-%m-%d")
+        self._alarm_dismissed_date = today_str
+        logger.info("Alarm dismissed for today: %s", today_str)
+
     # --- 3. РЕЖИМ ФОКУСУ ТА НАВЧАННЯ (POMODORO) ---
     def start_pomodoro(self, work_min: int = 25, break_min: int = 5) -> Dict[str, Any]:
         now = time.time()
         self._pomodoro_active = True
         self._pomodoro_mode = "work"
         self._pomodoro_duration_min = work_min
+        self._pomodoro_work_duration_min = work_min
         self._pomodoro_end_time = now + (work_min * 60)
 
         # Ставимо тепле затишне світло для концентрації (бурштин або камін)
@@ -156,6 +170,7 @@ class NastyaRoutineService:
     def stop_pomodoro(self) -> Dict[str, Any]:
         self._pomodoro_active = False
         self._pomodoro_mode = "idle"
+        self._pomodoro_duration_min = self._pomodoro_work_duration_min
         self._pomodoro_end_time = 0.0
         state_service.enqueue_raw({
             "pomo_action": "stop",
@@ -206,10 +221,13 @@ class NastyaRoutineService:
         self._pomodoro_active = active
         if active:
             self._pomodoro_mode = "break" if is_break else "work"
-            self._pomodoro_duration_min = max(5, duration_min)
+            if not is_break:
+                self._pomodoro_work_duration_min = max(5, duration_min)
+            self._pomodoro_duration_min = 5 if is_break else max(5, duration_min)
             self._pomodoro_end_time = time.time() + max(1, remaining_sec)
         else:
             self._pomodoro_mode = "idle"
+            self._pomodoro_duration_min = self._pomodoro_work_duration_min
             self._pomodoro_end_time = 0.0
 
     # --- 4. РАНКОВИЙ МЕТЕО-ГІД «ЩО ОДЯГНУТИ» ДЛЯ НАСТІ ---

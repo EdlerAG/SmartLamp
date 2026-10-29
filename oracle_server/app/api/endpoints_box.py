@@ -43,16 +43,30 @@ async def sync_box(
             cur_p = spotify_service.get_cached_state().get("playing", False)
             await spotify_service.player_action("pause" if cur_p else "play")
 
+    # Якщо лампа повідомила про скидання будильника фізичною кнопкою
+    if payload.alarm_off:
+        nastya_routine_service.dismiss_alarm()
+
     # Двостороння синхронізація режиму Pomodoro з екрана 5 / кнопок лампи
     # Перевіряємо, чи немає активної команди pomo_action у черзі сервера, щоб уникнути race condition
     has_pomo_cmd = any("pomo_action" in cmd for cmd in state_service.command_queue)
-    if not has_pomo_cmd and (payload.pomo or payload.pomo_rem > 0):
-        nastya_routine_service.sync_pomodoro_from_box(
-            active=payload.pomo,
-            remaining_sec=payload.pomo_rem,
-            is_break=payload.pomo_brk,
-            duration_min=payload.pomo_dur,
-        )
+    if not has_pomo_cmd:
+        cur_pomo = nastya_routine_service.get_pomodoro_status()
+        if payload.pomo:
+            nastya_routine_service.sync_pomodoro_from_box(
+                active=True,
+                remaining_sec=payload.pomo_rem,
+                is_break=payload.pomo_brk,
+                duration_min=payload.pomo_dur,
+            )
+        elif cur_pomo.get("active", False):
+            # Шкатулка зупинила Pomodoro фізичною кнопкою
+            nastya_routine_service.sync_pomodoro_from_box(
+                active=False,
+                remaining_sec=0,
+                is_break=False,
+                duration_min=payload.pomo_dur,
+            )
 
     # Demand-driven опитування Spotify (0.00 мс якщо не відкритий Хаб)
     sp_data = await spotify_service.get_sync_state(

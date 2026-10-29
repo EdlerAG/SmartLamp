@@ -1,10 +1,12 @@
 # Файл: oracle_server/app/api/endpoints_control.py
 import os
 import secrets
-from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTTPException, Query
+from typing import Optional, Dict, Any, List
+from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTTPException, Query, Cookie
 from fastapi.responses import HTMLResponse, FileResponse
 
 from app.core.config import settings
+from app.core.logger import logger
 from app.core.security import (
     verify_access,
     verify_admin_access,
@@ -95,9 +97,7 @@ async def logout_dashboard(response: Response, mb_session: Optional[str] = Cooki
 @router.get("/api/v1/box/state")
 @router.get("/api/v5/state")
 async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = Depends(verify_access)):
-    cal_event = None
-    if google_calendar_service.is_linked():
-        cal_event = await google_calendar_service.get_next_event()
+    cal_event = await google_calendar_service.get_next_event()
 
     resp = {
         "ok": True,
@@ -299,7 +299,7 @@ async def get_infographic_png(_: str = Depends(verify_access)):
 async def set_audio_volume(req: VolumeControlRequest, _: str = Depends(verify_access)):
     """Керування гучністю (0..21), Mute та звуком сенсорних кнопок."""
     cmd = CommandPayload(
-        vol=req.volume,
+        volume=req.volume,
         muted=req.muted,
         touch_beep=req.touch_beep,
     )
@@ -312,15 +312,15 @@ async def configure_voice(req: VoiceConfigRequest, _: str = Depends(verify_acces
     """Налаштування провайдера TTS (Edge-TTS, ElevenLabs, Fish Audio) та голосу."""
     if req.provider:
         db_service.set_setting("tts_provider", req.provider)
-    if req.edge_voice:
-        db_service.set_setting("tts_edge_voice", req.edge_voice)
-    if req.clone_voice_id:
-        db_service.set_setting("voice_clone_id", req.clone_voice_id)
+    if req.voice_name:
+        db_service.set_setting("tts_edge_voice", req.voice_name)
+    if req.voice_id:
+        db_service.set_setting("voice_clone_id", req.voice_id)
     return {
         "ok": True,
         "provider": req.provider or db_service.get_setting("tts_provider", settings.TTS_PROVIDER),
-        "edge_voice": req.edge_voice or db_service.get_setting("tts_edge_voice", settings.TTS_EDGE_VOICE),
-        "clone_voice_id": req.clone_voice_id or db_service.get_setting("voice_clone_id", settings.VOICE_CLONE_ID),
+        "voice_name": req.voice_name or db_service.get_setting("tts_edge_voice", settings.TTS_EDGE_VOICE),
+        "voice_id": req.voice_id or db_service.get_setting("voice_clone_id", settings.VOICE_CLONE_ID),
     }
 
 
@@ -502,17 +502,27 @@ async def update_alarm(
     return {"ok": True, "enabled": enabled, "time": time_str, "days": day_list}
 
 
+@router.post("/api/v5/nastya/alarm/dismiss")
+async def dismiss_alarm(_: str = Depends(verify_access)):
+    """Вимкнути ранковий будильник/схід сонця на сьогодні."""
+    nastya_routine_service.dismiss_alarm()
+    state_service.enqueue_raw({
+        "stop_media": True,
+        "set_mode": 0,
+        "set_brt": "2",
+    })
+    return {"ok": True, "dismissed": True}
+
+
 @router.post("/api/v5/nastya/pomodoro/start")
 async def start_pomodoro(work_min: int = Query(25, ge=5, le=120), _: str = Depends(verify_access)):
     st = nastya_routine_service.start_pomodoro(work_min)
-    state_service.enqueue_command(CommandPayload(pomo_action="start", pomo_min=work_min))
     return {"ok": True, **st}
 
 
 @router.post("/api/v5/nastya/pomodoro/stop")
 async def stop_pomodoro(_: str = Depends(verify_access)):
     st = nastya_routine_service.stop_pomodoro()
-    state_service.enqueue_command(CommandPayload(pomo_action="stop"))
     return {"ok": True, **st}
 
 
