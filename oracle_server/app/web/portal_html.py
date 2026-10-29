@@ -410,8 +410,8 @@ input::placeholder, textarea::placeholder {
   <div class="login-box">
     <div style="font-size:32px;margin-bottom:8px">🪄</div>
     <h2 style="font-size:16px;margin-bottom:6px">MagicBox Studio • Sovereign v5.0</h2>
-    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">Введіть PIN (0511) або пароль адміністратора</p>
-    <input type="password" id="pwdInput" placeholder="PIN (0511)...">
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">Аварійний вхід: введіть пароль доступу</p>
+    <input type="password" id="pwdInput" placeholder="Пароль доступу..." onkeydown="if(event.key==='Enter')doLogin()">
     <button class="btn btn-cool" style="width:100%;margin-top:10px" onclick="doLogin()">Увійти</button>
   </div>
 </div>
@@ -957,7 +957,7 @@ function doLogin(){
       document.getElementById('loginModal').style.display = 'none';
       pollState();
     } else {
-      alert('Невірний пароль або PIN');
+      alert('Невірний пароль');
     }
   });
 }
@@ -1818,7 +1818,9 @@ function pollState(forceFull = false){
   const url = isFull ? '/api/v5/state?hours=24' : '/api/v5/state?fast=true';
   fetch(url).then(r => {
     if(r.status === 401) {
-      document.getElementById('loginModal').style.display = 'flex';
+      if(!window.Telegram?.WebApp?.initData) {
+        document.getElementById('loginModal').style.display = 'flex';
+      }
       return null;
     }
     return r.json();
@@ -1947,8 +1949,13 @@ function pollState(forceFull = false){
   }).catch(()=>{});
 }
 
-// Telegram Mini App Auto-Auth
-if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+// Restore saved tab or default to 'music'
+const savedTab = localStorage.getItem('mb_active_tab') || 'music';
+switchTab(savedTab);
+
+// Telegram Mini App Auto-Auth (Zero-Click, No Login Modal)
+const isTelegramApp = Boolean(window.Telegram?.WebApp?.initData);
+if (isTelegramApp) {
   try {
     window.Telegram.WebApp.ready();
     window.Telegram.WebApp.expand();
@@ -1960,22 +1967,17 @@ if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData
     .then(r => r.json())
     .then(d => {
       if (d && d.ok) {
-        const lm = document.getElementById('loginModal');
-        if (lm) lm.style.display = 'none';
         pollState(true);
         loadCalendarEvents();
       }
     })
     .catch(() => {});
   } catch (_) {}
+} else {
+  // Regular browser emergency access
+  pollState();
+  loadCalendarEvents();
 }
-
-// Restore saved tab or default to 'music'
-const savedTab = localStorage.getItem('mb_active_tab') || 'music';
-switchTab(savedTab);
-
-pollState();
-loadCalendarEvents();
 setInterval(loadCalendarEvents, 30000);
 
 function scheduleAdaptivePoll(){

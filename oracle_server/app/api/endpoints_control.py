@@ -509,9 +509,10 @@ async def play_voice_preset(name: str, request: Request, _: str = Depends(verify
 # ====================================================================
 
 @router.get("/api/v5/google/login")
+@router.get("/api/v5/calendar/login")
 async def get_google_login(request: Request, _: str = Depends(verify_access)):
     url = google_calendar_service.get_authorize_url(str(request.base_url))
-    return {"ok": True, "auth_url": url}
+    return {"ok": True, "auth_url": url, "url": url}
 
 
 @router.post("/api/v5/google/credentials")
@@ -567,6 +568,7 @@ async def get_google_status(_: str = Depends(verify_access)):
 
 
 @router.post("/api/v5/google/disconnect")
+@router.post("/api/v5/calendar/disconnect")
 async def disconnect_google(_: str = Depends(verify_access)):
     google_calendar_service.disconnect()
     return {"ok": True}
