@@ -66,7 +66,34 @@ def update_env_url(url: str) -> None:
     print("[Tunnel] smartlamp.service restarted with new HTTPS endpoint.")
 
 
+STATIC_DOMAIN = os.getenv("STATIC_DOMAIN", "yearling-shy-reviving.ngrok-free.dev")
+
+
 def main() -> None:
+    ngrok_bin = "/usr/local/bin/ngrok"
+    if os.path.exists(ngrok_bin):
+        tunnel_url = f"https://{STATIC_DOMAIN}"
+        print(f"[Tunnel] Starting permanent Ngrok static HTTPS tunnel ({tunnel_url}) to http://127.0.0.1:8000 ...")
+        update_env_url(tunnel_url)
+        cmd = [
+            ngrok_bin,
+            "http",
+            f"--url={STATIC_DOMAIN}",
+            "8000",
+            "--log=stdout",
+        ]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        try:
+            for line in proc.stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+        except KeyboardInterrupt:
+            proc.terminate()
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+        return
+
     cmd = [
         "/usr/bin/ssh",
         "-o", "StrictHostKeyChecking=no",
