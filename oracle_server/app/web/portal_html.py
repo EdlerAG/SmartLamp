@@ -286,6 +286,38 @@ input::placeholder, textarea::placeholder {
   </div>
 </div>
 
+<div id="hellcatModal" style="position:fixed;inset:0;background:rgba(5,6,10,0.92);backdrop-filter:blur(10px);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px">
+  <div style="background:linear-gradient(145deg, #12151e 0%, #0a0c13 100%);border:1px solid #e63946;box-shadow:0 0 35px rgba(230,57,70,0.25);border-radius:16px;max-width:440px;width:100%;padding:28px 24px;text-align:center;position:relative">
+    <button onclick="closeHellcatModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:#8a94a6;font-size:22px;cursor:pointer;line-height:1">&times;</button>
+    <div style="display:inline-flex;align-items:center;gap:8px;padding:4px 12px;border-radius:20px;background:rgba(230,57,70,0.15);border:1px solid #e63946;color:#ff6b6b;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:14px">
+      ⚡️ HELLCAT PROTOCOL • V5.0
+    </div>
+    <h2 style="font-size:20px;font-weight:800;letter-spacing:0.5px;color:#f4f3ef;margin-bottom:8px">
+      SmartLamp Sovereign Gateway
+    </h2>
+    <p style="font-size:13px;color:#8a94a6;margin-bottom:18px;line-height:1.5">
+      Відскануйте QR-код смартфоном для миттєвого підключення до Telegram-бота керування лампою:
+    </p>
+    
+    <div style="background:#fff;padding:12px;border-radius:12px;display:inline-block;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-bottom:14px">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&amp;margin=2&amp;data=https%3A%2F%2Ft.me%2FSmartLampEdlerAGBot" alt="QR Code" width="200" height="200" style="display:block;border-radius:6px">
+    </div>
+    
+    <div class="mono" style="font-size:14px;font-weight:700;color:#ff6b6b;margin-bottom:18px">
+      @SmartLampEdlerAGBot
+    </div>
+    
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <a href="https://t.me/SmartLampEdlerAGBot" target="_blank" class="btn btn-cool" style="background:#e63946;color:#fff;border:none;text-decoration:none;padding:11px 16px;border-radius:10px;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px">
+        📱 Відкрити @SmartLampEdlerAGBot
+      </a>
+      <button onclick="dismissHellcatWelcome()" class="btn" style="background:#181d29;border:1px solid #222834;padding:10px;border-radius:10px;font-size:12px">
+        ✨ Перейти до Smart Studio
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="wrap">
   <div class="top-bar">
     <div class="brand">
@@ -309,6 +341,7 @@ input::placeholder, textarea::placeholder {
       <a href="/api/v5/infographic/png" target="_blank" class="btn btn-cool" style="text-decoration:none;display:flex;align-items:center;gap:6px">
         📊 800x500 Інфографіка
       </a>
+      <button onclick="openHellcatModal()" class="btn" style="border-color:#e63946;color:#ff6b6b;padding:6px 12px;font-size:11px">⚡️ QR Бот</button>
       <button onclick="doLogout()" class="btn" style="padding:6px 12px;font-size:11px">🚪 Вийти</button>
     </div>
   </div>
@@ -683,6 +716,24 @@ function toast(msg){
   t.innerText = msg;
   t.style.display = 'block';
   setTimeout(() => t.style.display = 'none', 2400);
+}
+
+function openHellcatModal(){
+  const m = document.getElementById('hellcatModal');
+  if(m) m.style.display = 'flex';
+}
+function closeHellcatModal(){
+  const m = document.getElementById('hellcatModal');
+  if(m) m.style.display = 'none';
+}
+function dismissHellcatWelcome(){
+  localStorage.setItem('smartlamp_welcomed', 'true');
+  closeHellcatModal();
+}
+function checkHellcatFirstLaunch(){
+  if(!localStorage.getItem('smartlamp_welcomed')){
+    openHellcatModal();
+  }
 }
 
 function doLogin(){
@@ -1435,6 +1486,7 @@ function pollState(forceFull = false){
       personaLoaded = true;
       document.getElementById('aiName').value = d.ai_persona.name;
       document.getElementById('aiPrompt').value = d.ai_persona.prompt;
+      checkHellcatFirstLaunch();
     }
 
     if(!configLoaded && d.tts_config){
