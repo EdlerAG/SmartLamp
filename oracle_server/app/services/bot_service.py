@@ -5,6 +5,7 @@ import asyncio
 import re
 from typing import Optional, Dict, Any, Tuple
 
+from app.core.logger import logger
 from app.core.config import settings
 from app.core.http_client import http_pool
 from app.services.database_service import db_service
