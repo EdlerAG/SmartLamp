@@ -4,10 +4,15 @@ from dataclasses import dataclass
 
 
 def _load_dotenv_if_exists(env_path: str = ".env") -> None:
-    if not os.path.exists(env_path):
+    candidates = [
+        env_path,
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+    ]
+    target = next((p for p in candidates if os.path.isfile(p)), None)
+    if not target:
         return
     try:
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(target, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:

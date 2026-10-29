@@ -1037,7 +1037,14 @@ class TelegramBotService:
 
     async def polling_loop(self) -> None:
         if not settings.SERVER_MANAGES_BOT or len(settings.TG_BOT_TOKEN) < 15:
+            logger.warning(
+                "⚠️ Telegram bot polling disabled (SERVER_MANAGES_BOT=%s, token_len=%d)",
+                settings.SERVER_MANAGES_BOT,
+                len(settings.TG_BOT_TOKEN),
+            )
             return
+
+        logger.info("🤖 Telegram bot polling active for @%s (token: ...%s)", "SmartLampEdlerAGBot", settings.TG_BOT_TOKEN[-6:])
 
         try:
             if not self.webhook_cleared:
