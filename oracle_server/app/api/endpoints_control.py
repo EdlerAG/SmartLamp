@@ -46,15 +46,20 @@ from app.web.portal_html import PORTAL_HTML
 router = APIRouter(tags=["Web Studio & Remote Control v5.0"])
 
 
+import hashlib
+_PORTAL_ETAG = hashlib.md5(PORTAL_HTML.encode("utf-8")).hexdigest()
+
 @router.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
-async def serve_web_studio():
-    """Вбудований Glassmorphism Web-Термінал MagicBox Studio v5.0 (0 МБ додаткового RAM)."""
+async def serve_web_studio(request: Request):
+    """Вбудований Glassmorphism Web-Термінал MagicBox Studio v5.0 з ETag та 304 валідацією."""
+    if request.headers.get("if-none-match") == _PORTAL_ETAG:
+        return Response(status_code=304)
+
     return HTMLResponse(
         content=PORTAL_HTML,
         headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
+            "ETag": _PORTAL_ETAG,
+            "Cache-Control": "public, max-age=0, must-revalidate",
         },
     )
 

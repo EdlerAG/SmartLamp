@@ -9,6 +9,7 @@ os.environ["MALLOC_ARENA_MAX"] = "2"
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import ORJSONResponse
 
 from app.core.config import settings, validate_security_keys
@@ -64,6 +65,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(api_router)
 
 

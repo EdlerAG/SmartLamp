@@ -10,7 +10,15 @@ PORTAL_HTML: str = r"""<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+  // Instant Telegram sheet ready & expansion before HTML render
+  try {
+    if (window.Telegram && window.Telegram.WebApp) {
+      window.Telegram.WebApp.ready();
+      window.Telegram.WebApp.expand();
+    }
+  } catch(_) {}
+</script>
 <style>
 :root {
   --bg-primary: #07090e;
@@ -878,6 +886,25 @@ input::placeholder, textarea::placeholder {
 <div class="toast" id="toast">Виконано</div>
 
 <script>
+// Lazy-Load Plotly on demand (saves 3.6 MB on initial launch)
+let plotlyLoaded = false;
+let plotlyLoading = false;
+function ensurePlotly(cb) {
+  if (window.Plotly) { if (cb) cb(); return; }
+  if (plotlyLoading) {
+    const t = setInterval(() => {
+      if (window.Plotly) { clearInterval(t); if (cb) cb(); }
+    }, 40);
+    return;
+  }
+  plotlyLoading = true;
+  const s = document.createElement('script');
+  s.src = 'https://cdn.plot.ly/plotly-2.35.2.min.js';
+  s.async = true;
+  s.onload = () => { plotlyLoaded = true; plotlyLoading = false; if (cb) cb(); };
+  document.head.appendChild(s);
+}
+
 // Tab Switching System (Zero-Reload / Instant Response)
 function switchTab(tabId) {
   const tabs = ['music', 'light', 'climate', 'routine', 'system'];
@@ -890,11 +917,7 @@ function switchTab(tabId) {
     if (botBtn) botBtn.classList.toggle('active', t === tabId);
   });
   localStorage.setItem('mb_active_tab', tabId);
-  if (tabId === 'climate' && window.Plotly) {
-    setTimeout(() => {
-      try { Plotly.Plots.resize('climateChart'); } catch(_) {}
-    }, 120);
-  }
+  if (tabId === 'climate') { ensurePlotly(() => { setTimeout(() => { try { Plotly.Plots.resize('climateChart'); } catch(_) {} }, 100); }); }
   if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
     try { window.Telegram.WebApp.HapticFeedback.impactOccurred('light'); } catch(_) {}
   }
@@ -1933,18 +1956,20 @@ function pollState(forceFull = false){
 
     const ch = d.climate_history || [];
     if(ch.length > 1){
-      const times = ch.map(x => new Date(x.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
-      Plotly.react('climateChart',[
-        {x:times, y:ch.map(x=>x.t), name:'Темп (°C)', type:'scatter', mode:'lines', line:{color:'#38bdf8',width:2.5}},
-        {x:times, y:ch.map(x=>x.p), name:'Барометр (мм)', type:'scatter', mode:'lines', line:{color:'#f59e0b',width:2,dash:'dot'}, yaxis:'y2'}
-      ],{
-        paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(7,9,14,0.6)',
-        font:{color:'#94a3b8', family:'JetBrains Mono', size:10},
-        margin:{l:35,r:35,t:10,b:25}, legend:{orientation:'h',y:1.15},
-        xaxis:{gridcolor:'#1e2536'},
-        yaxis:{gridcolor:'#1e2536'},
-        yaxis2:{overlaying:'y', side:'right', gridcolor:'rgba(0,0,0,0)'}
-      },{responsive:true, displayModeBar:false});
+      ensurePlotly(() => {
+        const times = ch.map(x => new Date(x.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+        Plotly.react('climateChart',[
+          {x:times, y:ch.map(x=>x.t), name:'Темп (°C)', type:'scatter', mode:'lines', line:{color:'#38bdf8',width:2.5}},
+          {x:times, y:ch.map(x=>x.p), name:'Барометр (мм)', type:'scatter', mode:'lines', line:{color:'#f59e0b',width:2,dash:'dot'}, yaxis:'y2'}
+        ],{
+          paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(7,9,14,0.6)',
+          font:{color:'#94a3b8', family:'JetBrains Mono', size:10},
+          margin:{l:35,r:35,t:10,b:25}, legend:{orientation:'h',y:1.15},
+          xaxis:{gridcolor:'#1e2536'},
+          yaxis:{gridcolor:'#1e2536'},
+          yaxis2:{overlaying:'y', side:'right', gridcolor:'rgba(0,0,0,0)'}
+        },{responsive:true, displayModeBar:false});
+      });
     }
   }).catch(()=>{});
 }
