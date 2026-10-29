@@ -23,6 +23,19 @@ from app.services.google_calendar_service import google_calendar_service
 router = APIRouter(tags=["ESP32-S3 Box Gateway v5.0"])
 
 
+_cal_cache: Dict[str, Any] = {"event": None, "ts": 0.0}
+
+async def _get_cached_calendar_event() -> Optional[Dict[str, Any]]:
+    now = time.time()
+    if now - _cal_cache["ts"] > 30.0:
+        _cal_cache["event"] = await google_calendar_service.get_next_event()
+        _cal_cache["ts"] = now
+    return _cal_cache["event"]
+
+def invalidate_calendar_cache() -> None:
+    _cal_cache["ts"] = 0.0
+
+
 async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any]:
     """Уніфікований обробник синхронізації та формування пакету для HTTP та WebSocket."""
     # 1. Обробка команд плеєра Spotify з кнопок лампи
@@ -92,8 +105,8 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
     # 6. Перевірка тихих годин
     resp["quiet_hours"] = nastya_routine_service.is_quiet_hours_now()
 
-    # 7. Перевірка найближчої події календаря Насті для Smart Hub
-    cal_ev = await google_calendar_service.get_next_event()
+    # 7. Перевірка найближчої події календаря Насті для Smart Hub (з швидким RAM TTL-кешем 30с)
+    cal_ev = await _get_cached_calendar_event()
     if cal_ev:
         resp["cal_event"] = cal_ev
 
@@ -132,6 +145,28 @@ async def box_websocket_endpoint(ws: WebSocket):
         while True:
             raw_msg = await ws.receive_text()
             data = orjson.loads(raw_msg)
+
+            # Передача пакета офлайн-точок блекауту напряму через відкритий WebSocket (0 HTTP-запитів)
+            if data.get("type") == "batch_telemetry":
+                points = data.get("points", [])
+                if points:
+                    samples = []
+                    now_sec = int(time.time())
+                    for pt in points:
+                        age = pt.get("age_sec", 0)
+                        ts = max(0, now_sec - age)
+                        samples.append({
+                            "ts": ts,
+                            "temp": pt.get("t", 0.0),
+                            "hum": pt.get("h", 0.0),
+                            "pres": pt.get("p", 0.0),
+                            "light": pt.get("l", 0),
+                        })
+                    cnt = db_service.add_climate_batch(samples)
+                    realtime_hub.emit_to_dashboards({"type": "batch", "count": cnt})
+                await ws.send_text(orjson.dumps({"type": "batch_ack", "ok": True}).decode("utf-8"))
+                continue
+
             payload = BoxTelemetryPayload(**data)
             prev_seen = state_service.update_telemetry(payload)
             await blackout_service.on_box_ping(prev_seen, ack=bool(payload.ack), ping_type=payload.ping or 0)

@@ -5,7 +5,6 @@ import base64
 import asyncio
 import urllib.parse
 from typing import Dict, Any, Optional, Tuple, List
-import numpy as np
 from PIL import Image, ImageOps
 
 from app.core.config import settings
@@ -13,14 +12,6 @@ from app.core.http_client import http_pool
 from app.core.memory_guard import memory_guard
 from app.services.database_service import db_service
 from app.services.state_service import state_service
-
-
-BAYER_4X4 = np.array([
-    [ 0,  8,  2, 10],
-    [12,  4, 14,  6],
-    [ 3, 11,  1,  9],
-    [15,  7, 13,  5]
-], dtype=np.float32)
 
 
 class SpotifyService:
@@ -263,6 +254,13 @@ class SpotifyService:
         - Отвір шпинделя R < 6.
         - Застосовує Bayer 4x4 Ordered Dithering та повертає 36992 байти RGB565 Big-Endian.
         """
+        import numpy as np
+        bayer_matrix = np.array([
+            [ 0,  8,  2, 10],
+            [12,  4, 14,  6],
+            [ 3, 11,  1,  9],
+            [15,  7, 13,  5]
+        ], dtype=np.float32)
         size = 136
         center = (size - 1) / 2.0
         y, x = np.ogrid[:size, :size]

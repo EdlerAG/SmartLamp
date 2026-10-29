@@ -9,17 +9,15 @@ class RealtimeHub:
     """
     Подієвий хаб реального часу з 0.00% споживанням CPU у простої:
     - WebSocket-канал для ESP32-S3 (/ws/box) та Long-Poll очікування через asyncio.Event.
-    - WebSocket-трансляція для відкритих вкладок Web-Студії (/ws/dashboard).
-    - Server-Sent Events (SSE) стрім (/api/v5/stream) для веб-клієнтів та зовнішніх додатків.
+    - Двостороння WebSocket-трансляція для відкритих вкладок Web-Студії (/ws/dashboard).
     """
 
-    __slots__ = ("_box_ws", "_dashboard_clients", "_cmd_wakeup_event", "_sse_queues")
+    __slots__ = ("_box_ws", "_dashboard_clients", "_cmd_wakeup_event")
 
     def __init__(self) -> None:
         self._box_ws: Optional[WebSocket] = None
         self._dashboard_clients: Set[WebSocket] = set()
         self._cmd_wakeup_event: asyncio.Event = asyncio.Event()
-        self._sse_queues: Set[asyncio.Queue] = set()
 
     @property
     def is_box_ws_connected(self) -> bool:
@@ -66,28 +64,7 @@ class RealtimeHub:
     def unregister_dashboard_ws(self, ws: WebSocket) -> None:
         self._dashboard_clients.discard(ws)
 
-    def register_sse_queue(self) -> asyncio.Queue:
-        q = asyncio.Queue(maxsize=32)
-        self._sse_queues.add(q)
-        return q
 
-    def unregister_sse_queue(self, q: asyncio.Queue) -> None:
-        self._sse_queues.discard(q)
-
-    def broadcast_sse(self, event_name: str, data: Dict[str, Any]) -> None:
-        if not self._sse_queues:
-            return
-        msg = f"event: {event_name}\ndata: {orjson.dumps(data).decode('utf-8')}\n\n"
-        for q in list(self._sse_queues):
-            try:
-                if q.full():
-                    try:
-                        q.get_nowait()
-                    except Exception:
-                        pass
-                q.put_nowait(msg)
-            except Exception:
-                pass
 
     def emit_to_dashboards(self, data: Dict[str, Any]) -> None:
         try:

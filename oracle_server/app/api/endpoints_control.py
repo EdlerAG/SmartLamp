@@ -302,6 +302,50 @@ async def dashboard_websocket(ws: WebSocket):
                     cur_sp = spotify_service.get_cached_state()
                     await realtime_hub.broadcast_to_dashboards({"type": "spotify", "spotify": cur_sp})
 
+            elif act == "volume":
+                vol = data.get("volume")
+                muted = data.get("muted")
+                touch_beep = data.get("touch_beep")
+                cmd = {}
+                if vol is not None:
+                    cmd["volume"] = int(vol)
+                if muted is not None:
+                    cmd["muted"] = bool(muted)
+                if touch_beep is not None:
+                    cmd["touch_beep"] = bool(touch_beep)
+                if cmd:
+                    state_service.enqueue_raw(cmd)
+                    if realtime_hub.is_box_ws_connected:
+                        next_cmd = state_service.pop_next_sync_response()
+                        if next_cmd.get("has_cmd"):
+                            await realtime_hub.push_to_box(next_cmd)
+                await ws.send_text(orjson.dumps({"type": "volume_ack", "ok": True}).decode("utf-8"))
+
+            elif act == "pomo":
+                pomo_sub = data.get("sub_action", "")
+                dur = data.get("duration_min", 25)
+                if pomo_sub == "start":
+                    res = nastya_routine_service.start_pomodoro(dur)
+                    state_service.enqueue_raw({"pomo_action": "start", "pomo_dur": dur})
+                else:
+                    res = nastya_routine_service.stop_pomodoro()
+                    state_service.enqueue_raw({"pomo_action": "stop"})
+                if realtime_hub.is_box_ws_connected:
+                    next_cmd = state_service.pop_next_sync_response()
+                    if next_cmd.get("has_cmd"):
+                        await realtime_hub.push_to_box(next_cmd)
+                await ws.send_text(orjson.dumps({"type": "pomo_ack", "pomodoro": res}).decode("utf-8"))
+
+            elif act == "silent_push":
+                msg = data.get("message", "").strip()
+                if msg:
+                    state_service.enqueue_raw({"msg": msg, "sender": "Studio", "silent": True})
+                    if realtime_hub.is_box_ws_connected:
+                        next_cmd = state_service.pop_next_sync_response()
+                        if next_cmd.get("has_cmd"):
+                            await realtime_hub.push_to_box(next_cmd)
+                    await ws.send_text(orjson.dumps({"type": "silent_push_ack", "ok": True}).decode("utf-8"))
+
             elif act == "ping":
                 await ws.send_text(orjson.dumps({"type": "pong"}).decode("utf-8"))
 
@@ -330,51 +374,6 @@ async def dashboard_websocket(ws: WebSocket):
     finally:
         realtime_hub.unregister_dashboard_ws(ws)
 
-
-@router.get("/api/v5/stream")
-async def event_stream(request: Request, _: str = Depends(verify_access)):
-    """
-    Потоковий SSE-канал реального часу (0% CPU у простої):
-    - Відправляє початковий стан системи (init).
-    - Транслює зміни телеметрії та черги команд при появі.
-    - Підтримує heartbeat-пінг кожні 15 секунд для утримання з'єднання.
-    """
-    q = realtime_hub.register_sse_queue()
-
-    async def sse_generator():
-        try:
-            init_state = {
-                "is_online": state_service.is_online(),
-                "telemetry": state_service.latest_telemetry,
-                "pending_commands": len(state_service.command_queue),
-                "spotify": spotify_service.get_cached_state(),
-                "blackout": blackout_service.get_status(),
-                "quiet_hours": nastya_routine_service.get_quiet_hours(),
-            }
-            yield f"event: init\ndata: {orjson.dumps(init_state).decode('utf-8')}\n\n"
-
-            while True:
-                if await request.is_disconnected():
-                    break
-                try:
-                    msg = await asyncio.wait_for(q.get(), timeout=15.0)
-                    yield msg
-                except asyncio.TimeoutError:
-                    yield ": ping\n\n"
-        except (asyncio.CancelledError, GeneratorExit):
-            pass
-        finally:
-            realtime_hub.unregister_sse_queue(q)
-
-    return StreamingResponse(
-        sse_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
 
 
 @router.post("/api/v1/box/command")

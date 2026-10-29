@@ -6,7 +6,6 @@ import zlib
 import struct
 import asyncio
 from typing import Dict, Any, Tuple, List, Optional
-import numpy as np
 from fastapi import UploadFile, HTTPException
 
 from app.core.config import settings
@@ -14,23 +13,25 @@ from app.core.memory_guard import memory_guard
 from app.services.database_service import db_service
 from app.services.state_service import state_service
 
+_NP_CACHE = {}
 
-def _build_circular_mask(size: int = 240) -> np.ndarray:
-    """Створює булеву маску круглого дисплея GC9A01 (240x240) один раз при запуску."""
-    y, x = np.ogrid[:size, :size]
-    center = (size - 1) / 2.0
-    dist_sq = (x - center) ** 2 + (y - center) ** 2
-    return dist_sq <= (center ** 2)
-
-
-_CIRCLE_MASK_240 = _build_circular_mask(240)
-
-BAYER_4X4 = np.array([
-    [ 0,  8,  2, 10],
-    [12,  4, 14,  6],
-    [ 3, 11,  1,  9],
-    [15,  7, 13,  5]
-], dtype=np.float32)
+def _get_np_resources():
+    """Lazy-loading NumPy ресурсів: 0 MB витрат RAM при старті сервера."""
+    if "np" not in _NP_CACHE:
+        import numpy as np
+        y, x = np.ogrid[:240, :240]
+        center = (240 - 1) / 2.0
+        mask = (x - center) ** 2 + (y - center) ** 2 <= (center ** 2)
+        bayer = np.array([
+            [ 0,  8,  2, 10],
+            [12,  4, 14,  6],
+            [ 3, 11,  1,  9],
+            [15,  7, 13,  5]
+        ], dtype=np.float32)
+        _NP_CACHE["np"] = np
+        _NP_CACHE["mask"] = mask
+        _NP_CACHE["bayer"] = bayer
+    return _NP_CACHE["np"], _NP_CACHE["mask"], _NP_CACHE["bayer"]
 
 
 class MediaService:
@@ -62,20 +63,22 @@ class MediaService:
         else:
             rgb_img = ImageOps.fit(frame_img.convert("RGB"), (240, 240), method=Image.Resampling.BILINEAR)
 
+        np, mask, _ = _get_np_resources()
         arr = np.asarray(rgb_img, dtype=np.uint8).copy()
-        arr[~_CIRCLE_MASK_240] = cls.BG_COLOR
+        arr[~mask] = cls.BG_COLOR
         return arr
 
     @staticmethod
-    def _rgb_array_to_rgb565_bytes(arr: np.ndarray) -> bytes:
+    def _rgb_array_to_rgb565_bytes(arr) -> bytes:
         """
         Векторизоване перетворення (H, W, 3) uint8 -> RGB565 Big-Endian
         із застосуванням Bayer 4x4 Ordered Dithering для усунення градієнтної смугастості на GC9A01.
         """
+        np, _, bayer = _get_np_resources()
         h, w = arr.shape[:2]
         tile_y = (h + 3) // 4
         tile_x = (w + 3) // 4
-        bayer_grid = np.tile(BAYER_4X4, (tile_y, tile_x))[:h, :w]
+        bayer_grid = np.tile(bayer, (tile_y, tile_x))[:h, :w]
 
         # Розраховуємо делікатне зміщення для кожного кванту
         dither_r = (bayer_grid / 16.0 - 0.5) * 8.0
@@ -93,9 +96,10 @@ class MediaService:
         return rgb565.astype(">u2").tobytes()
 
     @staticmethod
-    def _extract_ambilight_color(arr: np.ndarray) -> Tuple[int, int, int]:
+    def _extract_ambilight_color(arr) -> Tuple[int, int, int]:
         """Визначає насичений домінуючий колір кадру для підсвітки LED-стрічки SK6812."""
-        flat = arr[_CIRCLE_MASK_240].reshape(-1, 3).astype(np.float32)
+        np, mask, _ = _get_np_resources()
+        flat = arr[mask].reshape(-1, 3).astype(np.float32)
         brightness = np.max(flat, axis=1)
         saturation = brightness - np.min(flat, axis=1)
         mask = (brightness > 45.0) & (saturation > 25.0)

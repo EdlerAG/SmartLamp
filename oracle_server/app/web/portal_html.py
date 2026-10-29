@@ -1666,6 +1666,11 @@ function adjustPomoInput(delta) {
 }
 
 function startPomodoro(min) {
+  if(dashboardWs && dashboardWs.readyState === WebSocket.OPEN){
+    dashboardWs.send(JSON.stringify({action:'pomo', sub_action:'start', duration_min: min}));
+    toast(`Pomodoro: фокус на ${min} хв! ⚡️`);
+    return;
+  }
   fetch('/api/v5/routine/pomodoro/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1677,6 +1682,11 @@ function startPomodoro(min) {
 }
 
 function stopPomodoro() {
+  if(dashboardWs && dashboardWs.readyState === WebSocket.OPEN){
+    dashboardWs.send(JSON.stringify({action:'pomo', sub_action:'stop'}));
+    toast('Pomodoro зупинено ⚡️');
+    return;
+  }
   fetch('/api/v5/routine/pomodoro/stop', { method: 'POST' })
     .then(r => r.json())
     .then(d => {
@@ -1699,6 +1709,12 @@ function sendSilentPush() {
   const input = document.getElementById('silentMsgInput');
   const txt = input.value.trim();
   if (!txt) return;
+  if(dashboardWs && dashboardWs.readyState === WebSocket.OPEN){
+    dashboardWs.send(JSON.stringify({action:'silent_push', message: txt}));
+    toast('Тихе повідомлення надіслано в Inbox ⚡️');
+    input.value = '';
+    return;
+  }
   fetch('/api/v5/admin/nastya/silent-push', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
