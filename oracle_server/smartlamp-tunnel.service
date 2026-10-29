@@ -1,0 +1,15 @@
+[Unit]
+Description=SmartLamp Cloudflare HTTPS Tunnel Manager
+After=network.target network-online.target smartlamp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/SmartLamp/oracle_server
+ExecStart=/home/ubuntu/SmartLamp/oracle_server/.venv/bin/python tunnel_manager.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
