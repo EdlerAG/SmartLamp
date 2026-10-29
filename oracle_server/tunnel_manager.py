@@ -2,8 +2,41 @@ import subprocess
 import re
 import os
 import sys
+import urllib.request
+import json
 
 ENV_PATH = "/home/ubuntu/SmartLamp/oracle_server/.env"
+
+
+def get_bot_token() -> str:
+    if not os.path.exists(ENV_PATH):
+        return ""
+    with open(ENV_PATH, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("TG_BOT_TOKEN="):
+                return line.split("=", 1)[1].strip()
+    return ""
+
+
+def update_telegram_menu_button(url: str) -> None:
+    token = get_bot_token()
+    if not token:
+        return
+    api_url = f"https://api.telegram.org/bot{token}/setChatMenuButton"
+    payload = json.dumps({
+        "menu_button": {
+            "type": "web_app",
+            "text": "📱 Studio",
+            "web_app": {"url": url},
+        }
+    }).encode("utf-8")
+    try:
+        req = urllib.request.Request(api_url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"[Tunnel] Telegram Menu Button updated: {resp.read().decode()}")
+    except Exception as e:
+        print(f"[Tunnel] Failed to update Telegram Menu Button: {e}")
+
 
 def update_env_url(url: str) -> None:
     if not os.path.exists(ENV_PATH):
@@ -13,17 +46,14 @@ def update_env_url(url: str) -> None:
     with open(ENV_PATH, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Update PUBLIC_SERVER_URL
     if "PUBLIC_SERVER_URL=" in content:
         content = re.sub(r"PUBLIC_SERVER_URL=.*", f"PUBLIC_SERVER_URL={url}", content)
     else:
         content += f"\nPUBLIC_SERVER_URL={url}\n"
 
-    # Update SPOTIFY_REDIRECT_URI if present
     if "SPOTIFY_REDIRECT_URI=" in content:
         content = re.sub(r"SPOTIFY_REDIRECT_URI=.*", f"SPOTIFY_REDIRECT_URI={url}/api/v5/spotify/callback", content)
 
-    # Update GOOGLE_REDIRECT_URI if present
     if "GOOGLE_REDIRECT_URI=" in content:
         content = re.sub(r"GOOGLE_REDIRECT_URI=.*", f"GOOGLE_REDIRECT_URI={url}/api/v5/google/callback", content)
 
@@ -31,30 +61,41 @@ def update_env_url(url: str) -> None:
         f.write(content)
 
     print(f"[Tunnel] Successfully updated PUBLIC_SERVER_URL to {url}")
+    update_telegram_menu_button(url)
     subprocess.run(["sudo", "systemctl", "restart", "smartlamp.service"], check=False)
     print("[Tunnel] smartlamp.service restarted with new HTTPS endpoint.")
 
+
 def main() -> None:
-    cmd = ["/usr/local/bin/cloudflared", "tunnel", "--url", "http://127.0.0.1:8000", "--no-autoupdate"]
-    print(f"[Tunnel] Starting cloudflared tunnel to http://127.0.0.1:8000 ...")
+    cmd = [
+        "/usr/bin/ssh",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "ServerAliveInterval=30",
+        "-o", "ServerAliveCountMax=3",
+        "-o", "ExitOnForwardFailure=yes",
+        "-R", "80:127.0.0.1:8000",
+        "nokey@localhost.run",
+    ]
+    print("[Tunnel] Starting localhost.run HTTPS tunnel to http://127.0.0.1:8000 ...")
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
 
-    url_found = False
+    last_url = ""
     try:
         for line in proc.stdout:
             sys.stdout.write(line)
             sys.stdout.flush()
-            if not url_found:
-                m = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", line)
-                if m:
-                    tunnel_url = m.group(0)
-                    url_found = True
+            m = re.search(r"https://[a-zA-Z0-9-]+\.lhr\.life", line)
+            if m:
+                tunnel_url = m.group(0)
+                if tunnel_url != last_url:
+                    last_url = tunnel_url
                     update_env_url(tunnel_url)
     except KeyboardInterrupt:
         proc.terminate()
     finally:
         if proc.poll() is None:
             proc.terminate()
+
 
 if __name__ == "__main__":
     main()
