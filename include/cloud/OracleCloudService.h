@@ -292,6 +292,54 @@ private:
         return false;
     }
 
+    void flushOfflineTelemetry() {
+        if (state.offline_buf_count == 0 || base_server_url.length() == 0 || !state.wifi_connected) return;
+        String b_url = base_server_url + "/api/v5/box/batch-telemetry";
+
+        HTTPClient b_http;
+        WiFiClient b_client;
+        WiFiClientSecure b_sec;
+        b_http.setConnectTimeout(3000);
+        b_http.setTimeout(7000);
+
+        bool begun = b_url.startsWith("https://")
+                     ? (b_sec.setInsecure(), b_http.begin(b_sec, b_url))
+                     : b_http.begin(b_client, b_url);
+        if (!begun) return;
+
+        b_http.addHeader("Content-Type", "application/json");
+        b_http.addHeader("X-Device-Key", api_key);
+
+        uint32_t now_ms = millis();
+        uint8_t to_send = min((uint8_t)state.offline_buf_count, (uint8_t)24);
+        String json = "{\"points\":[";
+        for (int i = 0; i < to_send; i++) {
+            uint32_t age_sec = (now_ms >= state.offline_buf[i].sample_millis)
+                               ? (now_ms - state.offline_buf[i].sample_millis) / 1000UL
+                               : 0;
+            if (i > 0) json += ",";
+            char pt[72];
+            snprintf(pt, sizeof(pt), "{\"age_sec\":%u,\"t\":%.1f,\"h\":%.0f,\"p\":%.1f,\"l\":%u,\"m\":%u}",
+                     (unsigned)age_sec, state.offline_buf[i].temp, state.offline_buf[i].hum,
+                     state.offline_buf[i].pres, (unsigned)state.offline_buf[i].light, (unsigned)state.offline_buf[i].mode);
+            json += pt;
+        }
+        json += "]}";
+
+        int code = b_http.POST((uint8_t*)json.c_str(), json.length());
+        if (code == 200) {
+            if (to_send >= state.offline_buf_count) {
+                state.clearOfflineSamples();
+            } else {
+                for (int i = to_send; i < state.offline_buf_count; i++) {
+                    state.offline_buf[i - to_send] = state.offline_buf[i];
+                }
+                state.offline_buf_count -= to_send;
+            }
+        }
+        b_http.end();
+    }
+
     void processServerResponse(const String& json) {
         state.oracle_manages_bot  = (json.indexOf("\"bot_managed\":true") != -1);
         state.has_more_cloud_cmds = (json.indexOf("\"has_more\":true") != -1);
@@ -659,6 +707,9 @@ public:
                 http.end();
                 state.tls_in_flight = false;
                 processServerResponse(resp);
+                if (state.offline_buf_count > 0 && !state.audio_playing) {
+                    flushOfflineTelemetry();
+                }
                 return;
             }
             state.oracle_online       = false;

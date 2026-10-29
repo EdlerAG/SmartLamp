@@ -145,5 +145,15 @@ public:
                 }
             }
         }
+
+        // Автономна «Чорна скринька» телеметрії при блекаутах / відсутності Wi-Fi
+        if (!state.oracle_online) {
+            if (state.last_offline_sample_ms == 0 || (now - state.last_offline_sample_ms >= 300000UL)) {
+                state.last_offline_sample_ms = now;
+                state.pushOfflineSample(state.temperature, state.humidity, state.pressure, (uint8_t)state.light_percent, state.light_mode);
+            }
+        } else {
+            state.last_offline_sample_ms = 0;
+        }
     }
 };

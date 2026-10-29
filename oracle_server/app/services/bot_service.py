@@ -22,31 +22,75 @@ from app.services.server_updater import server_updater
 
 ADMIN_KB = {
     "keyboard": [
-        [{"text": "💡 Освітлення"}, {"text": "⏱ Фокус Pomodoro"}, {"text": "🎵 Spotify"}],
-        [{"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}, {"text": "🌙 Режим DND"}],
-        [{"text": "🔊 Гучність & Звук"}, {"text": "🩺 Діагностика лампи"}, {"text": "📦 Бекап БД"}],
-        [{"text": "🔄 Оновити сервер"}, {"text": "🎁 Скинути для Насті"}],
+        [{"text": "🎛 Головний пульт"}, {"text": "💡 Освітлення"}, {"text": "🎵 Spotify"}],
+        [{"text": "⏱ Фокус Pomodoro"}, {"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}],
+        [{"text": "🌙 Режим DND"}, {"text": "🔊 Гучність & Звук"}, {"text": "🖼 Екран & Заставка"}],
+        [{"text": "🩺 Діагностика лампи"}, {"text": "🔄 Оновити сервер"}, {"text": "📌 Інструкція"}],
     ],
     "resize_keyboard": True,
 }
 
 GIRL_KB = {
     "keyboard": [
-        [{"text": "💡 Освітлення"}, {"text": "⏱ Фокус Pomodoro"}, {"text": "🎵 Spotify"}],
-        [{"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}, {"text": "🌙 Режим DND"}],
-        [{"text": "🔊 Гучність & Звук"}, {"text": "🖼 Екран & Заставка"}, {"text": "🌤 Прогноз погоди"}],
+        [{"text": "🎛 Головний пульт"}, {"text": "💡 Освітлення"}, {"text": "🎵 Spotify"}],
+        [{"text": "⏱ Фокус Pomodoro"}, {"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}],
+        [{"text": "🌙 Режим DND"}, {"text": "🔊 Гучність & Звук"}, {"text": "🖼 Екран & Заставка"}],
+        [{"text": "🌤 Прогноз погоди"}, {"text": "📌 Інструкція"}],
     ],
     "resize_keyboard": True,
 }
 
+GUIDE_TEXT = """🪄 <b>ІНСТРУКЦІЯ SMARTLAMP SOVEREIGN v5.5</b>
+━━━━━━━━━━━━━━━━━━
+Твоя розумна шкатулка SmartLamp — це автономний центр затишку, світла, музики та мікроклімату кімнати:
+
+💡 <b>СВІТЛО ТА РЕЖИМИ</b>
+• 12 затишних атмосферних режимів (Теплий бурштин, Захід сонця, Жива свічка, Північне сяйво, Океанський бриз та ін.)
+• Розумна авто-яскравість (підлаштовується під освітленість у кімнаті) або ручний вибір.
+• Таймер автоматичного вимкнення світла перед сном (15, 30, 60 хв).
+
+📊 <b>МІКРОКЛІМАТ ТА БЛЕКАУТИ</b>
+• Високоточні сенсори SHT31 та BMP280: температура, вологість та атмосферний тиск із трендом.
+• <b>«Чорна скринька» телеметрії</b>: якщо вимикається світло або Wi-Fi, шкатулка автономно записує показання в пам'ять, а при появі зв'язку виливає повний графік на сервер без прогалин!
+• Графік за 24 години генерується в 1 клік кнопкою «📈 Графік».
+
+🎵 <b>SPOTIFY VINYL HUB</b>
+• Вініловий плеєр обертається на круглому дисплеї з живою обкладинкою треку.
+• Підсвітка <b>AmbiLight</b> автоматично підлаштовує колір під колір обкладинки поточної пісні!
+
+⏱ <b>ФОКУС ТА НАВЧАННЯ (POMODORO)</b>
+• Режими фокусу 15, 25, 45 або 60 хвилин.
+• На круглому дисплеї з'являється елегантний хорологічний циферблат відліку, лампа приглушує зайві звуки та вмикає м'яке робоче світло.
+
+📅 <b>КАЛЕНДАР ТА РОЗКЛАД</b>
+• Щоб додати подію на екран лампи, просто напиши в чат:
+  <code>14:30 Семінар</code> або <code>Завтра 11:00 Іспит</code>.
+• Найближча подія автоматично відображається на дисплеї шкатулки!
+
+🖼 <b>АНІМАЦІЇ, ЗАСТАВКИ ТА ФОТО</b>
+• Надішли будь-яку GIF-анімацію або фотографію в цей чат — і вона миттєво відтвориться на круглому дисплеї!
+• Можна встановити її постійною заставкою або за таймером.
+
+🎙 <b>ГОЛОСОВІ ПОВІДОМЛЕННЯ</b>
+• Надішли голосове повідомлення в цей чат — і лампа відтворить його через вбудований динамік!
+
+🌙 <b>РЕЖИМ DND (ТИХА НІЧ)</b>
+• Повна тиша: динамік стає на MUTE, кліки вимикаються, світло переходить у нічник.
+
+📱 <b>SMART STUDIO (MINI APP)</b>
+• Натискай кнопку <b>«📱 Web Studio»</b> у головному пульті або біля меню, щоб відкрити інтерактивну панель керування прямо в Telegram!
+━━━━━━━━━━━━━━━━━━
+<i>Натисни «🎛 Головний пульт» нижче, щоб відкрити панель керування.</i>"""
+
 
 class TelegramBotService:
-    __slots__ = ("last_update_id", "synced", "webhook_cleared")
+    __slots__ = ("last_update_id", "synced", "webhook_cleared", "admin_preview_girl")
 
     def __init__(self) -> None:
         self.last_update_id: int = 0
         self.synced: bool = False
         self.webhook_cleared: bool = False
+        self.admin_preview_girl: bool = False
 
     async def _api(self, method: str, payload: Dict[str, Any], timeout: float = 8.0) -> Optional[Dict[str, Any]]:
         if not settings.TG_BOT_TOKEN:
@@ -86,6 +130,52 @@ class TelegramBotService:
         except Exception:
             return None
 
+    async def _pin_message(self, chat_id: str, message_id: int) -> bool:
+        """Автоматично закріплює вітальне вікно-інструкцію в шапці чату."""
+        res = await self._api("pinChatMessage", {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "disable_notification": True,
+        })
+        return bool(res and res.get("ok"))
+
+    @staticmethod
+    def _web_button(text: str = "📱 Відкрити Web Studio") -> Dict[str, Any]:
+        """Формує нативну кнопку Mini App (web_app) для HTTPS або звичайний URL лінк."""
+        url = state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)
+        if url.startswith("https://"):
+            return {"text": text, "web_app": {"url": url}}
+        return {"text": text, "url": url}
+
+    def _hub_main_view(self, chat_id: str, is_admin: bool, is_girl: bool) -> Tuple[str, Dict[str, Any]]:
+        """Головний пульт «кнопка в кнопці»: компактне багатошарове меню."""
+        text = self._build_status_text()
+        buttons = [
+            [
+                {"text": "💡 Світло & Ефекти", "callback_data": "hub:light"},
+                {"text": "📊 Клімат & Погода", "callback_data": "hub:climate"},
+            ],
+            [
+                {"text": "🎵 Музика & Звук", "callback_data": "hub:audio"},
+                {"text": "⏱ Фокус & Сон", "callback_data": "hub:routine"},
+            ],
+            [
+                {"text": "🖼 Екран & Заставка", "callback_data": "hub:screen"},
+                self._web_button("📱 Web Studio"),
+            ],
+        ]
+        if is_admin:
+            buttons.append([
+                {"text": "🛠 Адмін-Центр", "callback_data": "hub:admin"},
+                {"text": "🔄 Оновити статус", "callback_data": "hub:refresh"},
+            ])
+        else:
+            buttons.append([
+                {"text": "🔄 Оновити статус", "callback_data": "hub:refresh"},
+                {"text": "📌 Інструкція", "callback_data": "hub:guide"},
+            ])
+        return text, {"inline_keyboard": buttons}
+
     @staticmethod
     def _modes_inline_kb() -> Dict[str, Any]:
         cur_m = state_service.latest_telemetry.get("m", 0)
@@ -98,6 +188,9 @@ class TelegramBotService:
         rows.append([
             {"text": "🔆 Яскравість", "callback_data": "menu:brt"},
             {"text": "⏳ Таймер сну", "callback_data": "menu:sleep"},
+        ])
+        rows.append([
+            {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
         ])
         return {"inline_keyboard": rows}
 
@@ -117,7 +210,10 @@ class TelegramBotService:
                     {"text": f"{'✅ ' if not auto_b and b_idx == 2 else ''}✨ 65% Робота", "callback_data": "brt:2"},
                     {"text": f"{'✅ ' if not auto_b and b_idx == 3 else ''}☀️ 100% Максимум", "callback_data": "brt:3"},
                 ],
-                [{"text": "💡 До вибору режимів...", "callback_data": "menu:modes"}],
+                [
+                    {"text": "💡 До вибору режимів", "callback_data": "hub:light"},
+                    {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
+                ],
             ]
         }
 
@@ -135,7 +231,10 @@ class TelegramBotService:
                     {"text": "⏳ 90 хв", "callback_data": "sleep:90"},
                     {"text": "❌ Скасувати", "callback_data": "sleep:0"},
                 ],
-                [{"text": "💡 До вибору режимів...", "callback_data": "menu:modes"}],
+                [
+                    {"text": "💡 До вибору режимів", "callback_data": "hub:light"},
+                    {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
+                ],
             ]
         }
 
@@ -162,6 +261,9 @@ class TelegramBotService:
                     {"text": "🔊 +10%", "callback_data": "vol:up"},
                     {"text": beep_lbl, "callback_data": "vol:beep"},
                 ],
+                [
+                    {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
+                ],
             ]
         }
 
@@ -187,6 +289,7 @@ class TelegramBotService:
             ])
         if spotify_service.is_linked():
             rows.append([{"text": "🎧 Фокус-музика у Spotify (Play/Pause)", "callback_data": "pomo:spotify_lofi"}])
+        rows.append([{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}])
         return {"inline_keyboard": rows}
 
     @staticmethod
@@ -200,6 +303,7 @@ class TelegramBotService:
             "inline_keyboard": [
                 [{"text": toggle_txt, "callback_data": "dnd:toggle"}],
                 [{"text": f"⏰ {qh_txt}", "callback_data": "dnd:quiet_info"}],
+                [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
             ]
         }
 
@@ -242,8 +346,11 @@ class TelegramBotService:
             auth_url = google_calendar_service.get_authorize_url(base_url)
             if auth_url:
                 buttons.append([{"text": "🔗 Підключити Google Календар", "url": auth_url}])
+            else:
+                buttons.append([{"text": "⚙️ Налаштувати Google ID/Secret", "callback_data": "google:setup_info"}])
         else:
             buttons.append([{"text": "🔌 Відключити Google Календар", "callback_data": "cal_act:disconnect"}])
+        buttons.append([{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}])
 
         return text, {"inline_keyboard": buttons}
 
@@ -322,13 +429,17 @@ class TelegramBotService:
                 "Для синхронізації вінілового плеєра на дисплеї лампи, динамічної підсвітки AmbiLight "
                 "та відображення назв треків — підключіть Spotify акаунт через OAuth2:"
             )
-            kb = {
-                "inline_keyboard": [
-                    [{"text": "🔗 Підключити Spotify", "url": auth_url if auth_url else "http://127.0.0.1:8000"}],
-                    [{"text": "🔄 Перевірити статус", "callback_data": "spotify:refresh"}],
-                ]
-            }
-            return text, kb
+            buttons = []
+            if auth_url:
+                buttons.append([{"text": "🔗 Підключити Spotify", "url": auth_url}])
+            else:
+                text += "\n\n⚠️ <i>Ключі Spotify ще не налаштовані. Натисніть кнопку нижче для швидкого налаштування.</i>"
+                buttons.append([{"text": "⚙️ Як налаштувати Spotify (інструкція)", "callback_data": "spotify:setup_info"}])
+            buttons.append([
+                {"text": "🔄 Перевірити статус", "callback_data": "spotify:refresh"},
+                {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
+            ])
+            return text, {"inline_keyboard": buttons}
 
         status_str = "▶️ Грає" if playing else "⏸ Пауза"
         track_info = f"<b>{title}</b>\n👤 {artist}\n⏱ {time_str}" if title else "<i>Очікування початку треку...</i>"
@@ -353,6 +464,7 @@ class TelegramBotService:
                 ],
                 [
                     {"text": "🔌 Відключити Spotify", "callback_data": "sp_act:disconnect"},
+                    {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
                 ],
             ]
         }
@@ -363,7 +475,12 @@ class TelegramBotService:
         media_list = db_service.list_custom_media()
         visual_media = [m for m in media_list if m.get("media_type") != "sound" and not m.get("name", "").startswith("voice_")]
         if not visual_media:
-            return {"inline_keyboard": [[{"text": "📭 Галерея порожня. Надішліть гіфку!", "callback_data": "noop"}]]}
+            return {
+                "inline_keyboard": [
+                    [{"text": "📭 Галерея порожня. Надішліть гіфку!", "callback_data": "noop"}],
+                    [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
+                ]
+            }
 
         rows = []
         for i in range(0, min(len(visual_media), 10), 2):
@@ -376,6 +493,7 @@ class TelegramBotService:
 
         rows.append([
             {"text": "⏹ Зупинити показ (Годинник)", "callback_data": "med_stop"},
+            {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
         ])
         return {"inline_keyboard": rows}
 
@@ -404,6 +522,19 @@ class TelegramBotService:
         data = cb.get("data", "")
         chat_id = str((cb.get("message") or {}).get("chat", {}).get("id", ""))
         msg_id = (cb.get("message") or {}).get("message_id")
+
+        ALLOWED_ADMINS = {state_service.admin_id, "1047202957"}
+        ALLOWED_GIRLS = {state_service.girl_id, "1294097414", "1334785533"}
+
+        if chat_id not in ALLOWED_ADMINS and chat_id not in ALLOWED_GIRLS:
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⛔ Доступ обмежено."})
+            return
+
+        is_admin = (chat_id in ALLOWED_ADMINS)
+        is_girl = (chat_id in ALLOWED_GIRLS)
+        if self.admin_preview_girl and is_admin:
+            is_admin = False
+            is_girl = True
 
         if data.startswith("mode:"):
             m = int(data.split(":")[1])
@@ -644,51 +775,386 @@ class TelegramBotService:
             png_bytes = infographic_service.generate_status_infographic()
             await self._send_photo_bytes(chat_id, png_bytes, caption="📊 Мікроклімат за останні 24 години.")
 
+        elif data == "menu:hub":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            hub_t, hub_k = self._hub_main_view(chat_id, is_admin, is_girl)
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": hub_t,
+                "parse_mode": "HTML",
+                "reply_markup": hub_k,
+            })
+
+        elif data == "hub:light":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "💡 <b>КЕРУВАННЯ ОСВІТЛЕННЯМ</b>\nОберіть режим атмосферного освітлення або налаштуйте яскравість:",
+                "parse_mode": "HTML",
+                "reply_markup": self._modes_inline_kb(),
+            })
+
+        elif data == "hub:climate":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            d = state_service.latest_telemetry
+            t_val = d.get("t", 22.0)
+            h_val = d.get("h", 50.0)
+            p_val = d.get("p", 750.0)
+            p_diff = d.get("p_diff", 0.0)
+            trend_sym = "→ стабільно" if abs(p_diff) < 0.7 else ("↑ зростає" if p_diff > 0 else "↓ падає")
+            clim_t = (
+                f"📊 <b>МІКРОКЛІМАТ КІМНАТИ ТА ПОГОДА</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"🌡 Температура: <b>{t_val:.1f}°C</b>\n"
+                f"💧 Вологість: <b>{h_val:.0f}%</b>\n"
+                f"🧭 Атмосферний тиск: <b>{p_val:.0f} мм рт. ст.</b> ({trend_sym})\n\n"
+                f"💾 <b>Чорна скринька</b>: сенсори записують історію навіть під час відключень світла!"
+            )
+            clim_k = {
+                "inline_keyboard": [
+                    [
+                        {"text": "📈 Графік за 24 години", "callback_data": "menu:infographic_get"},
+                        {"text": "🌤 Прогноз для Києва", "callback_data": "hub:weather"},
+                    ],
+                    [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
+                ]
+            }
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": clim_t,
+                "parse_mode": "HTML",
+                "reply_markup": clim_k,
+            })
+
+        elif data == "hub:weather":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            res = await weather_ai_service.generate_smart_briefing()
+            w = res["weather"]
+            rain_tip = "Варто взяти парасольку ☂️" if w.get("rain_prob_6h", 0) >= 45 else "Опадів найближчим часом не очікується"
+            w_msg = (
+                f"🌤 <b>ПОГОДА ТА ПРОГНОЗ ДЛЯ КИЄВА</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"• На вулиці: <b>{w.get('weather_desc', 'Ясно')}</b>, {w.get('outdoor_temp', 15.0):+.1f}°C\n"
+                f"• Вітер: {w.get('wind_kmh', 5.0)} км/год, ймовірність опадів: {w.get('rain_prob_6h', 0)}%\n"
+                f"• Барометр: {w.get('pressure_mm', 750.0):.0f} мм рт. ст. ({w.get('baro_verdict', 'стабільно')})\n\n"
+                f"💡 Рекомендація: {rain_tip}."
+            )
+            w_k = {
+                "inline_keyboard": [
+                    [{"text": "⬅️ До клімату", "callback_data": "hub:climate"}, {"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
+                ]
+            }
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": w_msg,
+                "parse_mode": "HTML",
+                "reply_markup": w_k,
+            })
+
+        elif data == "hub:audio":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": sp_t,
+                "parse_mode": "HTML",
+                "reply_markup": sp_k,
+            })
+
+        elif data == "hub:routine":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            routine_t = (
+                "⏱ <b>ФОКУС POMODORO ТА РЕЖИМ СНУ</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "Оберіть дію або налаштуйте тихі години:"
+            )
+            routine_k = {
+                "inline_keyboard": [
+                    [{"text": "⏱ Сесія Pomodoro (Фокус)", "callback_data": "hub:pomo_menu"}],
+                    [{"text": "🌙 Режим DND (Не турбувати)", "callback_data": "hub:dnd_menu"}],
+                    [{"text": "⏳ Таймер сну (Вимкнення світла)", "callback_data": "menu:sleep"}],
+                    [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
+                ]
+            }
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": routine_t,
+                "parse_mode": "HTML",
+                "reply_markup": routine_k,
+            })
+
+        elif data == "hub:pomo_menu":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "⏱ <b>ФОКУС ТА НАВЧАННЯ (POMODORO)</b>\nОберіть тривалість сесії концентрації:",
+                "parse_mode": "HTML",
+                "reply_markup": self._pomodoro_inline_kb(),
+            })
+
+        elif data == "hub:dnd_menu":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "🌙 <b>РЕЖИМ DND (ТИХА НІЧ)</b>\nПовна тиша та спокійне мінімальне світло.",
+                "parse_mode": "HTML",
+                "reply_markup": self._dnd_inline_kb(),
+            })
+
+        elif data == "hub:screen":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "🖼 <b>ГАЛЕРЕЯ АНІМАЦІЙ ТА ЗАСТАВОК:</b>\nОберіть елемент для круглого дисплея:",
+                "parse_mode": "HTML",
+                "reply_markup": self._gallery_inline_kb(),
+            })
+
+        elif data == "hub:refresh":
+            hub_t, hub_k = self._hub_main_view(chat_id, is_admin, is_girl)
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Статус оновлено!"})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": hub_t,
+                "parse_mode": "HTML",
+                "reply_markup": hub_k,
+            })
+
+        elif data == "hub:guide":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": GUIDE_TEXT,
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": [[{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}]]},
+            })
+
+        elif data == "hub:admin":
+            if not is_admin:
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⛔ Лише для адміністратора"})
+                return
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            role_st = "Дівчина (Тест)" if self.admin_preview_girl else "Адміністратор"
+            admin_t = (
+                "🛠 <b>АДМІНІСТРАТИВНИЙ ЦЕНТР SMARTLAMP</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "Керування системою, оновлення коду з GitHub та діагностика:"
+            )
+            admin_k = {
+                "inline_keyboard": [
+                    [{"text": "🩺 Діагностика лампи", "callback_data": "admin:health"}, {"text": "🔄 Оновити сервер", "callback_data": "admin:update"}],
+                    [{"text": "💾 Бекап SQLite", "callback_data": "admin:backup"}, {"text": f"🎭 Перемкнути вигляд ({role_st})", "callback_data": "admin:toggle_view"}],
+                    [{"text": "🎁 Скинути для Насті", "callback_data": "admin:sandbox_reset"}],
+                    [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
+                ]
+            }
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": admin_t,
+                "parse_mode": "HTML",
+                "reply_markup": admin_k,
+            })
+
+        elif data == "admin:health":
+            rep = maintenance_service.get_health_report()
+            box = rep["box"]
+            srv = rep["server"]["resources"]
+            t_msg = (
+                f"🩺 <b>ДІАГНОСТИКА СИСТЕМИ SMARTLAMP</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"📡 Лампа: <b>{'🟢 Онлайн' if box['is_online'] else '🔴 Офлайн'}</b> (RSSI: {box['wifi_rssi_dbm']} dBm)\n"
+                f"🌡 Кімната: {box['room_temperature']}°C, {box['room_humidity']}%, {box['room_pressure_mm']} мм\n"
+                f"🔋 Вільна PSRAM: {box['psram_free_bytes'] // (1024*1024)} MB | Heap: {box['heap_free_bytes'] // 1024} KB\n"
+                f"🖥 Сервер RAM: {srv.get('ram_rss_mb', 0):.1f} MB | Диск: {srv.get('storage_used_mb', 0):.1f} MB\n"
+                f"🎵 Spotify: {'Підключено ✅' if rep['integrations']['spotify_linked'] else 'Не підключено ❌'}\n"
+                f"📅 Google Календар: {'Підключено ✅' if rep['integrations']['google_calendar_linked'] else 'Не підключено ❌'}"
+            )
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": t_msg,
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": [[{"text": "⬅️ До адмінки", "callback_data": "hub:admin"}, {"text": "⬅️ Головне меню", "callback_data": "menu:hub"}]]},
+            })
+
+        elif data == "admin:update":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Перевірка оновлень..."})
+            st = server_updater.check_for_updates()
+            if not st.get("update_available"):
+                await self._api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "text": f"✅ <b>Сервер вже має найновішу версію!</b>\n• Поточний коміт: <code>{st.get('current_commit')}</code>\n• Опис: <i>{st.get('current_message')}</i>",
+                    "parse_mode": "HTML",
+                    "reply_markup": {"inline_keyboard": [[{"text": "⬅️ До адмінки", "callback_data": "hub:admin"}]]},
+                })
+            else:
+                await self._api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "text": f"🚀 <b>Застосовую оновлення...</b>\nНовий коміт: <code>{st.get('remote_commit')}</code>",
+                    "parse_mode": "HTML",
+                })
+                res = await server_updater.perform_server_update()
+                if not res.get("ok"):
+                    await self._api("editMessageText", {
+                        "chat_id": chat_id,
+                        "message_id": msg_id,
+                        "text": f"❌ Помилка оновлення: {res.get('error')}",
+                        "reply_markup": {"inline_keyboard": [[{"text": "⬅️ До адмінки", "callback_data": "hub:admin"}]]},
+                    })
+
+        elif data == "admin:backup":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Створюю бекап..."})
+            ok = await maintenance_service.send_weekly_backup_to_admin()
+            ans_t = "✅ Резервну копію успішно відправлено адміністратору!" if ok else "❌ Помилка створення бекапу."
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": ans_t,
+                "reply_markup": {"inline_keyboard": [[{"text": "⬅️ До адмінки", "callback_data": "hub:admin"}]]},
+            })
+
+        elif data == "admin:toggle_view":
+            self.admin_preview_girl = not self.admin_preview_girl
+            ans = "🎭 Увімкнено вигляд для дівчини (Насті)" if self.admin_preview_girl else "👑 Повернуто вигляд адміністратора"
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans, "show_alert": True})
+            hub_t, hub_k = self._hub_main_view(chat_id, not self.admin_preview_girl, True)
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": hub_t,
+                "parse_mode": "HTML",
+                "reply_markup": hub_k,
+            })
+
+        elif data == "admin:sandbox_reset":
+            spotify_service.disconnect()
+            google_calendar_service.disconnect()
+            purged = db_service.purge_sandbox_test_data()
+            state_service.save_auth_ids(girl_id="1294097414")
+            db_service.log_event("admin", "sandbox", "reset_to_nastya", {"purged": purged, "girl_id": "1294097414"})
+            rep_msg = (
+                "🎁 <b>ПЕРЕДПОДАРУНКОВЕ СКИДАННЯ ВИКОНАНО!</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "• Тестовий Spotify та Google Calendar відключено 🔌\n"
+                f"• Очищено: події календаря ({purged.get('calendar_events', 0)}), "
+                f"клімат ({purged.get('climate_history', 0)}), "
+                f"блекаути ({purged.get('power_outages', 0)})\n"
+                "• Збережено: кастомні .mbx гіфки, звуки та налаштування AI\n"
+                "• TG ID власниці закріплено за Настею: <b>1294097414</b>"
+            )
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🎁 Скинуто для Насті!", "show_alert": True})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": rep_msg,
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": [[{"text": "⬅️ До адмінки", "callback_data": "hub:admin"}]]},
+            })
+
+        elif data == "spotify:setup_info":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            info_t = (
+                "⚙️ <b>НАЛАШТУВАННЯ SPOTIFY DEVELOPER</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "1. Відкрийте <a href=\"https://developer.spotify.com/dashboard\">developer.spotify.com</a>\n"
+                "2. Створіть додаток «SmartLamp»\n"
+                "3. У Redirect URIs додайте:\n"
+                f"   <code>{state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)}/api/v5/spotify/callback</code>\n"
+                "4. Скопіюйте <b>Client ID</b> та <b>Client Secret</b>\n"
+                "5. Надішліть боту команду:\n"
+                "   <code>/set_spotify &lt;CLIENT_ID&gt; &lt;CLIENT_SECRET&gt;</code>\n"
+                "   або введіть їх через Web Studio!"
+            )
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": info_t,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": {"inline_keyboard": [[{"text": "⬅️ Назад", "callback_data": "hub:audio"}]]},
+            })
+
+        elif data == "google:setup_info":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            info_t = (
+                "⚙️ <b>НАЛАШТУВАННЯ GOOGLE CALENDAR</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "1. Створіть проект у Google Cloud Console\n"
+                "2. Увімкніть Google Calendar API та налаштуйте OAuth Consent Screen\n"
+                "3. Створіть OAuth Client ID (Web Application) з Redirect URI:\n"
+                f"   <code>{state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)}/api/v5/google/callback</code>\n"
+                "4. Надішліть боту команду:\n"
+                "   <code>/set_google &lt;CLIENT_ID&gt; &lt;CLIENT_SECRET&gt;</code>"
+            )
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": info_t,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": {"inline_keyboard": [[{"text": "⬅️ Назад", "callback_data": "hub:routine"}]]},
+            })
+
     async def _handle_message(self, msg: Dict[str, Any]) -> None:
         chat_id = str((msg.get("chat") or {}).get("id", ""))
         sender = (msg.get("from") or {}).get("first_name", "Telegram")
         text = (msg.get("text") or msg.get("caption") or "").strip()
 
-        # Авторизація через Deep-Link або прямий ID Насті (1294097414)
+        # Автоматичне розпізнавання ролей без перехоплення звичайних повідомлень
+        if chat_id == "1294097414" and state_service.girl_id != "1294097414":
+            state_service.save_auth_ids(girl_id="1294097414")
+        if chat_id == "1334785533" and not state_service.girl_id:
+            state_service.save_auth_ids(girl_id="1334785533")
+        if chat_id == "1047202957" and not state_service.admin_id:
+            state_service.save_auth_ids(admin_id="1047202957")
+
+        ALLOWED_ADMINS = {state_service.admin_id, "1047202957"}
+        ALLOWED_GIRLS = {state_service.girl_id, "1294097414", "1334785533"}
+
+        # Авторизація через Deep-Link
         if text.startswith("/start"):
             args = text.split(maxsplit=1)
             token = args[1] if len(args) > 1 else ""
             if token.startswith("box_link_") or token.startswith("link_") or chat_id == "1294097414":
                 state_service.save_auth_ids(girl_id=chat_id)
                 db_service.log_event("user", "auth", "bind_girl_deeplink", {"chat_id": chat_id, "token": token})
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": "✨ <b>Привіт, Настю!</b> 💖\n\nТвоя розумна шкатулка SmartLamp успішно підключена до цього чату!\nТут ти можеш вмикати затишні режими світла, запускати сесії фокусу Pomodoro, дивитися мікроклімат кімнати та керувати музикою Spotify.",
-                    "parse_mode": "HTML",
-                    "reply_markup": GIRL_KB,
-                })
-                return
 
-        # Авторизація ролей
+        # Авторизація команд ролей
         if text.lower() == "/iam_admin":
-            if not state_service.admin_id or chat_id == state_service.admin_id:
+            if not state_service.admin_id or chat_id in ALLOWED_ADMINS:
                 state_service.save_auth_ids(admin_id=chat_id)
                 await self._api("sendMessage", {"chat_id": chat_id, "text": "👑 Акаунт адміністратора підтверджено.", "reply_markup": ADMIN_KB})
             else:
                 await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Адміністратор вже зареєстрований."})
             return
 
-        if text.lower() in ("/iam_nastia", "/iam_girl") or chat_id == "1294097414":
-            # Дозволяємо переприв'язку якщо запитує адмін, або поточна Настя, або якщо ще не налаштовано
-            if not state_service.girl_id or chat_id in (state_service.girl_id, state_service.admin_id, "1294097414"):
-                state_service.save_auth_ids(girl_id=chat_id)
-                db_service.log_event("user", "auth", "bind_girl", {"chat_id": chat_id})
-                await self._api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": "✅ Вітаю, Настю! Пульт керування SmartLamp активовано.",
-                    "reply_markup": GIRL_KB,
-                })
-            else:
-                await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Акаунт власниці вже налаштовано."})
+        if text.lower() in ("/iam_nastia", "/iam_girl"):
+            state_service.save_auth_ids(girl_id=chat_id)
+            db_service.log_event("user", "auth", "bind_girl", {"chat_id": chat_id})
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": "✅ Вітаю, Настю! Пульт керування SmartLamp активовано.",
+                "reply_markup": GIRL_KB,
+            })
             return
 
-        is_admin = (chat_id == state_service.admin_id)
-        is_girl = (chat_id == state_service.girl_id)
+        is_admin = (chat_id in ALLOWED_ADMINS)
+        is_girl = (chat_id in ALLOWED_GIRLS)
 
         # Адміністративне керування передподарунковим скиданням та ID Насті
         if is_admin:
@@ -831,9 +1297,110 @@ class TelegramBotService:
         if not text:
             return
 
-        # Навігаційне меню
-        if text in ("/start", "/help", "/menu"):
-            await self._api("sendMessage", {"chat_id": chat_id, "text": self._build_status_text(), "parse_mode": "HTML", "reply_markup": active_kb})
+        # Навігаційне меню та пульт
+        if text.startswith("/start"):
+            guide_res = await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": GUIDE_TEXT,
+                "parse_mode": "HTML",
+            })
+            if guide_res and guide_res.get("ok"):
+                mid = guide_res["result"]["message_id"]
+                await self._pin_message(chat_id, mid)
+
+            hub_t, hub_k = self._hub_main_view(chat_id, is_admin, is_girl)
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": hub_t,
+                "parse_mode": "HTML",
+                "reply_markup": active_kb,
+            })
+            return
+
+        if text in ("📌 Інструкція", "/guide", "/help"):
+            guide_res = await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": GUIDE_TEXT,
+                "parse_mode": "HTML",
+                "reply_markup": active_kb,
+            })
+            if guide_res and guide_res.get("ok"):
+                mid = guide_res["result"]["message_id"]
+                await self._pin_message(chat_id, mid)
+            return
+
+        if text in ("🎛 Головний пульт", "/menu", "/hub"):
+            hub_t, hub_k = self._hub_main_view(chat_id, is_admin, is_girl)
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": hub_t,
+                "parse_mode": "HTML",
+                "reply_markup": active_kb,
+            })
+            return
+
+        if text.startswith("/toggle_view") or text == "🎭 Перемкнути режим":
+            if chat_id not in ALLOWED_ADMINS:
+                await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Лише для адміністратора."})
+                return
+            self.admin_preview_girl = not self.admin_preview_girl
+            role_text = "Дівчина (Настя)" if self.admin_preview_girl else "Адміністратор (Ярослав)"
+            active_kb = GIRL_KB if self.admin_preview_girl else ADMIN_KB
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": f"🎭 <b>Режим інтерфейсу перемкнуто на:</b> {role_text}",
+                "parse_mode": "HTML",
+                "reply_markup": active_kb,
+            })
+            hub_t, hub_k = self._hub_main_view(chat_id, not self.admin_preview_girl, True)
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": hub_t,
+                "parse_mode": "HTML",
+                "reply_markup": hub_k,
+            })
+            return
+
+        if text.startswith("/set_spotify"):
+            parts = text.split()
+            if len(parts) >= 3:
+                cid, csec = parts[1].strip(), parts[2].strip()
+                spotify_service.save_credentials(cid, csec)
+                auth_u = spotify_service.get_authorize_url(settings.PUBLIC_SERVER_URL)
+                reply_k = {"inline_keyboard": [[{"text": "🔗 Авторизувати Spotify", "url": auth_u}]]} if auth_u else None
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "✅ <b>Ключі Spotify успішно збережено!</b>\nНатисніть кнопку нижче, щоб прив'язати акаунт:",
+                    "parse_mode": "HTML",
+                    "reply_markup": reply_k,
+                })
+            else:
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "Формат команди:\n<code>/set_spotify &lt;CLIENT_ID&gt; &lt;CLIENT_SECRET&gt;</code>",
+                    "parse_mode": "HTML",
+                })
+            return
+
+        if text.startswith("/set_google"):
+            parts = text.split()
+            if len(parts) >= 3:
+                cid, csec = parts[1].strip(), parts[2].strip()
+                google_calendar_service.save_credentials(cid, csec)
+                auth_u = google_calendar_service.get_authorize_url(settings.PUBLIC_SERVER_URL)
+                reply_k = {"inline_keyboard": [[{"text": "🔗 Авторизувати Google", "url": auth_u}]]} if auth_u else None
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "✅ <b>Ключі Google Calendar збережено!</b>\nНатисніть кнопку нижче для авторизації:",
+                    "parse_mode": "HTML",
+                    "reply_markup": reply_k,
+                })
+            else:
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "Формат команди:\n<code>/set_google &lt;CLIENT_ID&gt; &lt;CLIENT_SECRET&gt;</code>",
+                    "parse_mode": "HTML",
+                })
             return
 
         # 4. Обробка текстових команд
@@ -975,7 +1542,7 @@ class TelegramBotService:
             return
 
         # 5. Швидке додавання подій календаря з тексту (наприклад: "14:30 Семінар" або "Завтра 10:00 Іспит")
-        cal_match = re.search(r"(\d{1,2}:\d{2})\s+(.+)", text)
+        cal_match = re.match(r"^(?:завтра\s+)?(\d{1,2}:\d{2})\s+(.+)$", text.strip(), re.IGNORECASE)
         if cal_match:
             t_str = cal_match.group(1)
             summary_txt = cal_match.group(2).strip()

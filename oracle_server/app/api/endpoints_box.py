@@ -1,7 +1,8 @@
 # Файл: oracle_server/app/api/endpoints_box.py
 import os
 import re
-from typing import Dict, Any
+import time
+from typing import Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import FileResponse, RedirectResponse
 import orjson
@@ -165,6 +166,29 @@ async def download_live_mbx():
     if not os.path.exists(media_service.RAM_ANIM_PATH):
         raise HTTPException(status_code=404, detail="Active animation not found")
     return FileResponse(media_service.RAM_ANIM_PATH, media_type="application/octet-stream", filename="live.mbx")
+
+
+@router.post("/api/v5/box/batch-telemetry")
+async def receive_batch_telemetry(payload: Dict[str, Any], _=Depends(verify_access)):
+    """Приймає пакет офлайн-телеметрії («чорна скринька» шкатулки під час блекауту/відсутності Wi-Fi)."""
+    points = payload.get("points", [])
+    if not points:
+        return {"ok": True, "count": 0}
+    now_ts = int(time.time())
+    samples = []
+    for p in points:
+        age_sec = max(0, int(p.get("age_sec", 0)))
+        ts = now_ts - age_sec
+        samples.append({
+            "ts": ts,
+            "temp": p.get("t", 22.0),
+            "hum": p.get("h", 50.0),
+            "pres": p.get("p", 750.0),
+            "light": p.get("l", 50),
+        })
+    count = db_service.add_climate_batch(samples)
+    realtime_hub.broadcast("telemetry", {"type": "batch", "count": count})
+    return {"ok": True, "count": count}
 
 
 @router.get("/api/v5/media/{name}.mbx")

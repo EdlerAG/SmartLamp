@@ -27,6 +27,20 @@ class GoogleCalendarService:
     CALENDAR_API = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
     SCOPES = "https://www.googleapis.com/auth/calendar.events"
 
+    @property
+    def client_id(self) -> str:
+        return db_service.get_setting("google_client_id", settings.GOOGLE_CLIENT_ID or "").strip()
+
+    @property
+    def client_secret(self) -> str:
+        return db_service.get_setting("google_client_secret", settings.GOOGLE_CLIENT_SECRET or "").strip()
+
+    def save_credentials(self, client_id: str, client_secret: str) -> None:
+        """Зберігає ключі Google OAuth у SQLite WAL для динамічного налаштування."""
+        db_service.set_setting("google_client_id", client_id.strip())
+        db_service.set_setting("google_client_secret", client_secret.strip())
+        db_service.log_event("system", "google", "save_credentials", {"client_id": client_id[:6]})
+
     def __init__(self) -> None:
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0.0
@@ -40,10 +54,11 @@ class GoogleCalendarService:
         return f"{host}/api/v5/google/callback"
 
     def get_authorize_url(self, base_url: str = "") -> str:
-        if not settings.GOOGLE_CLIENT_ID:
+        cid = self.client_id
+        if not cid:
             return ""
         params = {
-            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_id": cid,
             "redirect_uri": self._get_redirect_uri(base_url),
             "response_type": "code",
             "scope": self.SCOPES,
@@ -54,18 +69,19 @@ class GoogleCalendarService:
 
     def is_linked(self) -> bool:
         tokens = db_service.get_setting("google_calendar_tokens", {})
-        return bool(tokens.get("refresh_token") and settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
+        return bool(tokens.get("refresh_token") and self.client_id and self.client_secret)
 
     async def handle_callback(self, code: str, base_url: str = "") -> bool:
-        if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        cid, csec = self.client_id, self.client_secret
+        if not cid or not csec:
             logger.warning("Google Calendar client credentials not set")
             return False
 
         redirect_uri = self._get_redirect_uri(base_url)
         data = {
             "code": code,
-            "client_id": settings.GOOGLE_CLIENT_ID,
-            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "client_id": cid,
+            "client_secret": csec,
             "redirect_uri": redirect_uri,
             "grant_type": "authorization_code",
         }
@@ -101,12 +117,13 @@ class GoogleCalendarService:
     async def _refresh_access_token(self) -> bool:
         tokens = db_service.get_setting("google_calendar_tokens", {})
         refresh_token = tokens.get("refresh_token")
-        if not refresh_token:
+        cid, csec = self.client_id, self.client_secret
+        if not refresh_token or not cid or not csec:
             return False
 
         data = {
-            "client_id": settings.GOOGLE_CLIENT_ID,
-            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "client_id": cid,
+            "client_secret": csec,
             "refresh_token": refresh_token,
             "grant_type": "refresh_token",
         }

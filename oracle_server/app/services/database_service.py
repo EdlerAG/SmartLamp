@@ -253,6 +253,30 @@ class DatabaseService:
         except Exception as e:
             logger.warning("add_climate_sample error: %s", e)
 
+    def add_climate_batch(self, samples: List[Dict[str, Any]]) -> int:
+        """Пакетне збереження офлайн-телеметрії («чорної скриньки» шкатулки під час блекауту)."""
+        if not samples:
+            return 0
+        try:
+            conn = self._get_conn()
+            inserted = 0
+            for s in samples:
+                ts = int(s.get("ts", time.time()))
+                temp = round(float(s.get("temp", 22.0)), 1)
+                hum = round(float(s.get("hum", 50.0)), 0)
+                pres = round(float(s.get("pres", 750.0)), 1)
+                light = int(s.get("light", 50))
+                conn.execute(
+                    "INSERT OR REPLACE INTO climate_history (ts, temp, hum, pres, light) VALUES (?, ?, ?, ?, ?)",
+                    (ts, temp, hum, pres, light),
+                )
+                inserted += 1
+            conn.commit()
+            return inserted
+        except Exception as e:
+            logger.warning("add_climate_batch error: %s", e)
+            return 0
+
     def get_climate_series(self, hours: int = 24) -> List[Dict[str, Any]]:
         cutoff = int(time.time()) - (hours * 3600)
         try:

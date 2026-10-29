@@ -81,6 +81,35 @@ struct AppState {
     volatile uint8_t  screen_reaction_type  = NOTIFY_NONE;
     volatile uint32_t screen_reaction_until = 0;
 
+    // --- АВТОНОМНА «ЧОРНА СКРИНЬКА» ТЕЛЕМЕТРІЇ ПРИ БЛЕКАУТАХ (v5.5) ---
+    struct OfflineSample {
+        uint32_t sample_millis;
+        float    temp;
+        float    hum;
+        float    pres;
+        uint8_t  light;
+        uint8_t  mode;
+    };
+    OfflineSample     offline_buf[144];
+    volatile uint8_t  offline_buf_count      = 0;
+    volatile uint32_t last_offline_sample_ms = 0;
+
+    void pushOfflineSample(float t, float h, float p, uint8_t l, uint8_t m) {
+        if (offline_buf_count < 144) {
+            offline_buf[offline_buf_count] = { millis(), t, h, p, l, m };
+            offline_buf_count++;
+        } else {
+            for (int i = 1; i < 144; i++) {
+                offline_buf[i - 1] = offline_buf[i];
+            }
+            offline_buf[143] = { millis(), t, h, p, l, m };
+        }
+    }
+
+    void clearOfflineSamples() {
+        offline_buf_count = 0;
+    }
+
     // --- SPOTIFY VINYL HUB (v4.5) ---
     SpotifyTrackInfo  spotify;
     volatile int8_t   cmd_spotify_action    = 0; // 0: none, 1: next, 2: prev, 3: play_pause

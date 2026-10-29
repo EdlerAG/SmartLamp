@@ -41,6 +41,20 @@ class SpotifyService:
 
     SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state"
 
+    @property
+    def client_id(self) -> str:
+        return db_service.get_setting("spotify_client_id", settings.SPOTIFY_CLIENT_ID or "").strip()
+
+    @property
+    def client_secret(self) -> str:
+        return db_service.get_setting("spotify_client_secret", settings.SPOTIFY_CLIENT_SECRET or "").strip()
+
+    def save_credentials(self, client_id: str, client_secret: str) -> None:
+        """Зберігає ключі Spotify OAuth у SQLite WAL для динамічного налаштування без перезапуску."""
+        db_service.set_setting("spotify_client_id", client_id.strip())
+        db_service.set_setting("spotify_client_secret", client_secret.strip())
+        db_service.log_event("system", "spotify", "save_credentials", {"client_id": client_id[:6]})
+
     def __init__(self) -> None:
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0.0
@@ -64,10 +78,11 @@ class SpotifyService:
         return f"{host}/api/v5/spotify/callback"
 
     def get_authorize_url(self, base_url: str = "") -> str:
-        if not settings.SPOTIFY_CLIENT_ID:
+        cid = self.client_id
+        if not cid:
             return ""
         params = {
-            "client_id": settings.SPOTIFY_CLIENT_ID,
+            "client_id": cid,
             "response_type": "code",
             "redirect_uri": self._get_redirect_uri(base_url),
             "scope": self.SCOPES,
@@ -77,7 +92,7 @@ class SpotifyService:
 
     def is_linked(self) -> bool:
         refresh_tok = db_service.get_setting("spotify_refresh_token", "")
-        return bool(refresh_tok and settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CLIENT_SECRET)
+        return bool(refresh_tok and self.client_id and self.client_secret)
 
     def disconnect(self) -> None:
         """Повністю відв'язує Spotify-акаунт та очищує кеш."""
@@ -102,12 +117,13 @@ class SpotifyService:
         db_service.log_event("system", "spotify", "disconnect", {"status": "unlinked"})
 
     async def handle_callback(self, code: str, base_url: str = "") -> bool:
-        if not settings.SPOTIFY_CLIENT_ID or not settings.SPOTIFY_CLIENT_SECRET:
+        cid, csec = self.client_id, self.client_secret
+        if not cid or not csec:
             return False
 
         redirect_uri = self._get_redirect_uri(base_url)
         auth_header = base64.b64encode(
-            f"{settings.SPOTIFY_CLIENT_ID}:{settings.SPOTIFY_CLIENT_SECRET}".encode()
+            f"{cid}:{csec}".encode()
         ).decode()
 
         data = {
@@ -147,11 +163,12 @@ class SpotifyService:
             return self._access_token
 
         refresh_tok = db_service.get_setting("spotify_refresh_token", "")
-        if not refresh_tok or not settings.SPOTIFY_CLIENT_ID or not settings.SPOTIFY_CLIENT_SECRET:
+        cid, csec = self.client_id, self.client_secret
+        if not refresh_tok or not cid or not csec:
             return None
 
         auth_header = base64.b64encode(
-            f"{settings.SPOTIFY_CLIENT_ID}:{settings.SPOTIFY_CLIENT_SECRET}".encode()
+            f"{cid}:{csec}".encode()
         ).decode()
 
         data = {
