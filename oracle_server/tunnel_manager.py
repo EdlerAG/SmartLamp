@@ -23,7 +23,7 @@ def update_telegram_menu_button(url: str) -> None:
     if not token:
         return
     clean_url = url.rstrip("/")
-    web_app_url = f"{clean_url}/?v=5.0.4"
+    web_app_url = f"{clean_url}/?v=5.1.0"
     api_url = f"https://api.telegram.org/bot{token}/setChatMenuButton"
     payload = json.dumps({
         "menu_button": {
