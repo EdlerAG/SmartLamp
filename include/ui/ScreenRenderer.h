@@ -666,7 +666,7 @@ namespace ScreenRenderer {
 
             // 3. Інтерпольована дуга прогресу треку по периметру (R = 116)
             uint32_t cur_prog = state.spotify.progress_ms;
-            if (state.spotify.last_sync_ms > 0) {
+            if (state.spotify.playing && state.spotify.last_sync_ms > 0) {
                 cur_prog += (now - state.spotify.last_sync_ms);
             }
             if (state.spotify.duration_ms > 0 && cur_prog > state.spotify.duration_ms) {

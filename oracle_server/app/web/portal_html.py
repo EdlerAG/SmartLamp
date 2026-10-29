@@ -961,16 +961,45 @@ function setAsSaver(name){
 
 function spotifyAction(act){
   if(act === 'toggle'){
-    const isP = window.lastSpotifyPlaying || false;
+    const isP = spotifyPlayback.playing;
     act = isP ? 'pause' : 'play';
   }
+
+  if (act === 'pause') {
+    if (spotifyPlayback.playing && spotifyPlayback.last_sync_ts > 0) {
+      const elapsed = Date.now() - spotifyPlayback.last_sync_ts;
+      spotifyPlayback.progress_ms = Math.min(spotifyPlayback.duration_ms || (spotifyPlayback.progress_ms + elapsed), spotifyPlayback.progress_ms + elapsed);
+    }
+    spotifyPlayback.playing = false;
+    spotifyPlayback.last_sync_ts = 0;
+    const spBadgeEl = document.getElementById('spBadge');
+    const spPlayBtn = document.getElementById('spPlayBtn');
+    if (spBadgeEl) { spBadgeEl.innerText = '⏸ PAUSED'; spBadgeEl.style.color = 'var(--text-secondary)'; }
+    if (spPlayBtn) spPlayBtn.innerText = '▶️ Пуск';
+    tickSpotifyProgress();
+  } else if (act === 'play') {
+    spotifyPlayback.playing = true;
+    spotifyPlayback.last_sync_ts = Date.now();
+    const spBadgeEl = document.getElementById('spBadge');
+    const spPlayBtn = document.getElementById('spPlayBtn');
+    if (spBadgeEl) { spBadgeEl.innerText = '▶️ PLAYING'; spBadgeEl.style.color = 'var(--accent-success)'; }
+    if (spPlayBtn) spPlayBtn.innerText = '⏸ Пауза';
+    tickSpotifyProgress();
+  } else if (act === 'next' || act === 'previous') {
+    spotifyPlayback.progress_ms = 0;
+    spotifyPlayback.last_sync_ts = Date.now();
+    const spBarEl = document.getElementById('spProgressBar');
+    if (spBarEl) spBarEl.style.width = '0%';
+    tickSpotifyProgress();
+  }
+
   fetch('/api/v5/spotify/action', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: act})
   }).then(r => r.json()).then(() => {
     toast(`Spotify: ${act}`);
-    pollState();
+    setTimeout(pollState, 700);
   });
 }
 
@@ -1017,6 +1046,7 @@ let spotifyPlayback = {
   playing: false,
   title: '',
   artist: '',
+  track_id: '',
   progress_ms: 0,
   duration_ms: 0,
   last_sync_ts: 0
@@ -1530,13 +1560,22 @@ function pollState(forceFull = false){
     if(sp.linked){
       if(spLoginBtn) spLoginBtn.style.display = 'none';
       if(spDisconnectBtn) spDisconnectBtn.style.display = 'inline-block';
+      const isNewTrack = (sp.track_id && sp.track_id !== spotifyPlayback.track_id);
       spotifyPlayback.linked = true;
       spotifyPlayback.playing = sp.playing || false;
       spotifyPlayback.title = sp.title || '';
       spotifyPlayback.artist = sp.artist || '';
-      spotifyPlayback.progress_ms = sp.progress_ms || 0;
       spotifyPlayback.duration_ms = sp.duration_ms || 0;
-      spotifyPlayback.last_sync_ts = Date.now();
+      spotifyPlayback.track_id = sp.track_id || '';
+
+      let estimatedLocalMs = spotifyPlayback.progress_ms;
+      if (spotifyPlayback.playing && spotifyPlayback.last_sync_ts > 0) {
+        estimatedLocalMs += (Date.now() - spotifyPlayback.last_sync_ts);
+      }
+      if (isNewTrack || Math.abs(estimatedLocalMs - (sp.progress_ms || 0)) > 2500 || !spotifyPlayback.last_sync_ts) {
+        spotifyPlayback.progress_ms = sp.progress_ms || 0;
+        spotifyPlayback.last_sync_ts = Date.now();
+      }
 
       if(sp.title){
         spTitleEl.innerText = sp.title;
