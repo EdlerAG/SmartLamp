@@ -22,19 +22,27 @@ from app.services.server_updater import server_updater
 
 ADMIN_KB = {
     "keyboard": [
-        [{"text": "🎛 Головний пульт"}, {"text": "💡 Освітлення"}, {"text": "🎵 Spotify"}],
-        [{"text": "⏱ Фокус Pomodoro"}, {"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}],
-        [{"text": "🌙 Режим DND"}, {"text": "🔊 Гучність & Звук"}, {"text": "🖼 Екран & Заставка"}],
-        [{"text": "🩺 Діагностика лампи"}, {"text": "🔄 Оновити сервер"}, {"text": "📌 Інструкція"}],
+        [
+            {"text": "📱 Studio", "web_app": {"url": "https://yearling-shy-reviving.ngrok-free.dev/?v=5.1.0"}},
+            {"text": "🎛 Головний пульт"},
+            {"text": "💡 Освітлення"},
+        ],
+        [{"text": "🎵 Spotify"}, {"text": "⏱ Фокус Pomodoro"}, {"text": "📊 Клімат кімнати"}],
+        [{"text": "📅 Календар & Розклад"}, {"text": "🌙 Режим DND"}, {"text": "🔊 Гучність & Звук"}],
+        [{"text": "🖼 Екран & Заставка"}, {"text": "🩺 Діагностика лампи"}, {"text": "📌 Інструкція"}],
     ],
     "resize_keyboard": True,
 }
 
 GIRL_KB = {
     "keyboard": [
-        [{"text": "🎛 Головний пульт"}, {"text": "💡 Освітлення"}, {"text": "🎵 Spotify"}],
-        [{"text": "⏱ Фокус Pomodoro"}, {"text": "📊 Клімат кімнати"}, {"text": "📅 Календар & Розклад"}],
-        [{"text": "🌙 Режим DND"}, {"text": "🔊 Гучність & Звук"}, {"text": "🖼 Екран & Заставка"}],
+        [
+            {"text": "📱 Studio", "web_app": {"url": "https://yearling-shy-reviving.ngrok-free.dev/?v=5.1.0"}},
+            {"text": "🎛 Головний пульт"},
+            {"text": "💡 Освітлення"},
+        ],
+        [{"text": "🎵 Spotify"}, {"text": "⏱ Фокус Pomodoro"}, {"text": "📊 Клімат кімнати"}],
+        [{"text": "📅 Календар & Розклад"}, {"text": "🌙 Режим DND"}, {"text": "🔊 Гучність & Звук"}],
         [{"text": "🌤 Прогноз погоди"}, {"text": "📌 Інструкція"}],
     ],
     "resize_keyboard": True,
@@ -1660,6 +1668,21 @@ class TelegramBotService:
             if not self.webhook_cleared:
                 await self._api("deleteWebhook", {"drop_pending_updates": False})
                 self.webhook_cleared = True
+
+                # Гарантоване встановлення кнопки 📱 Studio для меню
+                try:
+                    base_url = state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)
+                    app_url = f"{base_url.rstrip('/')}/?v=5.1.0"
+                    await self._api("setChatMenuButton", {
+                        "menu_button": {"type": "web_app", "text": "📱 Studio", "web_app": {"url": app_url}}
+                    })
+                    for cid in (1047202957, 1294097414):
+                        await self._api("setChatMenuButton", {
+                            "chat_id": cid,
+                            "menu_button": {"type": "web_app", "text": "📱 Studio", "web_app": {"url": app_url}}
+                        })
+                except Exception as _e:
+                    logger.warning("Auto setChatMenuButton error: %s", _e)
 
             while True:
                 offset = -1 if not self.synced else (self.last_update_id + 1)

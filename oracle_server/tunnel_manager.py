@@ -25,6 +25,8 @@ def update_telegram_menu_button(url: str) -> None:
     clean_url = url.rstrip("/")
     web_app_url = f"{clean_url}/?v=5.1.0"
     api_url = f"https://api.telegram.org/bot{token}/setChatMenuButton"
+    
+    # 1. Загальна кнопка за замовчуванням
     payload = json.dumps({
         "menu_button": {
             "type": "web_app",
@@ -35,9 +37,26 @@ def update_telegram_menu_button(url: str) -> None:
     try:
         req = urllib.request.Request(api_url, data=payload, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as resp:
-            print(f"[Tunnel] Telegram Menu Button updated: {resp.read().decode()}")
+            print(f"[Tunnel] Telegram Default Menu Button updated: {resp.read().decode()}")
     except Exception as e:
-        print(f"[Tunnel] Failed to update Telegram Menu Button: {e}")
+        print(f"[Tunnel] Failed to update Telegram Default Menu Button: {e}")
+
+    # 2. Кнопка конкретно для зареєстрованих чатів
+    for chat_id in (1047202957, 1294097414):
+        user_payload = json.dumps({
+            "chat_id": chat_id,
+            "menu_button": {
+                "type": "web_app",
+                "text": "📱 Studio",
+                "web_app": {"url": web_app_url},
+            }
+        }).encode("utf-8")
+        try:
+            req = urllib.request.Request(api_url, data=user_payload, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                print(f"[Tunnel] Telegram Menu Button for {chat_id} updated: {resp.read().decode()}")
+        except Exception as e:
+            print(f"[Tunnel] Failed to update Telegram Menu Button for {chat_id}: {e}")
 
 
 def update_env_url(url: str) -> None:
