@@ -1,3 +1,4 @@
+from __future__ import annotations
 import io
 import os
 import re
@@ -49,7 +50,7 @@ class MediaService:
     BG_COLOR = (6, 9, 16)
 
     @classmethod
-    def _fit_and_composite_frame(cls, frame_img) -> np.ndarray:
+    def _fit_and_composite_frame(cls, frame_img) -> Any:
         """Масштабує кадр до 240x240 зі збереженням пропорцій та накладає на темний фон."""
         from PIL import Image, ImageOps
 
