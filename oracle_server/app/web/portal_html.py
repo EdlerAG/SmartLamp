@@ -975,8 +975,13 @@ function loginSpotify(){
   fetch('/api/v5/spotify/login')
     .then(r => r.json())
     .then(d => {
-      if(d.auth_url) {
-        window.open(d.auth_url, '_blank');
+      const authUrl = d.auth_url || d.url;
+      if(authUrl) {
+        if(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openLink) {
+          window.Telegram.WebApp.openLink(authUrl);
+        } else {
+          window.open(authUrl, '_blank');
+        }
       } else {
         const cid = prompt('Введіть Spotify Client ID з developer.spotify.com:');
         if(!cid) return;
@@ -1258,8 +1263,13 @@ function loginGoogle() {
   fetch('/api/v5/google/login')
     .then(r => r.json())
     .then(d => {
-      if (d.auth_url) {
-        window.open(d.auth_url, '_blank');
+      const authUrl = d.auth_url || d.url;
+      if (authUrl) {
+        if(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openLink) {
+          window.Telegram.WebApp.openLink(authUrl);
+        } else {
+          window.open(authUrl, '_blank');
+        }
       } else {
         const choice = prompt('Оберіть спосіб підключення:\n1 — Вставити iCal посилання (.ics) (найшвидше, без Google Cloud Console)\n2 — Ввести OAuth Client ID / Secret');
         if (choice === '1') {
