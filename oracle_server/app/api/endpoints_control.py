@@ -178,6 +178,8 @@ async def save_calendar_ical(request: Request, role: str = Depends(verify_access
 @router.get("/api/v5/state")
 async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = Depends(verify_access)):
     cal_event = await google_calendar_service.get_next_event()
+    if spotify_service.is_linked():
+        await spotify_service.fetch_current_playback()
 
     resp = {
         "ok": True,
@@ -360,6 +362,17 @@ async def save_spotify_credentials(request: Request, _: str = Depends(verify_adm
 async def spotify_oauth_callback(code: str, request: Request):
     ok = await spotify_service.handle_callback(code, str(request.base_url))
     if ok:
+        try:
+            from app.services.bot_service import bot_service
+            for tid in {state_service.admin_id, state_service.girl_id, "1047202957"}:
+                if tid:
+                    await bot_service._api("sendMessage", {
+                        "chat_id": tid,
+                        "text": "✨ <b>Spotify успішно підключено!</b> 🎵\nМузика та альбомні обкладинки тепер транслюються на дисплей шкатулки.",
+                        "parse_mode": "HTML",
+                    })
+        except Exception:
+            pass
         return HTMLResponse(
             "<html><body style='background:#08090C;color:#52B788;font-family:sans-serif;text-align:center;padding:50px;'>"
             "<h2>✨ Spotify успішно підключено!</h2>"
@@ -510,6 +523,17 @@ async def save_google_credentials(request: Request, _: str = Depends(verify_admi
 async def google_oauth_callback(code: str, request: Request):
     ok = await google_calendar_service.handle_callback(code, str(request.base_url))
     if ok:
+        try:
+            from app.services.bot_service import bot_service
+            for tid in {state_service.admin_id, state_service.girl_id, "1047202957"}:
+                if tid:
+                    await bot_service._api("sendMessage", {
+                        "chat_id": tid,
+                        "text": "📅 <b>Google Календар успішно підключено!</b>\nНайближчі плани та пари тепер синхронізуються зі шкатулкою.",
+                        "parse_mode": "HTML",
+                    })
+        except Exception:
+            pass
         return HTMLResponse(
             "<html><body style='background:#08090C;color:#52B788;font-family:sans-serif;text-align:center;padding:50px;'>"
             "<h2>📅 Google Календар Насті успішно підключено!</h2>"

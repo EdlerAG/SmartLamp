@@ -152,6 +152,7 @@ class SpotifyService:
                 refresh_tok = body.get("refresh_token")
                 if refresh_tok:
                     db_service.set_setting("spotify_refresh_token", refresh_tok)
+                await self.fetch_current_playback(force=True)
                 return True
         except Exception:
             pass
@@ -305,32 +306,19 @@ class SpotifyService:
         raw_bytes = rgb565.astype(">u2").tobytes()
         return raw_bytes, ambi_rgb
 
-    async def get_sync_state(
-        self,
-        box_screen: int,
-        box_unread: bool,
-        box_led_mode: int,
-    ) -> Dict[str, Any]:
-        """
-        Zero-Idle Умова:
-        Якщо box_screen != 2 (не Хаб) АБО box_unread == True (є повідомлення),
-        І box_led_mode != 11 (не Spotify AmbiLight) — 0 HTTP-запитів, відповідь за 0.00 мс!
-        """
+    async def fetch_current_playback(self, force: bool = False) -> Dict[str, Any]:
+        """Опитує офіційний Spotify API про поточний трек із захистом від rate-limit."""
+        if not self.is_linked():
+            return self.get_cached_state()
+
         now = time.time()
-        hub_active = (box_screen == 2) and (not box_unread)
-        ambi_active = (box_led_mode == 11)
-
-        if not hub_active and not ambi_active:
-            return self._cached_state
-
-        # Опитуємо Spotify не частіше ніж раз на 6 секунд
-        if now - self._last_poll_time < 6.0:
-            return self._cached_state
+        if not force and (now - self._last_poll_time < 5.0):
+            return self.get_cached_state()
         self._last_poll_time = now
 
         token = await self._ensure_access_token()
         if not token:
-            return self._cached_state
+            return self.get_cached_state()
 
         try:
             resp = await http_pool.get().get(
@@ -341,7 +329,7 @@ class SpotifyService:
 
             if resp.status_code == 204 or not resp.content:
                 self._cached_state["playing"] = False
-                return self._cached_state
+                return self.get_cached_state()
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -382,14 +370,35 @@ class SpotifyService:
                                 f.write(vinyl_bytes)
                             memory_guard.trim_ram()
 
-                return self._cached_state
-        except Exception:
-            pass
+                return self.get_cached_state()
+        except Exception as e:
+            logger.warning("Spotify playback poll error: %s", e)
 
-        return self._cached_state
+        return self.get_cached_state()
+
+    async def get_sync_state(
+        self,
+        box_screen: int,
+        box_unread: bool,
+        box_led_mode: int,
+    ) -> Dict[str, Any]:
+        """
+        Zero-Idle Умова для апаратної плати (ESP32):
+        Якщо box_screen != 2 (не Хаб) АБО box_unread == True (є повідомлення),
+        І box_led_mode != 11 (не Spotify AmbiLight) — 0 HTTP-запитів, відповідь за 0.00 мс!
+        """
+        hub_active = (box_screen == 2) and (not box_unread)
+        ambi_active = (box_led_mode == 11)
+
+        if not hub_active and not ambi_active:
+            return self.get_cached_state()
+
+        return await self.fetch_current_playback()
 
     def get_cached_state(self) -> Dict[str, Any]:
-        return dict(self._cached_state)
+        st = dict(self._cached_state)
+        st["linked"] = self.is_linked()
+        return st
 
 
 spotify_service = SpotifyService()
