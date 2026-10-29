@@ -310,10 +310,16 @@ class TelegramBotService:
     @staticmethod
     async def _calendar_view(base_url: str = "") -> Tuple[str, Dict[str, Any]]:
         is_linked = google_calendar_service.is_linked()
+        link_type = google_calendar_service.get_link_type()
+        if link_type == "ical":
+            link_status = "Google Календар: <b>Підключено (iCal) ✅</b>"
+        elif link_type == "oauth":
+            link_status = "Google Календар: <b>Підключено (OAuth) ✅</b>"
+        else:
+            link_status = "Google Календар: <b>Не підключено ❌</b>"
+
         next_ev = await google_calendar_service.get_next_event()
         events = await google_calendar_service.get_upcoming_events(max_results=8)
-
-        link_status = "Google Календар: <b>Підключено ✅</b>" if is_linked else "Google Календар: <b>Не підключено ❌</b>"
 
         next_txt = "<i>Немає запланованих подій на найближчий час</i>"
         if next_ev:
@@ -1092,9 +1098,16 @@ class TelegramBotService:
         elif data == "google:setup_info":
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
             info_t = (
-                "⚙️ <b>НАЛАШТУВАННЯ GOOGLE CALENDAR</b>\n"
+                "⚙️ <b>ПІДКЛЮЧЕННЯ КАЛЕНДАРЯ НАСТІ</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n"
-                "1. Створіть проект у Google Cloud Console\n"
+                "<b>Спосіб 1 (Швидкий iCal — 10 секунд без Google Cloud)</b>:\n"
+                "1. Відкрийте <a href=\"https://calendar.google.com\">Google Calendar</a> на ПК або телефоні\n"
+                "2. Натисніть ⚙️ Налаштування біля потрібного календаря\n"
+                "3. Скопіюйте <b>«Таємна адреса у форматі iCal»</b> (.ics)\n"
+                "4. Просто надішліть це посилання у цей чат або через команду:\n"
+                "   <code>/set_calendar https://calendar.google.com/.../basic.ics</code>\n\n"
+                "<b>Спосіб 2 (Офіційний Google OAuth)</b>:\n"
+                "1. Створіть проєкт у Google Cloud Console\n"
                 "2. Увімкніть Google Calendar API та налаштуйте OAuth Consent Screen\n"
                 "3. Створіть OAuth Client ID (Web Application) з Redirect URI:\n"
                 f"   <code>{state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)}/api/v5/google/callback</code>\n"
@@ -1399,6 +1412,33 @@ class TelegramBotService:
                 await self._api("sendMessage", {
                     "chat_id": chat_id,
                     "text": "Формат команди:\n<code>/set_google &lt;CLIENT_ID&gt; &lt;CLIENT_SECRET&gt;</code>",
+                    "parse_mode": "HTML",
+                })
+            return
+
+        if text.startswith("/set_calendar") or ("calendar.google.com/calendar/ical" in text) or (text.strip().startswith("https://") and ".ics" in text):
+            raw_url = text.split(maxsplit=1)[1] if text.startswith("/set_calendar") and len(text.split(maxsplit=1)) > 1 else text
+            import re
+            m = re.search(r'https?://[^\s]+', raw_url)
+            if m:
+                target_url = m.group(0).strip()
+                google_calendar_service.save_ical_url(target_url)
+                events = await google_calendar_service.get_upcoming_events(days=7)
+                count = len(events)
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": (
+                        f"✅ <b>Google Календар підключено через iCal!</b> 📅\n"
+                        f"• Знайдено подій на найближчі 7 днів: <b>{count}</b>\n"
+                        f"• Лампа синхронізуватиметься автоматично кожні 15 хв."
+                    ),
+                    "parse_mode": "HTML",
+                    "reply_markup": active_kb,
+                })
+            else:
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "❌ Будь ласка, надішліть посилання на iCal у форматі:\n<code>/set_calendar https://calendar.google.com/calendar/ical/.../basic.ics</code>",
                     "parse_mode": "HTML",
                 })
             return

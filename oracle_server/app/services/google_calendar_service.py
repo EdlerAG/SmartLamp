@@ -3,6 +3,7 @@ import time
 import datetime
 import urllib.parse
 import secrets
+import re
 from typing import Dict, Any, Optional, List
 import httpx
 
@@ -14,9 +15,10 @@ from app.services.state_service import state_service
 
 class GoogleCalendarService:
     """
-    Уніфікований сервіс Календаря Насті (v5.3):
+    Уніфікований сервіс Календаря Насті (v5.5):
+    - Підтримка Google Calendar iCal 1-клік синхронізації (без потреби в Google Cloud Console).
     - Підтримка Google Calendar OAuth2 (читання + запис подій).
-    - Вбудована SQLite база подій для швидкого додавання через Telegram-бота / окремого бота календаря.
+    - Вбудована SQLite база подій для швидкого додавання через Telegram-бота.
     - Автоматичне злиття та дедуплікація подій: найближча подія миттєво з'являється на лампі (Smart Hub).
     """
 
@@ -35,11 +37,21 @@ class GoogleCalendarService:
     def client_secret(self) -> str:
         return db_service.get_setting("google_client_secret", settings.GOOGLE_CLIENT_SECRET or "").strip()
 
+    @property
+    def ical_url(self) -> str:
+        return db_service.get_setting("google_calendar_ical_url", "").strip()
+
     def save_credentials(self, client_id: str, client_secret: str) -> None:
         """Зберігає ключі Google OAuth у SQLite WAL для динамічного налаштування."""
         db_service.set_setting("google_client_id", client_id.strip())
         db_service.set_setting("google_client_secret", client_secret.strip())
         db_service.log_event("system", "google", "save_credentials", {"client_id": client_id[:6]})
+
+    def save_ical_url(self, url: str) -> None:
+        """Зберігає приватне iCal-посилання Google Календаря для 1-клік синхронізації без OAuth."""
+        db_service.set_setting("google_calendar_ical_url", url.strip())
+        self._cached_event = None
+        db_service.log_event("system", "google", "save_ical_url", {"url": url[:30]})
 
     def __init__(self) -> None:
         self._access_token: Optional[str] = None
@@ -68,8 +80,17 @@ class GoogleCalendarService:
         return f"{self.AUTH_ENDPOINT}?{urllib.parse.urlencode(params)}"
 
     def is_linked(self) -> bool:
+        if self.ical_url:
+            return True
         tokens = db_service.get_setting("google_calendar_tokens", {})
         return bool(tokens.get("refresh_token") and self.client_id and self.client_secret)
+
+    def get_link_type(self) -> str:
+        if self.ical_url:
+            return "ical"
+        if self.is_linked():
+            return "oauth"
+        return "none"
 
     async def handle_callback(self, code: str, base_url: str = "") -> bool:
         cid, csec = self.client_id, self.client_secret
@@ -142,10 +163,77 @@ class GoogleCalendarService:
             logger.warning("Google token refresh exception: %s", e)
             return False
 
+    async def _fetch_ical_events(self) -> List[Dict[str, Any]]:
+        url = self.ical_url
+        if not url:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                res = await client.get(url)
+                if res.status_code != 200:
+                    return []
+                content = res.text
+        except Exception as e:
+            logger.warning("Failed to fetch iCal: %s", e)
+            return []
+
+        events: List[Dict[str, Any]] = []
+        raw_events = re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", content, re.DOTALL)
+        now_ts = time.time()
+
+        for ev_str in raw_events:
+            summary_m = re.search(r"SUMMARY:(.*?)(?:\r?\n[A-Z]|\r?\nEND)", ev_str, re.DOTALL)
+            summary = summary_m.group(1).strip() if summary_m else "Подія"
+            summary = re.sub(r"\r?\n\s+", "", summary)
+
+            dtstart_m = re.search(r"DTSTART(?:;[^:]+)?:(\d{8}(?:T\d{6}Z?)?)", ev_str)
+            if not dtstart_m:
+                continue
+            raw_start = dtstart_m.group(1)
+
+            try:
+                if len(raw_start) == 8:
+                    dt = datetime.datetime.strptime(raw_start, "%Y%m%d").replace(tzinfo=datetime.timezone.utc)
+                elif raw_start.endswith("Z"):
+                    dt = datetime.datetime.strptime(raw_start, "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
+                else:
+                    dt = datetime.datetime.strptime(raw_start, "%Y%m%dT%H%M%S").replace(tzinfo=datetime.timezone.utc)
+            except Exception:
+                continue
+
+            start_ts = dt.timestamp()
+            if start_ts < (now_ts - 1800):
+                continue
+
+            kyiv_tz = datetime.timezone(datetime.timedelta(hours=2))
+            kyiv_dt = dt.astimezone(kyiv_tz)
+            time_str = kyiv_dt.strftime("%H:%M")
+            date_str = kyiv_dt.strftime("%d.%m")
+            diff_sec = start_ts - now_ts
+            min_until = int(diff_sec // 60)
+
+            events.append({
+                "id": f"ical_{int(start_ts)}",
+                "summary": summary[:32],
+                "time": time_str,
+                "date": date_str,
+                "start_ts": start_ts,
+                "min_until": max(0, min_until),
+                "is_soon": (0 <= diff_sec <= 900),
+                "source": "google",
+            })
+
+        events.sort(key=lambda x: x["start_ts"])
+        return events
+
     async def _fetch_google_next_event(self) -> Optional[Dict[str, Any]]:
-        """Отримує найближчу подію з Google Calendar API."""
+        """Отримує найближчу подію з iCal або Google Calendar API."""
         if not self.is_linked():
             return None
+
+        if self.ical_url:
+            ical_evs = await self._fetch_ical_events()
+            return ical_evs[0] if ical_evs else None
 
         now = time.time()
         if not self._access_token or now >= self._token_expires_at:
@@ -312,12 +400,23 @@ class GoogleCalendarService:
         self._cached_event = None
         return True
 
+    def disconnect(self) -> None:
+        """Відключає Google Календар та очищує збережені токени / iCal посилання."""
+        db_service.delete_setting("google_calendar_tokens")
+        db_service.delete_setting("google_calendar_ical_url")
+        self._access_token = None
+        self._cached_event = None
+        logger.info("Google Calendar disconnected and events purged")
+
     async def get_upcoming_events(self, max_results: int = 15) -> List[Dict[str, Any]]:
         """Повертає об'єднаний список майбутніх подій із сортуванням за часом."""
         events: List[Dict[str, Any]] = []
 
-        # 1. Події з Google Calendar
-        if self.is_linked():
+        # 1. Події з iCal або Google Calendar
+        if self.ical_url:
+            ical_evs = await self._fetch_ical_events()
+            events.extend(ical_evs[:max_results])
+        elif self.is_linked():
             now = time.time()
             if not self._access_token or now >= self._token_expires_at:
                 await self._refresh_access_token()

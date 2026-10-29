@@ -7,6 +7,7 @@ PORTAL_HTML: str = r"""<!DOCTYPE html>
 <title>MagicBox Sovereign Studio • Hallmark v5.0 (Nastya Edition)</title>
 <!-- Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 -->
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
 :root {
@@ -974,8 +975,22 @@ function loginSpotify(){
   fetch('/api/v5/spotify/login')
     .then(r => r.json())
     .then(d => {
-      if(d.auth_url) window.open(d.auth_url, '_blank');
-      else toast('Client ID не налаштований');
+      if(d.auth_url) {
+        window.open(d.auth_url, '_blank');
+      } else {
+        const cid = prompt('Введіть Spotify Client ID з developer.spotify.com:');
+        if(!cid) return;
+        const csec = prompt('Введіть Spotify Client Secret:');
+        if(!csec) return;
+        fetch('/api/v5/spotify/credentials', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({client_id: cid, client_secret: csec})
+        }).then(r => r.json()).then(res => {
+          if(res.auth_url) window.open(res.auth_url, '_blank');
+          else toast('Ключі Spotify збережено!');
+        });
+      }
     });
 }
 
@@ -1243,8 +1258,41 @@ function loginGoogle() {
   fetch('/api/v5/google/login')
     .then(r => r.json())
     .then(d => {
-      if (d.auth_url) window.open(d.auth_url, '_blank');
-      else toast('Google Client ID не налаштовано');
+      if (d.auth_url) {
+        window.open(d.auth_url, '_blank');
+      } else {
+        const choice = prompt('Оберіть спосіб підключення:\n1 — Вставити iCal посилання (.ics) (найшвидше, без Google Cloud Console)\n2 — Ввести OAuth Client ID / Secret');
+        if (choice === '1') {
+          const ical = prompt('Вставте таємну адресу iCal (.ics) з налаштувань Google Календаря:');
+          if (!ical) return;
+          fetch('/api/v5/calendar/ical', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({url: ical})
+          }).then(r => r.json()).then(res => {
+            if (res.ok) {
+              toast(`✅ Календар підключено! Завантажено ${res.events_count} подій`);
+              loadCalendarEvents();
+              pollState();
+            } else {
+              toast('Помилка завантаження iCal');
+            }
+          });
+        } else if (choice === '2') {
+          const cid = prompt('Google Client ID:');
+          if (!cid) return;
+          const csec = prompt('Google Client Secret:');
+          if (!csec) return;
+          fetch('/api/v5/google/credentials', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({client_id: cid, client_secret: csec})
+          }).then(r => r.json()).then(res => {
+            if (res.auth_url) window.open(res.auth_url, '_blank');
+            else toast('Ключі Google збережено!');
+          });
+        }
+      }
     });
 }
 
@@ -1541,6 +1589,29 @@ function pollState(forceFull = false){
       },{responsive:true, displayModeBar:false});
     }
   }).catch(()=>{});
+}
+
+// Авто-авторизація для Telegram Mini App (0 кліків / без вводу пароля)
+if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+  try {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.expand();
+    fetch('/api/v5/auth/tg-webapp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: window.Telegram.WebApp.initData })
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.ok) {
+        const lm = document.getElementById('loginModal');
+        if (lm) lm.style.display = 'none';
+        pollState(true);
+        loadCalendarEvents();
+      }
+    })
+    .catch(() => {});
+  } catch (_) {}
 }
 
 pollState();

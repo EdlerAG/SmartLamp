@@ -98,6 +98,82 @@ async def logout_dashboard(response: Response, mb_session: Optional[str] = Cooki
     return {"ok": True}
 
 
+@router.post("/api/v5/auth/tg-webapp")
+async def login_telegram_webapp(request: Request, response: Response):
+    """
+    Автоматичний 1-клік вхід для Telegram Mini App за валідним криптографічним підписом initData.
+    Не потребує жодного ручного вводу пароля від користувача!
+    """
+    try:
+        import hmac
+        import hashlib
+        import urllib.parse
+
+        body = await request.json()
+        init_data = body.get("init_data", "")
+        if not init_data or not settings.TG_BOT_TOKEN:
+            raise HTTPException(status_code=400, detail="Відсутні init_data або токен бота")
+
+        parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+        hash_val = parsed.pop("hash", None)
+        if not hash_val:
+            raise HTTPException(status_code=400, detail="Відсутній хеш підпису")
+
+        # Telegram HMAC-SHA256 валідація
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+        secret_key = hmac.new(b"WebAppData", settings.TG_BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
+        calc_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+        if not secrets.compare_digest(hash_val, calc_hash):
+            raise HTTPException(status_code=401, detail="Невалідний підпис Telegram")
+
+        user_raw = parsed.get("user", "{}")
+        user = orjson.loads(user_raw)
+        user_id = str(user.get("id", ""))
+
+        ALLOWED_ADMINS = {str(settings.TG_ADMIN_ID), "1047202957"}
+        ALLOWED_GIRLS = {str(settings.TG_GIRL_ID), "1294097414", "1334785533"}
+
+        role = None
+        if user_id in ALLOWED_ADMINS:
+            role = "admin"
+        elif user_id in ALLOWED_GIRLS:
+            role = "nastya"
+        else:
+            raise HTTPException(status_code=403, detail="Доступ заборонено для цього Telegram акаунту")
+
+        session_token = secrets.token_urlsafe(36)
+        db_service.create_session(session_token, role=role, duration_sec=86400 * 14)
+
+        is_https = request.url.scheme == "https"
+        response.set_cookie(
+            key="mb_session",
+            value=session_token,
+            httponly=True,
+            secure=is_https,
+            max_age=86400 * 14,
+            samesite="lax",
+        )
+        return {"ok": True, "token": session_token, "role": role, "user": user}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("TG WebApp auth error: %s", e)
+        raise HTTPException(status_code=400, detail="Помилка авторизації Telegram")
+
+
+@router.post("/api/v5/calendar/ical")
+async def save_calendar_ical(request: Request, role: str = Depends(verify_access)):
+    """Зберігає приватне iCal-посилання Google/Apple Календаря."""
+    body = await request.json()
+    url = body.get("url", "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL не може бути порожнім")
+    google_calendar_service.save_ical_url(url)
+    evs = await google_calendar_service.get_upcoming_events(max_results=5)
+    return {"ok": True, "events_count": len(evs), "sample": evs[:2]}
+
+
 @router.get("/api/v1/box/state")
 @router.get("/api/v5/state")
 async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = Depends(verify_access)):
@@ -268,6 +344,18 @@ async def get_spotify_login(request: Request, _: str = Depends(verify_access)):
     return {"ok": True, "auth_url": url}
 
 
+@router.post("/api/v5/spotify/credentials")
+async def save_spotify_credentials(request: Request, _: str = Depends(verify_admin_access)):
+    body = await request.json()
+    cid = body.get("client_id", "").strip()
+    csec = body.get("client_secret", "").strip()
+    if not cid or not csec:
+        raise HTTPException(status_code=400, detail="Client ID та Client Secret обов'язкові")
+    spotify_service.save_credentials(cid, csec)
+    url = spotify_service.get_authorize_url(str(request.base_url))
+    return {"ok": True, "auth_url": url}
+
+
 @router.get("/api/v5/spotify/callback", response_class=HTMLResponse)
 async def spotify_oauth_callback(code: str, request: Request):
     ok = await spotify_service.handle_callback(code, str(request.base_url))
@@ -402,6 +490,18 @@ async def play_voice_preset(name: str, request: Request, _: str = Depends(verify
 
 @router.get("/api/v5/google/login")
 async def get_google_login(request: Request, _: str = Depends(verify_access)):
+    url = google_calendar_service.get_authorize_url(str(request.base_url))
+    return {"ok": True, "auth_url": url}
+
+
+@router.post("/api/v5/google/credentials")
+async def save_google_credentials(request: Request, _: str = Depends(verify_admin_access)):
+    body = await request.json()
+    cid = body.get("client_id", "").strip()
+    csec = body.get("client_secret", "").strip()
+    if not cid or not csec:
+        raise HTTPException(status_code=400, detail="Client ID та Client Secret обов'язкові")
+    google_calendar_service.save_credentials(cid, csec)
     url = google_calendar_service.get_authorize_url(str(request.base_url))
     return {"ok": True, "auth_url": url}
 
