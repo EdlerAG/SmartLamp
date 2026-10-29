@@ -46,10 +46,17 @@ from app.web.portal_html import PORTAL_HTML
 router = APIRouter(tags=["Web Studio & Remote Control v5.0"])
 
 
-@router.get("/", response_class=HTMLResponse, include_in_schema=False)
+@router.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
 async def serve_web_studio():
     """Вбудований Glassmorphism Web-Термінал MagicBox Studio v5.0 (0 МБ додаткового RAM)."""
-    return HTMLResponse(content=PORTAL_HTML)
+    return HTMLResponse(
+        content=PORTAL_HTML,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @router.post("/api/v5/auth/login")

@@ -337,8 +337,10 @@ input::placeholder, textarea::placeholder {
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <span class="mono" style="font-size:11px;padding:5px 8px;border-radius:6px;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8">v5.0.4 ⚡ Live</span>
       <span id="roleBadge" class="mono" style="font-size:11px;padding:5px 10px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-hairline);color:var(--accent-warm)">🌸 НАСТЯ</span>
       <button id="dndTopBtn" class="btn" style="padding:6px 12px;font-size:11px" onclick="toggleDnd()">🌙 DND: ВИКЛ</button>
+      <button onclick="location.reload(true)" class="btn" style="padding:6px 10px;font-size:11px" title="Оновити сторінку">🔄</button>
       <a href="/api/v5/infographic/png" target="_blank" class="btn btn-cool" style="text-decoration:none;display:flex;align-items:center;gap:6px">
         📊 800x500 Інфографіка
       </a>
@@ -997,9 +999,12 @@ function spotifyAction(act){
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: act})
-  }).then(r => r.json()).then(() => {
+  }).then(r => r.json()).then(res => {
     toast(`Spotify: ${act}`);
-    setTimeout(pollState, 700);
+    if (res && res.state) {
+      updateSpotifyUI(res.state);
+    }
+    setTimeout(() => pollState(true), 500);
   });
 }
 

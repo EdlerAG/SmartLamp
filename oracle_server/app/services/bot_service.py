@@ -141,11 +141,13 @@ class TelegramBotService:
 
     @staticmethod
     def _web_button(text: str = "📱 Відкрити Web Studio") -> Dict[str, Any]:
-        """Формує нативну кнопку Mini App (web_app) для HTTPS або звичайний URL лінк."""
-        url = state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)
-        if url.startswith("https://"):
-            return {"text": text, "web_app": {"url": url}}
-        return {"text": text, "url": url}
+        """Формує нативну кнопку Mini App (web_app) для HTTPS або звичайний URL лінк з Cache-Buster."""
+        base_url = state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)
+        clean_base = base_url.rstrip("/")
+        app_url = f"{clean_base}/?v=5.0.4"
+        if app_url.startswith("https://"):
+            return {"text": text, "web_app": {"url": app_url}}
+        return {"text": text, "url": app_url}
 
     def _hub_main_view(self, chat_id: str, is_admin: bool, is_girl: bool) -> Tuple[str, Dict[str, Any]]:
         """Головний пульт «кнопка в кнопці»: компактне багатошарове меню."""

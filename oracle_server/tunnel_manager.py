@@ -22,12 +22,14 @@ def update_telegram_menu_button(url: str) -> None:
     token = get_bot_token()
     if not token:
         return
+    clean_url = url.rstrip("/")
+    web_app_url = f"{clean_url}/?v=5.0.4"
     api_url = f"https://api.telegram.org/bot{token}/setChatMenuButton"
     payload = json.dumps({
         "menu_button": {
             "type": "web_app",
             "text": "📱 Studio",
-            "web_app": {"url": url},
+            "web_app": {"url": web_app_url},
         }
     }).encode("utf-8")
     try:

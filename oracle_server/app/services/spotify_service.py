@@ -2,6 +2,7 @@ import io
 import os
 import time
 import base64
+import asyncio
 import urllib.parse
 from typing import Dict, Any, Optional, Tuple, List
 import numpy as np
@@ -225,7 +226,25 @@ class SpotifyService:
                 resp = await client.post(url, headers=headers, timeout=5.0)
             else:
                 resp = await client.put(url, headers=headers, timeout=5.0)
-            return resp.status_code in (200, 204)
+            ok = resp.status_code in (200, 204)
+            if ok:
+                if action == "play":
+                    self._cached_state["playing"] = True
+                elif action == "pause":
+                    self._cached_state["playing"] = False
+                elif action in ("next", "previous"):
+                    self._cached_state["progress_ms"] = 0
+                    self._cached_state["playing"] = True
+                    # Spotify потребує ~350мс для перемикання треку на сервері
+                    await asyncio.sleep(0.35)
+                    await self.fetch_current_playback(force=True)
+
+                try:
+                    from app.core.events import realtime_hub
+                    realtime_hub.broadcast_sse("spotify", self.get_cached_state())
+                except Exception:
+                    pass
+            return ok
         except Exception:
             return False
 
@@ -312,7 +331,8 @@ class SpotifyService:
             return self.get_cached_state()
 
         now = time.time()
-        if not force and (now - self._last_poll_time < 5.0):
+        min_poll_interval = 2.0 if self._cached_state.get("playing") else 6.0
+        if not force and (now - self._last_poll_time < min_poll_interval):
             return self.get_cached_state()
         self._last_poll_time = now
 
