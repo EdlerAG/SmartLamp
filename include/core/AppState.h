@@ -112,9 +112,10 @@ struct AppState {
     volatile uint32_t pomo_paused_at_ms     = 0;
     volatile bool     pomo_is_break         = false; // false: фокус, true: перерва
 
-    // --- РАНКОВИЙ БУДИЛЬНИК (v5.3) ---
+    // --- РАНКОВИЙ БУДИЛЬНИК (v5.3 - v5.4) ---
     volatile bool     alarm_active          = false;
     volatile bool     alarm_dismissed       = false;
+    volatile uint32_t alarm_active_until_ms = 0;
 
     // --- ПРИВІТАННЯ З ДНЕМ НАРОДЖЕННЯ (v5.1) ---
     volatile bool     birthday_greeted          = false;
@@ -233,6 +234,18 @@ struct AppState {
     bool isReactionActive(uint32_t now) const {
         return (screen_reaction_type >= NOTIFY_FIRE) &&
                ((int32_t)(screen_reaction_until - now) > 0);
+    }
+
+    bool isAlarmActive(uint32_t now) {
+        if (!alarm_active) return false;
+        if (alarm_active_until_ms > 0 && now >= alarm_active_until_ms) {
+            portENTER_CRITICAL(&mux);
+            alarm_active = false;
+            alarm_active_until_ms = 0;
+            portEXIT_CRITICAL(&mux);
+            return false;
+        }
+        return true;
     }
 
     bool isCustomFrameActive(uint32_t now) const {

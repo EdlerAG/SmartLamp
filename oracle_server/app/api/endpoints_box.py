@@ -88,6 +88,7 @@ async def sync_box(
     alarm_st = nastya_routine_service.check_alarm_state()
     if alarm_st.get("active"):
         resp["has_cmd"] = True
+        resp["alarm_active"] = True
         if alarm_st.get("phase") == "sunrise":
             resp["set_mode"] = 2  # Бурштиновий схід
             ramp_pct = alarm_st.get("brightness_pct", 25)

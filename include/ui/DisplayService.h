@@ -174,7 +174,7 @@ public:
                 state.ui_force_dirty = true;
             }
             if (state.onboarding_step == OnboardingStep::WIZ_STEP_WIFI_PORTAL && state.wifi_connected) {
-                state.onboarding_step = state.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK;
+                state.onboarding_step = OnboardingStep::WIZ_STEP_TG_BOT;
                 state.ui_force_dirty = true;
             }
             if (state.onboarding_step == OnboardingStep::WIZ_STEP_SPOTIFY_QR && state.sp_linked) {

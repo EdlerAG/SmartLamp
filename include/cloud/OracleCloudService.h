@@ -523,10 +523,11 @@ private:
         String play_url = normalizeMediaUrl(TgJsonUtils::extractString(json, "play_url"));
         if (play_url.length() > 8) {
             state.setPendingAudioUrl(play_url.c_str());
-            if (play_url.indexOf("alarm.mp3") != -1 || msg.indexOf("ДОБРОГО РАНКУ") != -1) {
-                state.alarm_active = true;
-                state.alarm_dismissed = false;
-            }
+        }
+        if (play_url.indexOf("alarm.mp3") != -1 || msg.indexOf("ДОБРОГО РАНКУ") != -1 || json.indexOf("\"alarm_active\":true") != -1) {
+            state.alarm_active = true;
+            state.alarm_dismissed = false;
+            state.alarm_active_until_ms = millis() + 1200000UL;
         }
 
         bool is_saver = (json.indexOf("\"set_saver\":true") != -1);

@@ -220,7 +220,44 @@ namespace ScreenRenderer {
                 break;
             }
 
-            // Крок 4: Пропозиція підключення Spotify
+            // Крок 4: Hellcat Telegram Bot (@SmartLampEdlerAGBot)
+            case OnboardingStep::WIZ_STEP_TG_BOT: {
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
+                canvas.drawString("HELLCAT TELEGRAM CONTROL", 120, 22);
+
+                const char* qr_payload = "https://t.me/SmartLampEdlerAGBot";
+                if (strcmp(qr_payload, cached_qr_str) != 0) {
+                    strncpy(cached_qr_str, qr_payload, qr_len - 1);
+                    cached_qr_str[qr_len - 1] = '\0';
+                    qr_cache.fillScreen(TFT_WHITE);
+                    qr_cache.qrcode(qr_payload, 5, 5, 100, 3);
+                }
+
+                canvas.fillRoundRect(70, 38, 100, 100, 8, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(70, 38, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
+                qr_cache.pushSprite(&canvas, 70, 38);
+
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString("@SmartLampEdlerAGBot", 120, 148);
+
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("Скануй для керування лампою", 120, 166);
+
+                canvas.fillRoundRect(24, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(24, 186, 88, 26, 13, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("◄ ПРОПУСТИТИ", 68, 199);
+
+                canvas.fillRoundRect(128, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(128, 186, 88, 26, 13, HallmarkTheme::ACCENT_AMBER);
+                canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
+                canvas.drawString("ДАЛІ ►", 172, 199);
+                break;
+            }
+
+            // Крок 5: Пропозиція підключення Spotify
             case OnboardingStep::WIZ_STEP_SPOTIFY_ASK: {
                 canvas.setFont(&fonts::efontCN_12);
                 canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);

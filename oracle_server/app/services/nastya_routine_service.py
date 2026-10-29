@@ -1,7 +1,7 @@
 # Файл: oracle_server/app/services/nastya_routine_service.py
 import time
 import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from app.core.config import settings
 from app.core.logger import logger
 from app.services.database_service import db_service
@@ -196,14 +196,16 @@ class NastyaRoutineService:
                 self._pomodoro_end_time = now + 300
                 rem = 300
                 pct = 0
-                state_service.enqueue_raw({
-                    "pomo_action": "start",
-                    "pomo_break": True,
-                    "pomo_min": "5",
-                    "set_mode": 7, # Океанський спокійний бриз
-                    "media_timer": 5,
-                    "play_url": f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/notification.mp3",
-                })
+                box_in_break = state_service.latest_telemetry.get("pomo_brk", False)
+                if not box_in_break:
+                    state_service.enqueue_raw({
+                        "pomo_action": "start",
+                        "pomo_break": True,
+                        "pomo_min": "5",
+                        "set_mode": 7, # Океанський спокійний бриз
+                        "media_timer": 5,
+                        "play_url": f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/notification.mp3",
+                    })
             else:
                 self.stop_pomodoro()
                 return {"active": False, "mode": "idle", "remaining_sec": 0, "remaining_min": 0, "pct": 100}

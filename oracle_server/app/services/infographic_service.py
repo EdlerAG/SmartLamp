@@ -1,15 +1,12 @@
+import io
 import os
 import time
-import math
-from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone, timedelta
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.config import settings
 from app.services.database_service import db_service
 from app.services.state_service import state_service, MODES_UA
-from app.services.blackout_service import blackout_service
 
 
 # Hallmark Color Palette (RGB Tuples)
@@ -72,7 +69,6 @@ class InfographicService:
         draw = ImageDraw.Draw(img)
 
         f_title = _get_font(18, bold=True)
-        f_h1    = _get_font(26, bold=True)
         f_h2    = _get_font(14, bold=True)
         f_body  = _get_font(12, bold=False)
         f_small = _get_font(11, bold=False)
@@ -81,7 +77,6 @@ class InfographicService:
         # Отримуємо свіжу телеметрію
         telem = state_service.latest_telemetry
         is_online = state_service.is_online()
-        bo_status = blackout_service.get_status()
         current_time = telem.get("time", "--:--")
         temp = telem.get("t", 22.0)
         hum = telem.get("h", 50.0)
@@ -245,8 +240,6 @@ class InfographicService:
             draw.text((595, box_y + 52), "Електропостачання працює стабільно", font=f_micro, fill=C_TEXT_MUTED, anchor="mm")
 
         # Зберігаємо готовий PNG у RAM-диск (/dev/shm)
-        buffer = io.BytesIO() if 'io' in globals() else None
-        import io
         buf = io.BytesIO()
         img.save(buf, format="PNG", optimize=True)
         png_bytes = buf.getvalue()

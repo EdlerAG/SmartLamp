@@ -1,7 +1,7 @@
 # Файл: oracle_server/app/api/endpoints_control.py
 import os
 import secrets
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict
 from fastapi import APIRouter, Depends, UploadFile, File, Request, Response, HTTPException, Query, Cookie
 from fastapi.responses import HTMLResponse, FileResponse
 

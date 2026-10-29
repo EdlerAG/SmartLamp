@@ -59,18 +59,23 @@ void handleOnboardingButton(EventType ev_type) {
                 appState.audio_volume = 0;
                 storageService.saveAudioSettings(0, true, appState.touch_beep_enabled);
                 appState.onboarding_step = appState.wifi_connected
-                    ? (appState.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK)
+                    ? OnboardingStep::WIZ_STEP_TG_BOT
                     : OnboardingStep::WIZ_STEP_WIFI_AP;
                 break;
 
             case OnboardingStep::WIZ_STEP_WIFI_AP:
-                // Пропустити підключення точки доступу
-                appState.onboarding_step = appState.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK;
+                // Пропустити підключення точки доступу -> показуємо TG Bot
+                appState.onboarding_step = OnboardingStep::WIZ_STEP_TG_BOT;
                 break;
 
             case OnboardingStep::WIZ_STEP_WIFI_PORTAL:
                 // Повернутися до QR-коду AP
                 appState.onboarding_step = OnboardingStep::WIZ_STEP_WIFI_AP;
+                break;
+
+            case OnboardingStep::WIZ_STEP_TG_BOT:
+                // Пропустити TG Bot -> переходимо до Spotify або Done
+                appState.onboarding_step = appState.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK;
                 break;
 
             case OnboardingStep::WIZ_STEP_SPOTIFY_ASK:
@@ -100,7 +105,7 @@ void handleOnboardingButton(EventType ev_type) {
                 storageService.saveAudioSettings(12, false, appState.touch_beep_enabled);
                 audioService.playBootChord();
                 appState.onboarding_step = appState.wifi_connected
-                    ? (appState.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK)
+                    ? OnboardingStep::WIZ_STEP_TG_BOT
                     : OnboardingStep::WIZ_STEP_WIFI_AP;
                 break;
 
@@ -109,6 +114,10 @@ void handleOnboardingButton(EventType ev_type) {
                 break;
 
             case OnboardingStep::WIZ_STEP_WIFI_PORTAL:
+                appState.onboarding_step = OnboardingStep::WIZ_STEP_TG_BOT;
+                break;
+
+            case OnboardingStep::WIZ_STEP_TG_BOT:
                 appState.onboarding_step = appState.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK;
                 break;
 
@@ -135,6 +144,9 @@ void handleOnboardingButton(EventType ev_type) {
     if (ev_type == EventType::BTN_TOP_SHORT) {
         if (appState.onboarding_step == OnboardingStep::WIZ_STEP_WELCOME_SOUND) {
             audioService.playBootChord();
+        } else if (appState.onboarding_step == OnboardingStep::WIZ_STEP_TG_BOT) {
+            appState.onboarding_step = appState.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK;
+            appState.ui_force_dirty = true;
         }
         appState.registerActivity();
     }
@@ -156,10 +168,11 @@ void processEvents() {
             continue;
         }
 
-        // 0.1. Якщо активний ранковий будильник — дотик до БУДЬ-ЯКОЇ кнопки вимикає звук будильника і ставить комфортне світло
-        if (appState.alarm_active) {
+        // 0.1. Якщо активний ранковий будильник / схід сонця — дотик до БУДЬ-ЯКОЇ кнопки вимикає його
+        if (appState.isAlarmActive(millis())) {
             appState.alarm_active = false;
             appState.alarm_dismissed = true;
+            appState.alarm_active_until_ms = 0;
             appState.stopActiveMedia();
             CommandRouter::setLightMode(appState, MODE_WARM_COZY);
             CommandRouter::setBrightnessPreset(appState, false, 2); // 65% комфортне світло

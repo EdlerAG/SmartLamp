@@ -1,9 +1,8 @@
 # Файл: oracle_server/app/services/maintenance_service.py
 import os
-import time
 import sqlite3
 import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 import httpx
 
 from app.core.config import settings

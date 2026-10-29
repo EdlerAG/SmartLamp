@@ -1,20 +1,25 @@
 import unittest
 import sys
 import os
+from fastapi.testclient import TestClient
 
 # Додаємо oracle_server до sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from main import app
-from app.api.router import api_router
+from app.core.config import settings
 from app.api.endpoints_control import router as control_router
 from app.api.endpoints_box import router as box_router
 from app.services.nastya_routine_service import nastya_routine_service
 from app.services.state_service import state_service
+from app.services.infographic_service import infographic_service
 from app.domain.schemas import VolumeControlRequest, VoiceConfigRequest, BoxTelemetryPayload
 
 
 class TestServerBootAndContracts(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+
     def test_app_and_routers_loaded(self):
         """Перевірка успішного імпорту всіх модулів без NameError / AttributeError."""
         self.assertIsNotNone(app)
@@ -31,6 +36,70 @@ class TestServerBootAndContracts(unittest.TestCase):
         self.assertIn("/api/v5/system/clear-cache", routes)
         self.assertIn("/api/v5/system/start-ap", routes)
         self.assertIn("/api/v5/nastya/alarm/dismiss", routes)
+
+    def test_health_and_root_endpoints(self):
+        """Перевірка /health та кореневого веб-терміналу."""
+        res = self.client.get("/health")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json().get("status"), "ok")
+
+        res_root = self.client.get("/")
+        self.assertEqual(res_root.status_code, 200)
+        self.assertIn("text/html", res_root.headers.get("content-type", ""))
+
+    def test_infographic_generation_no_name_error(self):
+        """Перевірка генерації інфографіки (валідний PNG-заголовок, відсутність NameError io)."""
+        png_data = infographic_service.generate_status_infographic()
+        self.assertIsNotNone(png_data)
+        self.assertTrue(png_data.startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_box_sync_endpoint_auth_and_response(self):
+        """Перевірка автентифікації та успішного синку шкатулки через TestClient."""
+        payload = {
+            "fw": "v5.4",
+            "t": 22.4,
+            "h": 55.0,
+            "p": 748.2,
+            "p_diff": 0.1,
+            "l": 40,
+            "m": 0,
+            "m_name": "Теплий затишок",
+            "b_pct": 65,
+            "b_lvl": 2,
+            "vol": 12,
+            "muted": False,
+            "t_beep": True,
+            "dnd": False,
+            "pomo": False,
+            "pomo_rem": 0,
+            "pomo_brk": False,
+            "pomo_dur": 25,
+            "sleep_m": 0,
+            "media_m": 0,
+            "scr": 0,
+            "rssi": -55,
+            "time": "14:35",
+            "unread": False,
+            "heap": 120000,
+            "psram_free": 4194304,
+            "ack": False,
+            "ping": 0,
+            "sp_act": 0,
+            "rst": "POWERON",
+            "alarm_off": False
+        }
+        # Без ключа доступу -> 401 Unauthorized
+        res_unauth = self.client.post("/api/v5/box/sync", json=payload)
+        self.assertEqual(res_unauth.status_code, 401)
+
+        # З валідним ключем X-Device-Key -> 200 OK
+        headers = {"X-Device-Key": settings.API_KEY}
+        res = self.client.post("/api/v5/box/sync", json=payload, headers=headers)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("has_cmd", data)
+        self.assertIn("quiet_hours", data)
+        self.assertIn("bot_managed", data)
 
     def test_volume_and_voice_schemas(self):
         """Перевірка схеми налаштувань звуку та голосу."""
@@ -68,7 +137,7 @@ class TestServerBootAndContracts(unittest.TestCase):
     def test_box_telemetry_alarm_off(self):
         """Перевірка парсингу поля alarm_off у телеметрії."""
         payload = BoxTelemetryPayload(
-            fw="v5.3",
+            fw="v5.4",
             t=21.5,
             h=50.0,
             p=745.0,

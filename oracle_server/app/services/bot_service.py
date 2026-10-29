@@ -1,20 +1,16 @@
-import os
 import time
 import datetime
 import orjson
 import asyncio
 import re
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, Tuple
 
 from app.core.config import settings
 from app.core.http_client import http_pool
-from app.core.memory_guard import memory_guard
-from app.domain.schemas import CommandPayload
 from app.services.database_service import db_service
 from app.services.state_service import state_service, MODES_UA
 from app.services.weather_ai_service import weather_ai_service
 from app.services.audio_service import audio_service
-from app.services.ota_service import ota_service
 from app.services.media_service import media_service
 from app.services.spotify_service import spotify_service
 from app.services.infographic_service import infographic_service
@@ -269,7 +265,6 @@ class TelegramBotService:
         l_pct = d.get("l", 50)
         m_idx = d.get("m", 0)
         m_name = MODES_UA[m_idx % len(MODES_UA)]
-        b_idx = d.get("b_idx", 2)
         auto_b = d.get("auto_b", True)
         b_pct = d.get("b_pct", 65)
         vol = d.get("vol", 12)
@@ -881,7 +876,7 @@ class TelegramBotService:
             h, m = map(int, t_str.split(":"))
             event_dt = datetime.datetime(target_dt.year, target_dt.month, target_dt.day, h, m, tzinfo=now_dt.tzinfo)
 
-            saved = await google_calendar_service.create_event(
+            await google_calendar_service.create_event(
                 summary=summary_txt,
                 start_dt=event_dt,
                 source="tg_bot",
