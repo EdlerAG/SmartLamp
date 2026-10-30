@@ -35,15 +35,16 @@ class TestV56Core(unittest.TestCase):
         self.assertIsNone(db_service.validate_session("invalid-token-12345"))
 
         # Create session and validate
-        tok = db_service.create_session("admin", 3600)
-        self.assertTrue(bool(tok))
-        role = db_service.validate_session(tok)
+        test_tok = "test-token-v56-9999"
+        created_tok = db_service.create_session(test_tok, role="admin", duration_sec=3600)
+        self.assertEqual(created_tok, test_tok)
+        role = db_service.validate_session(test_tok)
         self.assertEqual(role, "admin")
         self.assertIsInstance(role, str)
 
         # Cleanup
-        db_service.delete_session(tok)
-        self.assertIsNone(db_service.validate_session(tok))
+        db_service.delete_session(test_tok)
+        self.assertIsNone(db_service.validate_session(test_tok))
 
     def test_spotify_cached_state_structure(self):
         st = spotify_service.get_cached_state()
