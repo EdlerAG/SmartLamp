@@ -20,6 +20,8 @@ class TestOnboardingStage2(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         # Очищаємо тестовий стан
         db_service.purge_sandbox_test_data()
+        db_service.set_viewer_alerts_enabled(True)
+        bot_service.admin_preview_girl = False
         self.sent_messages = []
 
         # Підміняємо _api бота для запису викликів на рівні класу TelegramBotService
