@@ -25,8 +25,8 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
         db_service.set_setting("reminder_ts_calendar", 0.0)
 
         # Очищуємо токени Spotify та Календаря
-        spotify_service.clear_tokens()
-        google_calendar_service.clear_tokens()
+        spotify_service.disconnect()
+        google_calendar_service.disconnect()
         setup_service.advance_step("spotify", "pending")
         setup_service.advance_step("calendar", "pending")
 

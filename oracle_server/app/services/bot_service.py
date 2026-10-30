@@ -1223,8 +1223,8 @@ class TelegramBotService:
         elif data.startswith("reset_act:"):
             act = data.split(":")[1]
             if act == "accounts":
-                spotify_service.clear_tokens()
-                google_calendar_service.clear_tokens()
+                spotify_service.disconnect()
+                google_calendar_service.disconnect()
                 setup_service.advance_step("spotify", "pending")
                 setup_service.advance_step("calendar", "pending")
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Акаунти скинуто"})
