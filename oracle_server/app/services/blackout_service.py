@@ -26,6 +26,9 @@ class BlackoutService:
         target = chat_id or state_service.admin_id
         if not settings.TG_BOT_TOKEN or not target:
             return
+        # Якщо сповіщення для глядача/адміна і вони вимкнені в налаштуваннях — пропускаємо
+        if str(target) == str(state_service.admin_id) and not db_service.get_viewer_alerts_enabled():
+            return
         url = f"https://api.telegram.org/bot{settings.TG_BOT_TOKEN}/sendMessage"
         try:
             await http_pool.get().post(url, json={"chat_id": target, "text": text}, timeout=6.0)

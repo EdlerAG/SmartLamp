@@ -19,6 +19,7 @@ from app.services.routine_service import routine_service
 from app.services.maintenance_service import maintenance_service
 from app.services.google_calendar_service import google_calendar_service
 from app.services.server_updater import server_updater
+from app.services.setup_service import setup_service
 
 ADMIN_KB = {
     "keyboard": [
@@ -318,7 +319,7 @@ class TelegramBotService:
         }
 
     @staticmethod
-    async def _calendar_view(base_url: str = "") -> Tuple[str, Dict[str, Any]]:
+    async def _calendar_view(base_url: str = "", is_viewer: bool = False) -> Tuple[str, Dict[str, Any]]:
         is_linked = google_calendar_service.is_linked()
         link_type = google_calendar_service.get_link_type()
         if link_type == "ical":
@@ -345,30 +346,154 @@ class TelegramBotService:
 
         ev_block = "\n".join(ev_lines) if ev_lines else "<i>Список подій порожній</i>"
 
+        hint_txt = (
+            "💡 <i>Щоб додати подію, напишіть у чат повідомлення у форматі:\n<code>15:30 Зустріч</code> або <code>Завтра 11:00 Семінар</code></i>"
+            if not is_viewer else
+            "👀 <i>Режим перегляду: ви бачите запланований розклад дня без можливості його редагування.</i>"
+        )
+
         text = (
             f"📅 <b>КАЛЕНДАР ТА РОЗКЛАД</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"{link_status}\n\n"
-            f"📌 <b>Найближча подія на екрані лампи:</b>\n{next_txt}\n\n"
+            f"📌 <b>Найближча подія на екрані шкатулки:</b>\n{next_txt}\n\n"
             f"📋 <b>Майбутні події:</b>\n{ev_block}\n\n"
-            f"💡 <i>Щоб додати подію, напишіть у чат повідомлення у форматі:\n<code>15:30 Зустріч</code> або <code>Завтра 11:00 Семінар</code></i>"
+            f"{hint_txt}"
         )
 
         buttons = []
-        for ev in events[:4]:
-            buttons.append([{"text": f"🗑 {ev['time']} {ev['summary'][:18]}", "callback_data": f"cal_act:del_{ev['id']}"}])
+        if not is_viewer:
+            for ev in events[:4]:
+                buttons.append([{"text": f"🗑 {ev['time']} {ev['summary'][:18]}", "callback_data": f"cal_act:del_{ev['id']}"}])
         buttons.append([{"text": "🔄 Оновити розклад", "callback_data": "cal_act:refresh"}])
-        if not is_linked:
-            auth_url = google_calendar_service.get_authorize_url(base_url)
-            if auth_url:
-                buttons.append([{"text": "🔗 Підключити Google Календар", "url": auth_url}])
+        if not is_viewer:
+            if not is_linked:
+                auth_url = google_calendar_service.get_authorize_url(base_url)
+                if auth_url:
+                    buttons.append([{"text": "🔗 Підключити Google Календар", "url": auth_url}])
+                else:
+                    buttons.append([{"text": "⚙️ Налаштувати Google ID/Secret", "callback_data": "google:setup_info"}])
             else:
-                buttons.append([{"text": "⚙️ Налаштувати Google ID/Secret", "callback_data": "google:setup_info"}])
-        else:
-            buttons.append([{"text": "🔌 Відключити Google Календар", "callback_data": "cal_act:disconnect"}])
+                buttons.append([{"text": "🔌 Відключити Google Календар", "callback_data": "cal_act:disconnect"}])
         buttons.append([{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}])
 
         return text, {"inline_keyboard": buttons}
+
+    async def _render_onboarding_mood_step(self, chat_id: str) -> None:
+        """Крок 1 майстра першого налаштування: Привітання та вибір атмосфери."""
+        welcome_text = (
+            "✨ <b>Привіт! Я твоя розумна шкатулка MagicBox.</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Я створена для твого затишку: допомагатиму зосередитись на навчанні (Pomodoro), "
+            "буду крутити твій улюблений вініл зі Spotify, показуватиму розклад дня та створюватиму чарівне атмосферне світло.\n\n"
+            "Давай налаштуємо мене всього за пару кроків!\n\n"
+            "🎨 <b>Крок 1 із 4: Обери початкову атмосферу / настрій:</b>"
+        )
+        mood_kb = {
+            "inline_keyboard": [
+                [{"text": "🕯️ Затишок (Теплий бурштин)", "callback_data": "setup_mood:cozy"}],
+                [{"text": "🌸 Сакура (Пастельний рожевий)", "callback_data": "setup_mood:sakura"}],
+                [{"text": "🌊 Океан (Глибокий бірюзовий)", "callback_data": "setup_mood:ocean"}],
+                [{"text": "❄️ Північ (Арктичне сяйво)", "callback_data": "setup_mood:nordic"}],
+            ]
+        }
+        await self._api("sendMessage", {
+            "chat_id": chat_id,
+            "text": welcome_text,
+            "parse_mode": "HTML",
+            "reply_markup": mood_kb,
+        })
+
+    async def _render_onboarding_spotify_step(self, chat_id: str, msg_id: int) -> None:
+        """Крок 2 майстра першого налаштування: Підключення Spotify."""
+        auth_url = spotify_service.get_authorize_url(settings.PUBLIC_SERVER_URL)
+        sp_text = (
+            "Чудовий вибір! Атмосферу на шкатулці вже оновлено ✨\n\n"
+            "🎵 <b>Крок 2 із 4: Музика та Spotify Vinyl Hub</b>\n"
+            "Підключи свій Spotify, щоб на круглому дисплеї плавно крутився вініл з обкладинкою твого треку, "
+            "а підсвітка кімнати м'яко переливалася кольорами пісні!\n\n"
+            "<i>Ти зможеш підключити або змінити Spotify пізніше у будь-який момент.</i>"
+        )
+        buttons = []
+        if auth_url:
+            buttons.append([{"text": "🔗 Підключити Spotify", "url": auth_url}])
+        buttons.append([{"text": "⏭️ Пропустити цей крок", "callback_data": "setup_skip:spotify"}])
+        buttons.append([{"text": "➡️ Продовжити", "callback_data": "setup_next:spotify"}])
+        await self._api("editMessageText", {
+            "chat_id": chat_id,
+            "message_id": msg_id,
+            "text": sp_text,
+            "parse_mode": "HTML",
+            "reply_markup": {"inline_keyboard": buttons},
+        })
+
+    async def _render_onboarding_calendar_step(self, chat_id: str, msg_id: int) -> None:
+        """Крок 3 майстра першого налаштування: Підключення Google Calendar."""
+        cal_auth_url = google_calendar_service.get_authorize_url(settings.PUBLIC_SERVER_URL)
+        cal_text = (
+            "📅 <b>Крок 3 із 4: Google Календар та розклад дня</b>\n"
+            "Шкатулка може виводити найближчу пару, зустріч або важливу справу прямо на круглий дисплей перед очима, "
+            "щоб нічого не забути.\n\n"
+            "<i>Ти зможеш підключити календар або додавати події простими повідомленнями в цей чат пізніше.</i>"
+        )
+        cal_buttons = []
+        if cal_auth_url:
+            cal_buttons.append([{"text": "📅 Підключити Google Календар", "url": cal_auth_url}])
+        cal_buttons.append([{"text": "⏭️ Пропустити цей крок", "callback_data": "setup_skip:calendar"}])
+        cal_buttons.append([{"text": "➡️ Продовжити", "callback_data": "setup_next:calendar"}])
+        await self._api("editMessageText", {
+            "chat_id": chat_id,
+            "message_id": msg_id,
+            "text": cal_text,
+            "parse_mode": "HTML",
+            "reply_markup": {"inline_keyboard": cal_buttons},
+        })
+
+    async def _render_onboarding_qh_step(self, chat_id: str, msg_id: int) -> None:
+        """Крок 4 майстра першого налаштування: Налаштування тихих годин."""
+        qh_text = (
+            "🌙 <b>Крок 4 із 4: Нічний режим та спокій (Quiet Hours)</b>\n"
+            "Під час нічного режиму шкатулка автоматично вимикає зайві звуки та динамік (MUTE), "
+            "щоб твій відпочинок був бездоганно тихим і солодким. Обери зручний для тебе час:"
+        )
+        qh_buttons = [
+            [{"text": "🌙 22:00 – 08:00 (Стандартний)", "callback_data": "setup_qh:22_08"}],
+            [{"text": "🌙 23:00 – 09:00 (Для сов)", "callback_data": "setup_qh:23_09"}],
+            [{"text": "🌙 00:00 – 10:00 (Пізній)", "callback_data": "setup_qh:00_10"}],
+            [{"text": "⏭️ Залишити за замовчуванням", "callback_data": "setup_skip:qh"}],
+        ]
+        await self._api("editMessageText", {
+            "chat_id": chat_id,
+            "message_id": msg_id,
+            "text": qh_text,
+            "parse_mode": "HTML",
+            "reply_markup": {"inline_keyboard": qh_buttons},
+        })
+
+    async def _render_onboarding_finish_step(self, chat_id: str, msg_id: int) -> None:
+        """Фінал майстра налаштування: Привітання та передача пульту."""
+        finish_text = (
+            "🎉 <b>Ура! Твоя шкатулка MagicBox повністю готова до роботи!</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Вона вже на зв'язку поруч із тобою на столику.\n\n"
+            "💡 <b>Як зі мною взаємодіяти:</b>\n"
+            "• Керуй світлом, звуком, фокусом та режимами кнопками внизу цього чату.\n"
+            "• Натискай <b>📱 Studio</b>, щоб відкрити гарну сенсорну панель керування прямо в Telegram!\n"
+            "• Надсилай мені будь-яку гіфку чи фото — і вони з'являться на екрані.\n"
+            "• Пиши текст або записуй голосове — шкатулка відтворюватиме твої повідомлення.\n\n"
+            "Приємного користування та безмежного затишку! ✨"
+        )
+        await self._api("editMessageText", {
+            "chat_id": chat_id,
+            "message_id": msg_id,
+            "text": finish_text,
+            "parse_mode": "HTML",
+        })
+        await self._api("sendMessage", {
+            "chat_id": chat_id,
+            "text": "🎛 Твій пульт керування MagicBox активовано:",
+            "reply_markup": GIRL_KB,
+        })
 
     @staticmethod
     def _build_status_text() -> str:
@@ -539,10 +664,13 @@ class TelegramBotService:
         chat_id = str((cb.get("message") or {}).get("chat", {}).get("id", ""))
         msg_id = (cb.get("message") or {}).get("message_id")
 
+        owner_id = db_service.get_owner_chat_id()
         ALLOWED_ADMINS = {state_service.admin_id, "1047202957"}
         ALLOWED_GIRLS = {state_service.girl_id, "1294097414", "1334785533"}
+        if owner_id:
+            ALLOWED_GIRLS.add(str(owner_id))
 
-        if chat_id not in ALLOWED_ADMINS and chat_id not in ALLOWED_GIRLS:
+        if chat_id not in ALLOWED_ADMINS and chat_id not in ALLOWED_GIRLS and not data.startswith("setup_"):
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⛔ Доступ обмежено."})
             return
 
@@ -675,21 +803,28 @@ class TelegramBotService:
 
         elif data.startswith("cal_act:"):
             sub = data.split(":", 1)[1]
+            is_viewer = is_admin and not is_girl
             if sub == "refresh":
                 google_calendar_service._cached_event = None
-                cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
+                cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL, is_viewer=is_viewer)
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Розклад оновлено!"})
                 await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": cal_t, "parse_mode": "HTML", "reply_markup": cal_k})
             elif sub.startswith("del_"):
+                if is_viewer:
+                    await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⛔ Редагування календаря доступне лише власниці", "show_alert": True})
+                    return
                 ev_id = sub[4:]
                 await google_calendar_service.delete_event(ev_id)
                 google_calendar_service._cached_event = None
-                cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
+                cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL, is_viewer=False)
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🗑 Подію видалено!"})
                 await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": cal_t, "parse_mode": "HTML", "reply_markup": cal_k})
             elif sub == "disconnect":
+                if is_viewer:
+                    await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⛔ Відключення календаря доступне лише власниці", "show_alert": True})
+                    return
                 google_calendar_service.disconnect()
-                cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
+                cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL, is_viewer=False)
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Google Календар відключено"})
                 await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": cal_t, "parse_mode": "HTML", "reply_markup": cal_k})
 
@@ -961,7 +1096,8 @@ class TelegramBotService:
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⛔ Лише для адміністратора"})
                 return
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
-            role_st = "Дівчина (Тест)" if self.admin_preview_girl else "Адміністратор"
+            role_st = "Власниця (Тест)" if self.admin_preview_girl else "Адміністратор"
+            alerts_st = "🔔 ВКЛ" if db_service.get_viewer_alerts_enabled() else "🔕 ВИКЛ"
             admin_t = (
                 "🛠 <b>АДМІНІСТРАТИВНИЙ ЦЕНТР SMARTLAMP</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n"
@@ -970,8 +1106,9 @@ class TelegramBotService:
             admin_k = {
                 "inline_keyboard": [
                     [{"text": "🩺 Діагностика лампи", "callback_data": "admin:health"}, {"text": "🔄 Оновити сервер", "callback_data": "admin:update"}],
+                    [{"text": f"Сповіщення: {alerts_st}", "callback_data": "admin:toggle_alerts"}, {"text": "📅 Її розклад (Календар)", "callback_data": "admin:view_calendar"}],
                     [{"text": "💾 Бекап SQLite", "callback_data": "admin:backup"}, {"text": f"🎭 Перемкнути вигляд ({role_st})", "callback_data": "admin:toggle_view"}],
-                    [{"text": "🎁 Скинути для Насті", "callback_data": "admin:sandbox_reset"}],
+                    [{"text": "🎁 Скинути для передачі власниці", "callback_data": "admin:sandbox_reset"}],
                     [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
                 ]
             }
@@ -982,6 +1119,79 @@ class TelegramBotService:
                 "parse_mode": "HTML",
                 "reply_markup": admin_k,
             })
+
+        elif data == "admin:toggle_alerts":
+            if not is_admin:
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⛔ Лише для адміністратора"})
+                return
+            new_st = not db_service.get_viewer_alerts_enabled()
+            db_service.set_viewer_alerts_enabled(new_st)
+            ans = "🔔 Сповіщення про блекаути увімкнено" if new_st else "🔕 Сповіщення про блекаути вимкнено"
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans})
+            alerts_st = "🔔 ВКЛ" if new_st else "🔕 ВИКЛ"
+            role_st = "Власниця (Тест)" if self.admin_preview_girl else "Адміністратор"
+            admin_k = {
+                "inline_keyboard": [
+                    [{"text": "🩺 Діагностика лампи", "callback_data": "admin:health"}, {"text": "🔄 Оновити сервер", "callback_data": "admin:update"}],
+                    [{"text": f"Сповіщення: {alerts_st}", "callback_data": "admin:toggle_alerts"}, {"text": "📅 Її розклад (Календар)", "callback_data": "admin:view_calendar"}],
+                    [{"text": "💾 Бекап SQLite", "callback_data": "admin:backup"}, {"text": f"🎭 Перемкнути вигляд ({role_st})", "callback_data": "admin:toggle_view"}],
+                    [{"text": "🎁 Скинути для передачі власниці", "callback_data": "admin:sandbox_reset"}],
+                    [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
+                ]
+            }
+            await self._api("editMessageReplyMarkup", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "reply_markup": admin_k,
+            })
+
+        elif data == "admin:view_calendar":
+            cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL, is_viewer=True)
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": cal_t,
+                "parse_mode": "HTML",
+                "reply_markup": cal_k,
+            })
+
+        elif data.startswith("setup_mood:"):
+            mood = data.split(":")[1].strip()
+            saved_mood = setup_service.set_mood(mood)
+            mood_mode_map = {"cozy": 0, "sakura": 5, "ocean": 7, "nordic": 6}
+            mode_idx = mood_mode_map.get(saved_mood, 0)
+            state_service.enqueue_raw({"set_mode": mode_idx})
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Атмосферу {saved_mood} обрано! ✨"})
+            await self._render_onboarding_spotify_step(chat_id, msg_id)
+
+        elif data in ("setup_skip:spotify", "setup_next:spotify"):
+            if data == "setup_skip:spotify":
+                setup_service.advance_step("spotify", "skipped")
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._render_onboarding_calendar_step(chat_id, msg_id)
+
+        elif data in ("setup_skip:calendar", "setup_next:calendar"):
+            if data == "setup_skip:calendar":
+                setup_service.advance_step("calendar", "skipped")
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._render_onboarding_qh_step(chat_id, msg_id)
+
+        elif data.startswith("setup_qh:") or data == "setup_skip:qh":
+            if data.startswith("setup_qh:"):
+                qh_type = data.split(":")[1]
+                if qh_type == "22_08":
+                    routine_service.set_quiet_hours(True, "22:00", "08:00")
+                elif qh_type == "23_09":
+                    routine_service.set_quiet_hours(True, "23:00", "09:00")
+                elif qh_type == "00_10":
+                    routine_service.set_quiet_hours(True, "00:00", "10:00")
+                setup_service.advance_step("quiet_hours", "done")
+            else:
+                setup_service.advance_step("quiet_hours", "skipped")
+            setup_service.advance_step("portal_tour", "done")
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Налаштування завершено! 🎉"})
+            await self._render_onboarding_finish_step(chat_id, msg_id)
 
         elif data == "admin:health":
             rep = maintenance_service.get_health_report()
@@ -1046,7 +1256,7 @@ class TelegramBotService:
 
         elif data == "admin:toggle_view":
             self.admin_preview_girl = not self.admin_preview_girl
-            ans = "🎭 Увімкнено вигляд для дівчини (Насті)" if self.admin_preview_girl else "👑 Повернуто вигляд адміністратора"
+            ans = "🎭 Увімкнено вигляд власниці" if self.admin_preview_girl else "👑 Повернуто вигляд адміністратора"
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans, "show_alert": True})
             hub_t, hub_k = self._hub_main_view(chat_id, not self.admin_preview_girl, True)
             await self._api("editMessageText", {
@@ -1074,7 +1284,7 @@ class TelegramBotService:
                 "• Збережено: кастомні .mbx гіфки, звуки та налаштування AI\n"
                 f"• TG ID користувача закріплено: <b>{target_user}</b>"
             )
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🎁 Скинуто для Насті!", "show_alert": True})
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🎁 Скинуто для передачі власниці!", "show_alert": True})
             await self._api("editMessageText", {
                 "chat_id": chat_id,
                 "message_id": msg_id,
@@ -1147,14 +1357,24 @@ class TelegramBotService:
         if chat_id == "1047202957" and not state_service.admin_id:
             state_service.save_auth_ids(admin_id="1047202957")
 
+        owner_id = db_service.get_owner_chat_id()
         ALLOWED_ADMINS = {state_service.admin_id, "1047202957"}
         ALLOWED_GIRLS = {state_service.girl_id, "1294097414", "1334785533"}
+        if owner_id:
+            ALLOWED_GIRLS.add(str(owner_id))
 
-        # Авторизація через Deep-Link
+        # Авторизація через Deep-Link та Онбординг прив'язки
         if text.startswith("/start"):
             args = text.split(maxsplit=1)
             token = args[1] if len(args) > 1 else ""
-            if token.startswith("box_link_") or token.startswith("link_") or chat_id == "1294097414":
+            if token.startswith("c_"):
+                claim_secret = token[2:].strip()
+                setup_service.record_claim(claim_secret, chat_id)
+                state_service.save_auth_ids(girl_id=chat_id)
+                db_service.log_event("user", "auth", "claim_device_deeplink", {"chat_id": chat_id, "prefix": claim_secret[:4]})
+                await self._render_onboarding_mood_step(chat_id)
+                return
+            elif token.startswith("box_link_") or token.startswith("link_") or chat_id == "1294097414":
                 state_service.save_auth_ids(girl_id=chat_id)
                 db_service.log_event("user", "auth", "bind_girl_deeplink", {"chat_id": chat_id, "token": token})
 
@@ -1167,12 +1387,13 @@ class TelegramBotService:
                 await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Адміністратор вже зареєстрований."})
             return
 
-        if text.lower() in ("/iam_nastia", "/iam_girl"):
+        if text.lower() in ("/iam_nastia", "/iam_girl", "/iam_owner"):
             state_service.save_auth_ids(girl_id=chat_id)
-            db_service.log_event("user", "auth", "bind_girl", {"chat_id": chat_id})
+            db_service.set_owner_chat_id(chat_id)
+            db_service.log_event("user", "auth", "bind_owner", {"chat_id": chat_id})
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": "✅ Вітаю, Настю! Пульт керування SmartLamp активовано.",
+                "text": "✨ Вітаю! Пульт керування твоїм MagicBox активовано.",
                 "reply_markup": GIRL_KB,
             })
             return
@@ -1188,7 +1409,7 @@ class TelegramBotService:
                 state_service.save_auth_ids(girl_id=new_id)
                 await self._api("sendMessage", {
                     "chat_id": chat_id,
-                    "text": f"👑 TG ID власниці (Насті) встановлено: <code>{new_id}</code>",
+                    "text": f"👑 TG ID власниці встановлено: <code>{new_id}</code>",
                     "parse_mode": "HTML",
                     "reply_markup": ADMIN_KB,
                 })
@@ -1297,7 +1518,7 @@ class TelegramBotService:
                     await self._api("sendVoice", {
                         "chat_id": state_service.admin_id,
                         "voice": msg["voice"].get("file_id"),
-                        "caption": "🎙 <b>Голосове повідомлення від Насті</b>",
+                        "caption": "🎙 <b>Голосове повідомлення від власниці</b>",
                         "parse_mode": "HTML",
                     })
                 await self._api("sendMessage", {
@@ -1324,6 +1545,12 @@ class TelegramBotService:
 
         # Навігаційне меню та пульт
         if text.startswith("/start"):
+            # Якщо це власниця, яка ще не завершила крок mood, запускаємо онбординг
+            steps = db_service.get_setup_state()
+            if is_girl and steps.get("mood", {}).get("status") == "pending":
+                await self._render_onboarding_mood_step(chat_id)
+                return
+
             guide_res = await self._api("sendMessage", {
                 "chat_id": chat_id,
                 "text": GUIDE_TEXT,
@@ -1369,7 +1596,7 @@ class TelegramBotService:
                 await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Лише для адміністратора."})
                 return
             self.admin_preview_girl = not self.admin_preview_girl
-            role_text = "Дівчина (Настя)" if self.admin_preview_girl else "Адміністратор (Ярослав)"
+            role_text = "Власниця" if self.admin_preview_girl else "Адміністратор"
             active_kb = GIRL_KB if self.admin_preview_girl else ADMIN_KB
             await self._api("sendMessage", {
                 "chat_id": chat_id,
@@ -1511,7 +1738,7 @@ class TelegramBotService:
             return
 
         if text.startswith("/calendar") or text.startswith("/schedule") or "Календар" in text or "Розклад" in text:
-            cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
+            cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL, is_viewer=is_admin and not is_girl)
             await self._api("sendMessage", {
                 "chat_id": chat_id,
                 "text": cal_t,
@@ -1595,6 +1822,14 @@ class TelegramBotService:
         # 5. Швидке додавання подій календаря з тексту (наприклад: "14:30 Семінар" або "Завтра 10:00 Іспит")
         cal_match = re.match(r"^(?:завтра\s+)?(\d{1,2}:\d{2})\s+(.+)$", text.strip(), re.IGNORECASE)
         if cal_match:
+            if is_admin and not is_girl:
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "👀 <b>Режим перегляду:</b> Створювати та видаляти події в календарі може лише власниця шкатулки.",
+                    "parse_mode": "HTML",
+                })
+                return
+
             t_str = cal_match.group(1)
             summary_txt = cal_match.group(2).strip()
             now_dt = routine_service.get_kyiv_now()
@@ -1619,7 +1854,7 @@ class TelegramBotService:
             from app.core.events import realtime_hub
             invalidate_calendar_cache()
             realtime_hub.emit_to_box_immediate()
-            cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL)
+            cal_t, cal_k = await self._calendar_view(settings.PUBLIC_SERVER_URL, is_viewer=False)
             await self._api("sendMessage", {
                 "chat_id": chat_id,
                 "text": f"✅ <b>Подію додано до розкладу:</b>\n• <b>{t_str} ({event_dt.strftime('%d.%m')})</b> — {summary_txt}\n\nПодія автоматично синхронізована з екраном лампи!",
@@ -1630,17 +1865,17 @@ class TelegramBotService:
 
         # 6. Звичайні текстові повідомлення
         if is_girl:
-            state_service.enqueue_raw({"sender": "Настя", "msg": text[:110]})
-            if state_service.admin_id:
+            state_service.enqueue_raw({"sender": "Власниця", "msg": text[:110]})
+            if state_service.admin_id and db_service.get_viewer_alerts_enabled():
                 await self._api("sendMessage", {
                     "chat_id": state_service.admin_id,
-                    "text": f"💬 <b>Повідомлення від Насті:</b>\n«{text}»",
+                    "text": f"💬 <b>Повідомлення від власниці:</b>\n«{text}»",
                     "parse_mode": "HTML",
                     "reply_markup": ADMIN_KB,
                 })
             await self._api("sendMessage", {
                 "chat_id": chat_id,
-                "text": f"📩 Повідомлення виведено на екран лампи та передано Ярославу.{online_note}",
+                "text": f"📩 Повідомлення виведено на екран шкатулки.{online_note}",
                 "reply_markup": GIRL_KB,
             })
         else:
