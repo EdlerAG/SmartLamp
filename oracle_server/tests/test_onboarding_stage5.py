@@ -31,7 +31,7 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
         setup_service.advance_step("calendar", "pending")
 
         # Встановлюємо лампу онлайн
-        state_service.update_state_from_box({"m": 0, "fw": "v5.5"})
+        state_service.last_seen = time.time()
 
         # Мокаємо bot_service._api
         self.mock_api = AsyncMock(return_value={"ok": True, "result": {"message_id": 999}})
@@ -40,7 +40,7 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
     async def test_01_reminder_offline_guard(self):
         """Нагадування не надсилається, якщо лампа офлайн."""
         # Емулюємо офлайн (старий timestamp)
-        state_service._last_seen_ms = time.time() * 1000 - 60000.0
+        state_service.last_seen = time.time() - 1000.0
         self.assertFalse(state_service.is_online())
 
         sent = await reminder_service.check_and_send_reminders(force_check=False)
@@ -49,8 +49,7 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
 
     async def test_02_reminder_quiet_hours_guard(self):
         """Нагадування не надсилається під час тихих годин."""
-        # Оновлюємо активність лампи, щоб була онлайн
-        state_service.update_state_from_box({"m": 0})
+        state_service.last_seen = time.time()
         self.assertTrue(state_service.is_online())
 
         with patch.object(routine_service, "is_quiet_hours_now", return_value=True):
@@ -60,7 +59,7 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
 
     async def test_03_send_spotify_reminder_and_record_ts(self):
         """Відправка нагадування про Spotify та фіксація timestamp і лічильника."""
-        state_service.update_state_from_box({"m": 0})
+        state_service.last_seen = time.time()
         self.assertTrue(state_service.is_online())
 
         with patch.object(routine_service, "is_quiet_hours_now", return_value=False):
