@@ -8,8 +8,11 @@ os.environ["MALLOC_ARENA_MAX"] = "2"
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
 
 from app.core.config import settings, validate_security_keys
 from app.core.logger import logger
@@ -65,6 +68,38 @@ app = FastAPI(
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(api_router)
+
+# Підключення статичних ресурсів (CSS, JS, PWA icons, SW)
+STATIC_DIR = Path(__file__).resolve().parent / "app" / "web" / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    @app.get("/manifest.json", include_in_schema=False)
+    async def get_manifest():
+        return FileResponse(
+            STATIC_DIR / "manifest.json",
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    @app.get("/sw.js", include_in_schema=False)
+    async def get_sw():
+        return FileResponse(
+            STATIC_DIR / "sw.js",
+            media_type="application/javascript",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Service-Worker-Allowed": "/",
+            },
+        )
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def get_favicon():
+        return FileResponse(
+            STATIC_DIR / "icon-192.svg",
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=604800"},
+        )
 
 
 @app.get("/health", tags=["System"])

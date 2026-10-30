@@ -540,6 +540,11 @@ class SpotifyService:
                 st["progress_ms"] = min(orig_prog + elapsed_ms, dur)
             else:
                 st["progress_ms"] = orig_prog + elapsed_ms
+        cur_prog = st.get("progress_ms", 0)
+        active_l = self._get_active_lyric(cur_prog)
+        if active_l:
+            st["lyric"] = active_l
+        st["lyrics"] = self._current_lyrics
         return st
 
 
