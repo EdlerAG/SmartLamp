@@ -362,6 +362,18 @@ void loop() {
 
     storageService.checkDelayedSave(appState);
 
+    // Рівень 2: Динамічний CPU Frequency Scaling (80 МГц у спокої, 240 МГц при навантаженні)
+    static uint32_t current_cpu_mhz = 240;
+    bool high_freq_needed = appState.ota_in_progress || appState.ap_mode_active ||
+                            audioService.isPlaying() || ledService.isAnimating() ||
+                            displayService.isHighFpsNeeded() ||
+                            (millis() - appState.last_user_activity_ms < 15000);
+    uint32_t target_cpu_mhz = high_freq_needed ? 240 : 80;
+    if (target_cpu_mhz != current_cpu_mhz) {
+        setCpuFrequencyMhz(target_cpu_mhz);
+        current_cpu_mhz = target_cpu_mhz;
+    }
+
     bool active = ledService.isAnimating() || displayService.isHighFpsNeeded();
     vTaskDelay(pdMS_TO_TICKS(active ? 4 : 15));
 }

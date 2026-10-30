@@ -38,6 +38,7 @@ from app.services.weather_ai_service import weather_ai_service
 from app.services.audio_service import audio_service
 from app.services.spotify_service import spotify_service
 from app.services.infographic_service import infographic_service
+from app.services.push_service import push_service
 from app.services.routine_service import routine_service
 from app.services.google_calendar_service import google_calendar_service
 from app.services.maintenance_service import maintenance_service
@@ -1177,3 +1178,60 @@ async def send_system_command(payload: Dict[str, str], _: str = Depends(verify_a
     state_service.enqueue_command(cmd)
     logger.info("Enqueued sys_cmd: %s", action)
     return {"ok": True, "action": action}
+
+
+# ====================================================================
+# РІВЕНЬ 3: WEB PUSH NOTIFICATIONS (VAPID API) & РІВЕНЬ 5: STREAMING AUDIO
+# ====================================================================
+
+@router.get("/api/v5/push/vapid-key")
+async def get_vapid_public_key(_: str = Depends(verify_access)):
+    """Повертає публічний VAPID-ключ для оформлення Web Push підписки у браузері."""
+    key = push_service.get_public_key()
+    return {"ok": bool(key), "publicKey": key}
+
+
+@router.post("/api/v5/push/subscribe")
+async def register_push_subscription(payload: Dict[str, Any], _: str = Depends(verify_access)):
+    """Зберігає підписку клієнта (Endpoint + p256dh + auth keys) для доставки нативних сповіщень."""
+    ok = db_service.save_push_subscription(payload)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Некоректний об'єкт підписки Web Push")
+    return {"ok": True, "message": "Підписку збережено"}
+
+
+@router.post("/api/v5/push/test")
+async def trigger_test_push(_: str = Depends(verify_admin_access)):
+    """Відправляє тестове системне сповіщення всім підписаним клієнтам."""
+    count = await push_service.broadcast_push(
+        title="✨ SmartLamp Sovereign",
+        body="Тестове сповіщення: система Push працює ідеально!",
+        url="/",
+        tag="smartlamp-test"
+    )
+    return {"ok": True, "delivered_count": count}
+
+
+@router.get("/api/v5/audio/stream-tts")
+async def stream_tts_audio(text: str = Query(..., min_length=1, max_length=500), _: str = Depends(verify_access)):
+    """
+    Рівень 5: Low-Latency потокова трансляція аудіо (Chunked Transfer Encoding).
+    Клієнт починає чути аудіо за ~150 мс без очікування повного запису MP3 на диск.
+    """
+    import edge_tts
+
+    voice = audio_service.get_configured_edge_voice() or audio_service.DEFAULT_VOICE
+    communicate = edge_tts.Communicate(text, voice)
+
+    async def _audio_generator():
+        try:
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+        except Exception as e:
+            logger.warning("TTS streaming error: %s", e)
+
+    return StreamingResponse(_audio_generator(), media_type="audio/mpeg", headers={
+        "Cache-Control": "no-cache",
+        "Transfer-Encoding": "chunked",
+    })

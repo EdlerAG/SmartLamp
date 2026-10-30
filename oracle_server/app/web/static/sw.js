@@ -67,3 +67,38 @@ self.addEventListener('fetch', (evt) => {
     }).catch(() => caches.match(evt.request))
   );
 });
+
+// --- РІВЕНЬ 3: WEB PUSH NOTIFICATIONS ---
+self.addEventListener('push', (evt) => {
+  let data = { title: '✨ SmartLamp Sovereign', body: 'Нове сповіщення' };
+  if (evt.data) {
+    try {
+      data = evt.data.json();
+    } catch (_) {
+      data.body = evt.data.text();
+    }
+  }
+  const title = data.title || '✨ SmartLamp Sovereign';
+  const options = {
+    body: data.body || '',
+    icon: '/static/icon-192.svg',
+    badge: '/static/icon-192.svg',
+    data: data.url || '/',
+    tag: data.tag || 'smartlamp-alert',
+    renotify: true,
+  };
+  evt.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (evt) => {
+  evt.notification.close();
+  const targetUrl = evt.notification.data || '/';
+  evt.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((winList) => {
+      for (const client of winList) {
+        if (client.url && 'focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(targetUrl);
+    })
+  );
+});

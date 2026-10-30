@@ -3,9 +3,14 @@ import os
 import re
 import time
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import FileResponse, RedirectResponse
 import orjson
+
+try:
+    import msgpack
+except ImportError:
+    msgpack = None
 
 from app.core.security import verify_access
 from app.core.config import settings
@@ -130,7 +135,10 @@ async def sync_box(
     if not state_service.command_queue and wait > 0:
         await realtime_hub.wait_for_command(timeout=wait)
 
-    return await build_box_sync_response(payload)
+    resp = await build_box_sync_response(payload)
+    if "application/x-msgpack" in request.headers.get("accept", "") and msgpack:
+        return Response(content=msgpack.packb(resp), media_type="application/x-msgpack")
+    return resp
 
 
 @router.websocket("/ws/box")
@@ -151,24 +159,59 @@ async def box_websocket_endpoint(ws: WebSocket):
         "ts": time.time(),
     }).decode("utf-8"))
     try:
+        is_binary_session = False
         while True:
             try:
-                raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=60.0)
+                ws_msg = await asyncio.wait_for(ws.receive(), timeout=60.0)
             except asyncio.TimeoutError:
                 logger.debug("Box WebSocket heartbeat timeout (60s) - closing inactive socket")
                 break
 
-            data = orjson.loads(raw_msg)
+            if ws_msg.get("type") == "websocket.disconnect":
+                break
+
+            raw_bytes = ws_msg.get("bytes")
+            raw_text = ws_msg.get("text")
+            data = None
+
+            if raw_bytes is not None:
+                is_binary_session = True
+                if msgpack:
+                    try:
+                        data = msgpack.unpackb(raw_bytes, raw=False)
+                    except Exception:
+                        pass
+                if data is None:
+                    try:
+                        data = orjson.loads(raw_bytes)
+                    except Exception:
+                        continue
+            elif raw_text is not None:
+                is_binary_session = False
+                try:
+                    data = orjson.loads(raw_text)
+                except Exception:
+                    continue
+            else:
+                continue
+
+            if not isinstance(data, dict):
+                continue
+
             msg_type = data.get("type")
             if msg_type in ("pong", "ping"):
                 if msg_type == "ping":
-                    await ws.send_text(orjson.dumps({
+                    pong_resp = {
                         "type": "pong",
                         "bot_managed": settings.SERVER_MANAGES_BOT,
                         "has_cmd": False,
                         "v": 1,
                         "ts": time.time(),
-                    }).decode("utf-8"))
+                    }
+                    if is_binary_session and msgpack:
+                        await ws.send_bytes(msgpack.packb(pong_resp))
+                    else:
+                        await ws.send_text(orjson.dumps(pong_resp).decode("utf-8"))
                 continue
 
             if data.get("type") == "get_vinyl":
@@ -196,7 +239,11 @@ async def box_websocket_endpoint(ws: WebSocket):
                         })
                     cnt = db_service.add_climate_batch(samples)
                     realtime_hub.emit_to_dashboards({"type": "batch", "count": cnt})
-                await realtime_hub.push_to_box({"type": "batch_ack", "ok": True})
+                ack_resp = {"type": "batch_ack", "ok": True}
+                if is_binary_session and msgpack:
+                    await ws.send_bytes(msgpack.packb(ack_resp))
+                else:
+                    await realtime_hub.push_to_box(ack_resp)
                 continue
 
             payload = BoxTelemetryPayload(**data)
@@ -204,7 +251,10 @@ async def box_websocket_endpoint(ws: WebSocket):
             await blackout_service.on_box_ping(prev_seen, ack=bool(payload.ack), ping_type=payload.ping or 0)
 
             resp = await build_box_sync_response(payload)
-            await realtime_hub.push_to_box(resp)
+            if is_binary_session and msgpack:
+                await ws.send_bytes(msgpack.packb(resp))
+            else:
+                await realtime_hub.push_to_box(resp)
     except WebSocketDisconnect:
         logger.debug("Box WebSocket disconnected cleanly")
     except Exception as ws_err:

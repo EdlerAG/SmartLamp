@@ -176,6 +176,34 @@ class TestV56Core(unittest.TestCase):
         self.assertEqual(r2.status_code, 200)
         self.assertTrue(r2.json().get("ok"))
 
+    def test_push_subscription_db_methods(self):
+        sub_sample = {
+            "endpoint": "https://fcm.googleapis.com/fcm/send/test-sub-token-12345",
+            "keys": {"p256dh": "dummy-p256dh", "auth": "dummy-auth"}
+        }
+        ok = db_service.save_push_subscription(sub_sample)
+        self.assertTrue(ok)
+        subs = db_service.get_push_subscriptions()
+        self.assertTrue(any(s.get("endpoint") == sub_sample["endpoint"] for s in subs))
+
+        # Cleanup
+        db_service.delete_push_subscription(sub_sample["endpoint"])
+        subs_after = db_service.get_push_subscriptions()
+        self.assertFalse(any(s.get("endpoint") == sub_sample["endpoint"] for s in subs_after))
+
+    def test_vapid_endpoint(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        from app.core.config import settings
+
+        client = TestClient(app)
+        headers = {"X-Device-Key": settings.API_KEY}
+        r = client.get("/api/v5/push/vapid-key", headers=headers)
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertTrue(data.get("ok"))
+        self.assertTrue(bool(data.get("publicKey")))
+
 
 if __name__ == "__main__":
     unittest.main()

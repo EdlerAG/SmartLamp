@@ -48,6 +48,7 @@ function setCachedValue(id, val) {
 function renderNativeClimateChart(ch) {
   const canvas = document.getElementById('climateCanvas');
   if (!canvas || !ch || ch.length < 2) return;
+  try { localStorage.setItem('mb_climate_cache', JSON.stringify(ch)); } catch(_) {}
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const w = rect.width;
@@ -1331,6 +1332,12 @@ if (_cachedStateRaw) {
     applyState(JSON.parse(_cachedStateRaw));
   } catch(_) {}
 }
+const _cachedClimate = localStorage.getItem('mb_climate_cache');
+if (_cachedClimate) {
+  try {
+    window._lastClimateData = JSON.parse(_cachedClimate);
+  } catch(_) {}
+}
 
 // ⚡️ REAL-TIME WEBSOCKET SUITE (15ms latency, 0% CPU, Zero HTTP Polling)
 let studioWs = null;
@@ -1442,6 +1449,22 @@ async function initStudioWebSocket() {
 
   try {
     const res = await fetch('/api/v5/auth/ws-ticket', { method: 'POST', credentials: 'include' });
+    if (res.status === 401) {
+      wsConnecting = false;
+      isAuthReady = false;
+      setCachedClass('onlineDot', 'pulse');
+      setCachedText('onlineTxt', 'ПОТРІБНА АВТОРИЗАЦІЯ 🔒');
+      const lm = getEl('loginModal');
+      if (lm) {
+        lm.style.display = 'flex';
+        const pwd = getEl('pwdInput');
+        if (pwd) {
+          pwd.value = '';
+          setTimeout(() => pwd.focus(), 150);
+        }
+      }
+      return;
+    }
     if (res.ok) {
       const data = await res.json();
       if (data && data.ticket) {
@@ -1553,4 +1576,70 @@ if ('serviceWorker' in navigator && !isTelegramApp) {
       console.warn('SmartLamp PWA SW registration skipped:', err);
     });
   });
+}
+
+
+// --- РІВЕНЬ 3: WEB PUSH NOTIFICATIONS (VAPID) ---
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+async function toggleWebPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    alert('Ваш браузер не підтримує Web Push сповіщення');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    toast('Дозвіл на сповіщення не надано');
+    return;
+  }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const keyRes = await fetch('/api/v5/push/vapid-key');
+    const keyData = await keyRes.json();
+    if (!keyData.ok || !keyData.publicKey) {
+      toast('VAPID ключ наразі генерується сервером...');
+      return;
+    }
+    const appKey = urlBase64ToUint8Array(keyData.publicKey);
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: appKey
+    });
+    const saveRes = await fetch('/api/v5/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub)
+    });
+    const saveJson = await saveRes.json();
+    if (saveJson.ok) {
+      toast('🔔 Web Push сповіщення успішно активовано!');
+      const btn = document.getElementById('pushSubscribeBtn');
+      if (btn) btn.innerText = '🔔 Push: АКТИВНО';
+      const testBtn = document.getElementById('pushTestBtn');
+      if (testBtn) testBtn.style.display = 'inline-block';
+    }
+  } catch (e) {
+    console.error(e);
+    toast('Помилка підписки: ' + e.message);
+  }
+}
+
+async function testWebPush() {
+  toast('Відправка тестового Push...');
+  try {
+    const res = await fetch('/api/v5/push/test', { method: 'POST' });
+    const d = await res.json();
+    toast(`Тестовий push відправлено (${d.delivered_count || 0} клієнтів)`);
+  } catch (_) {
+    toast('Помилка тестування Push');
+  }
 }

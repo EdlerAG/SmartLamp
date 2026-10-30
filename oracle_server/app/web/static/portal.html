@@ -473,6 +473,8 @@
         <button class="btn" style="font-size:11px;padding:6px 10px" onclick="triggerAdminBackup()">📦 Бекап БД в Telegram</button>
         <button class="btn" style="font-size:11px;padding:6px 10px" onclick="loadHealthReport()">🩺 Звіт здоров'я</button>
         <button class="btn btn-cool" style="font-size:11px;padding:6px 10px" onclick="triggerServerUpdate()">🔄 Оновити з GitHub</button>
+        <button class="btn btn-emerald" id="pushSubscribeBtn" style="font-size:11px;padding:6px 10px" onclick="toggleWebPush()">🔔 Сповіщення Push</button>
+        <button class="btn" id="pushTestBtn" style="font-size:11px;padding:6px 10px" onclick="testWebPush()">⚡️ Тест Push</button>
         <button class="btn btn-danger" style="font-size:11px;padding:6px 10px" onclick="triggerSandboxReset()">🎁 Скинути тестові дані</button>
       </div>
       <div id="healthReportBox" style="margin-top:8px;font-size:10px;font-family:var(--font-mono);background:var(--bg-primary);border:1px solid var(--border-hairline);padding:8px;border-radius:6px;display:none;white-space:pre-wrap"></div>

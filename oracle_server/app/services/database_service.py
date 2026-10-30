@@ -153,6 +153,14 @@ class DatabaseService:
                 created_at FLOAT NOT NULL
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                endpoint TEXT UNIQUE NOT NULL,
+                sub_json TEXT NOT NULL,
+                created_at FLOAT NOT NULL
+            );
+        """)
         # Створення високопродуктивних B-Tree індексів
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cal_start_ts ON calendar_events(start_ts);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_outages_disc ON power_outages(disconnected_at);")
@@ -693,6 +701,47 @@ class DatabaseService:
             conn.commit()
         except Exception as e:
             logger.warning("clear_pending_commands error: %s", e)
+
+    # --- WEB PUSH ПІДПИСКИ (VAPID) ---
+    def save_push_subscription(self, sub: Dict[str, Any]) -> bool:
+        endpoint = sub.get("endpoint")
+        if not endpoint:
+            return False
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO push_subscriptions (endpoint, sub_json, created_at) VALUES (?, ?, ?)",
+                (endpoint, orjson.dumps(sub).decode("utf-8"), time.time()),
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.warning("save_push_subscription error: %s", e)
+            return False
+
+    def get_push_subscriptions(self) -> List[Dict[str, Any]]:
+        try:
+            rows = self._get_conn().execute(
+                "SELECT sub_json FROM push_subscriptions ORDER BY id DESC"
+            ).fetchall()
+            subs = []
+            for r in rows:
+                try:
+                    subs.append(orjson.loads(r["sub_json"]))
+                except Exception:
+                    pass
+            return subs
+        except Exception as e:
+            logger.warning("get_push_subscriptions error: %s", e)
+            return []
+
+    def delete_push_subscription(self, endpoint: str) -> None:
+        try:
+            conn = self._get_conn()
+            conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+            conn.commit()
+        except Exception as e:
+            logger.warning("delete_push_subscription error: %s", e)
 
     # --- ДОБОВА АГРЕГАЦІЯ ТА РОЛАПИ (ROLLUPS) ---
     def save_daily_rollup(self, date_str: str, data: Dict[str, Any]) -> None:
