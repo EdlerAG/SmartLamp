@@ -23,7 +23,7 @@ from app.services.server_updater import server_updater
 ADMIN_KB = {
     "keyboard": [
         [
-            {"text": "📱 Studio", "web_app": {"url": "https://yearling-shy-reviving.ngrok-free.dev/?v=5.1.0"}},
+            {"text": "📱 Studio", "web_app": {"url": "https://yearling-shy-reviving.ngrok-free.dev/?v=5.6.0"}},
             {"text": "🎛 Головний пульт"},
             {"text": "💡 Освітлення"},
         ],
@@ -37,7 +37,7 @@ ADMIN_KB = {
 GIRL_KB = {
     "keyboard": [
         [
-            {"text": "📱 Studio", "web_app": {"url": "https://yearling-shy-reviving.ngrok-free.dev/?v=5.1.0"}},
+            {"text": "📱 Studio", "web_app": {"url": "https://yearling-shy-reviving.ngrok-free.dev/?v=5.6.0"}},
             {"text": "🎛 Головний пульт"},
             {"text": "💡 Освітлення"},
         ],
@@ -152,7 +152,7 @@ class TelegramBotService:
         """Формує нативну кнопку Mini App (web_app) для HTTPS або звичайний URL лінк з Cache-Buster."""
         base_url = state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)
         clean_base = base_url.rstrip("/")
-        app_url = f"{clean_base}/?v=5.1.0"
+        app_url = f"{clean_base}/?v=5.6.0"
         if app_url.startswith("https://"):
             return {"text": text, "web_app": {"url": app_url}}
         return {"text": text, "url": app_url}
@@ -1675,7 +1675,7 @@ class TelegramBotService:
                 # Гарантоване встановлення кнопки 📱 Studio для меню
                 try:
                     base_url = state_service.resolve_public_url(settings.PUBLIC_SERVER_URL)
-                    app_url = f"{base_url.rstrip('/')}/?v=5.1.0"
+                    app_url = f"{base_url.rstrip('/')}/?v=5.6.0"
                     await self._api("setChatMenuButton", {
                         "menu_button": {"type": "web_app", "text": "📱 Studio", "web_app": {"url": app_url}}
                     })
