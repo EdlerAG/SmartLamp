@@ -2205,6 +2205,8 @@ switchTab(savedTab);
 
 // Telegram Mini App Auto-Auth (Zero-Click, Single-Roundtrip Auth + State)
 const isTelegramApp = Boolean(window.Telegram?.WebApp?.initData);
+let isAuthReady = !isTelegramApp;
+
 if (isTelegramApp) {
   try {
     window.Telegram.WebApp.ready();
@@ -2217,6 +2219,7 @@ if (isTelegramApp) {
     .then(r => r.json())
     .then(d => {
       if (d && d.ok) {
+        isAuthReady = true;
         if (d.state) applyState(d.state);
         loadCalendarEvents();
         initStudioWebSocket();
@@ -2236,7 +2239,7 @@ function scheduleAdaptivePoll(){
   const wsActive = Boolean(studioWs && studioWs.readyState === WebSocket.OPEN);
   const delay = wsActive ? 30000 : ((spotifyPlayback && spotifyPlayback.playing && spotifyPlayback.linked) ? 2000 : 7000);
   setTimeout(() => {
-    if (!wsActive) pollState();
+    if (!wsActive && isAuthReady) pollState();
     scheduleAdaptivePoll();
   }, delay);
 }
@@ -2289,6 +2292,7 @@ let wsReconnectDelay = 2000;
 let wsReconnectTimer = null;
 
 function initStudioWebSocket() {
+  if (isTelegramApp && !isAuthReady) return;
   if (document.visibilityState === 'hidden') return;
   if (studioWs && (studioWs.readyState === WebSocket.OPEN || studioWs.readyState === WebSocket.CONNECTING)) return;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -2322,12 +2326,16 @@ function initStudioWebSocket() {
         }
       } catch(_) {}
     };
-    studioWs.onclose = () => {
+    studioWs.onclose = (evt) => {
       studioWs = null;
       const oDot = document.getElementById('onlineDot');
       if (oDot) oDot.className = 'pulse';
       const oTxt = document.getElementById('onlineTxt');
       if (oTxt) oTxt.innerText = 'MAGICBOX · СИНХРОНІЗАЦІЯ';
+      if (evt && evt.code === 1008) {
+        isAuthReady = false;
+        return;
+      }
       if (document.visibilityState !== 'hidden') {
         clearTimeout(wsReconnectTimer);
         wsReconnectTimer = setTimeout(initStudioWebSocket, wsReconnectDelay);
@@ -2348,7 +2356,7 @@ function initStudioWebSocket() {
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
-    if (!studioWs || studioWs.readyState !== WebSocket.OPEN) {
+    if (isAuthReady && (!studioWs || studioWs.readyState !== WebSocket.OPEN)) {
       wsReconnectDelay = 2000;
       initStudioWebSocket();
       pollState();
