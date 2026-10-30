@@ -177,7 +177,8 @@ class TestOnboardingStage2(unittest.IsolatedAsyncioTestCase):
                 mock_http_calls.append({"url": url, "kwargs": kwargs})
 
         from unittest.mock import patch
-        with patch("app.services.blackout_service.http_pool.get", return_value=MockHttp()):
+        from app.core.http_client import SharedHttpClient
+        with patch.object(SharedHttpClient, "get", return_value=MockHttp()):
             await blackout_service.send_tg_alert("Блекаут!", chat_id=admin_chat)
             self.assertEqual(len(mock_http_calls), 0)
 
