@@ -1,195 +1,275 @@
-# 🪄 SmartLamp — MagicBox v5.0 (Nastya Edition • Routines, Calendar & Sovereign Care)
+# 🪄 SmartLamp — MagicBox v5.6 (Sovereign Real-Time Edition)
+### *Персоналізований медіахаб, розумне освітлення та турбота на базі ESP32-S3*
 
 <p align="center">
   <img src="https://img.shields.io/badge/PlatformIO-ESP32--S3-orange.svg?style=flat-square&logo=platformio" alt="PlatformIO" />
-  <img src="https://img.shields.io/badge/Framework-Arduino%20%2F%20FreeRTOS-blue.svg?style=flat-square&logo=arduino" alt="Framework" />
+  <img src="https://img.shields.io/badge/RTOS-FreeRTOS%20Dual--Core-blue.svg?style=flat-square" alt="FreeRTOS" />
   <img src="https://img.shields.io/badge/Display-GC9A01%20240x240%20IPS-purple.svg?style=flat-square" alt="Display" />
-  <img src="https://img.shields.io/badge/Design-Hallmark%20%2F%20Horology%20Deck-E07A5F.svg?style=flat-square" alt="Design" />
+  <img src="https://img.shields.io/badge/Realtime-WebSocket%2015ms-00C7B7.svg?style=flat-square" alt="WebSocket" />
+  <img src="https://img.shields.io/badge/Design-Hallmark%20Horology%20Deck-E07A5F.svg?style=flat-square" alt="Design" />
   <img src="https://img.shields.io/badge/Care-Nastya%20Routines%20%26%20Pomodoro-e63946.svg?style=flat-square" alt="Care" />
   <img src="https://img.shields.io/badge/Privacy-Google%20Calendar%20Zero--Knowledge-4EA8DE.svg?style=flat-square" alt="Calendar" />
-  <img src="https://img.shields.io/badge/Audio-Volume%20%26%20Voice%20Clone-yellow.svg?style=flat-square" alt="Audio" />
-  <img src="https://img.shields.io/badge/Infographics-Hallmark%20800x500%20PNG-4EA8DE.svg?style=flat-square" alt="Infographics" />
-  <img src="https://img.shields.io/badge/Spotify-Zero--Idle%20Demand-1DB954.svg?style=flat-square&logo=spotify" alt="Spotify" />
-  <img src="https://img.shields.io/badge/OTA-Standalone%20Single--Header-52B788.svg?style=flat-square" alt="OTA" />
-  <img src="https://img.shields.io/badge/Backend-FastAPI%20%2F%20Oracle%20Cloud-red.svg?style=flat-square&logo=fastapi" alt="Backend" />
-  <img src="https://img.shields.io/badge/Version-5.0%20Nastya%20Edition-brightgreen.svg?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Spotify-Bayer%20Vinyl%20%26%20AmbiLight-1DB954.svg?style=flat-square&logo=spotify" alt="Spotify" />
+  <img src="https://img.shields.io/badge/Audio-I2S%20MAX98357A%20%2B%20Edge--TTS-yellow.svg?style=flat-square" alt="Audio" />
+  <img src="https://img.shields.io/badge/Backend-FastAPI%20%2F%20uvloop%20%2F%20Oracle%20VPS-red.svg?style=flat-square&logo=fastapi" alt="Backend" />
+  <img src="https://img.shields.io/badge/Version-5.6%20Sovereign-brightgreen.svg?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
 </p>
 
-> **MagicBox v5.0 (Nastya Edition)** — персоналізована розумна лампа-медіахаб на базі **ESP32-S3**, круглому IPS-дисплеї GC9A01 (дизайн **Hallmark Horology**), розроблена як теплий подарунок на день народження для Насті. Лампа поєднує турботу про режим сну, навчання Pomodoro, персональний Google Календар із нульовим доступом третіх осіб (Zero-Knowledge Privacy), автоматичний розумний світанок, процедурний акорд сходження сонця, погодні та одежні поради, а також надійні інструменти автоматичного бекапу та системного моніторингу для Ярослава.
+---
+
+> **MagicBox v5.6** — автономна апаратно-програмна екосистема розумного затишку на мікроконтролері **ESP32-S3**, круглому IPS-дисплеї GC9A01 у хорологічному стилі **Hallmark Horology** та хмарному ядрі на **Oracle Cloud VPS**. Створена як душевний, високотехнологічний подарунок для Насті.
+> 
+> Поєднує блискавичну **двосторонню WebSocket-синхронізацію (15 мс)**, апаратний аудіо-відеоплеєр (вінілові платівки з dithering-обкладинками Spotify, AmbiLight-підсвічування), трекінг мікроклімату з енергонезалежною «чорною скринькою» блекаутів, персонального ШІ-асистента, навчальний Pomodoro-таймер та Telegram Mini App без навантаження на акумулятор смартфона й сервер.
 
 ---
 
-## ✨ Ключові можливості версії v5.0
+## ⚡ Архітектурні стовпи MagicBox v5.6
 
-| Модуль | Технічний опис |
-|---|---|
-| 🌸 **Турбота про затишок Насті (Phase 4)** | **Тихі години (23:00–08:00):** авто-приглушення яскравості до 15% та повна тиша (Mute). **Розумний світанок:** за 20 хв до підйому плавне наростання сонячного світла (1% → 100%) та мелодійний ранковий акорд. **Ранковий гід:** персоналізований звіт про погоду та практична порада щодо одягу й парасольки. |
-| 📚 **Навчальний фокус-таймер Pomodoro** | 25 хв глибокого фокусу під затишне бурштинове світло без зайвих сповіщень + 5 хв відпочинку під спокійний смарагдовий бриз із м'яким звуковим сигналом завершення. Керування через веб, Telegram або фізичні кнопки. |
-| 📅 **Приватний Google Календар (Zero-Knowledge)** | Незалежна OAuth2-авторизація для Насті через Web Studio. Сервер запитує виключно 1 найближчу подію (`events.list?maxResults=1`), коли до неї лишається $\le 15$ хв, і виводить нагадування на Smart Hub. У панелі Ярослава події календаря не зберігаються і не відображаються. |
-| 🩺 **Діагностика та щотижневі бекапи для Ярослава (Phase 6)** | Неблокуюче створення резервних копій SQLite через `VACUUM INTO` із щотижневою відправкою архіву в особисті повідомлення Telegram (`TG_ADMIN_ID`). Ендпоінт `/api/v5/admin/health-report` та команди `/health`, `/backup` для повної діагностики живлення, пам'яті та телеметрії лампи. |
-| 🎂 **Захищений вхід за днем народження (PIN `0511`)** | Веб-студія підтримує швидкий та зручний вхід за датою дня народження Насті (`0511` — 5 листопада) з захистом від підбору паролів (Rate Limit: 5 спроб на 15 хв) та криптографічними сесійними токенами в базі даних. |
-| ⚡ **Енергозбереження та тепловий баланс ESP32-S3 (Phase 3)** | Динамічне масштабування частоти CPU: 80 МГц у стані спокою на статичних екранах (мінімальний нагрів датчика SHT31/BMP280) та 240 МГц під час відтворення GIF/аудіо. Режим DND за довгим утриманням сенсора кришки. |
-| 🛡️ **Zero-Zombie Command TTL (Phase 2)** | TTL для команд: 180 с для аудіо, мовлення й реакцій, 24 год для системних налаштувань. Застарілі команди автоматично скидаються, запобігаючи несподіваному пробудженню лампи після блекауту. |
-
----
-
-## 🖥️ Екрани дисплея: Системні вікна та 4 Заставки
-
-### Рівень А. Системні стани (поза основним циклом)
-1. **`SYS_BOOT_SPLASH` (2.8 с при старті):**
-   - Швейцарський хронограф: промінь послідовно засвічує 60 засічок по контуру ($R = 116$).
-   - У центрі проявляється герб `MAGICBOX`, версія `HALLMARK v4.5` та діагностика периферії (`I2C · I2S · PSRAM · OK`).
-   - Синхронно звучить м'який процедурний акорд сходження (з урахуванням збереженої гучності).
-2. **`SYS_ONBOARDING_WIZARD` (Інтерактивний майстер налаштування):**
-   - **Крок 1 (`WIZ_STEP_WELCOME_SOUND`):** Вітання `WELCOME TO MAGICBOX`, питання `УВІМКНУТИ ЗВУК КОЛОНКИ?`, перевірочний акорд, кнопки `[ ◄ ТИША ]` / `[ ЗВУК ► ]`.
-   - **Крок 2 (`WIZ_STEP_WIFI_AP`):** QR-код підключення до Wi-Fi `MagicBox-Setup`, кнопка `[ ПРОПУСТИТИ ► ]`.
-   - **Крок 3 (`WIZ_STEP_WIFI_PORTAL`):** QR-код переходу в веб-студію `http://192.168.4.1/`.
-   - **Крок 4 (`WIZ_STEP_SPOTIFY_ASK`):** Питання `ПІДКЛЮЧИТИ SPOTIFY?`, кнопки `[ ◄ НІ ]` / `[ ТАК ► ]`.
-   - **Крок 5 (`WIZ_STEP_SPOTIFY_QR`):** Компактний QR-код швидкої авторизації (через `GET /api/v5/spotify/login_redirect`).
-   - **Крок 6 (`WIZ_STEP_DONE`):** Повідомлення `SYSTEM READY` та плавний перехід у робочий цикл.
-3. **`SYS_NETWORK_DIAG` (Утримання лівої кнопки на 900 мс):**
-   - QR-код для переходу в Studio за поточною IP-адресою, SSID, RSSI (dBm), PSRAM, температура процесора та стан аудіо.
-
-### Рівень B. Основне кільце з 4 Вікон-Заставок (Короткий клік лівої кнопки)
-```text
-[ 0: CLIMATE ] ──► [ 1: LIVING GIF ] ──► [ 2: SMART HUB ] ──► [ 3: BAROMETER ] ──┐
-      ▲                                                                          │
-      └──────────────────────────────────────────────────────────────────────────┘
 ```
-1. **Вікно 0 · `SCREEN_CLIMATE` (10 FPS):**
-   - 60 хорологічних засічок із бігаючою точкою поточної секунди.
-   - Тонка дуга вологості (40–60%).
-   - Hero-температура `22.4°C` з акцентним десятковим знаком Alabaster / Terracotta.
-   - Bento-колонки Вологість / Тиск, статус хмари та індикатор Mute у нижньому колонтитулі.
-2. **Вікно 1 · `SCREEN_LIVING_GIF` (Динамічний FPS з файлу або 30 FPS):**
-   - Відтворення активної зацикленої анімації або постійної заставки з Flash (`/default_saver.mbx`).
-   - Якщо активний таймер — відображається витончений бейдж `⏱ 14m`.
-   - За відсутності файлу — швейцарський маятник `Hallmark Swiss Pendulum Clock` з можливістю приховування годинника.
-3. **Вікно 2 · `SCREEN_SMART_HUB` (Динамічний 3-рівневий медіахаб):**
-   - **Пріоритет 1 (Непрочитані TG):** Інтелектуальний Inbox із підсвічуванням автора, дати та пагінацією 1/5.
-   - **Пріоритет 2 (Spotify Active):** Вінілова вертушка 136×136, тонарм, біжучий рядок треку/виконавця, дуга прогресу та AmbiLight-синхронізація.
-   - **Пріоритет 3 (Idle):** Редакційна картка `INBOX ZERO / ALL CAUGHT UP`.
-4. **Вікно 3 · `SCREEN_BAROMETER` (4 FPS · Braun Dieter Rams Style):**
-   - Великий контрастний тиск у мм рт. ст.: `750 mmHg`.
-   - Векторна стрілка тренду ($\uparrow, \downarrow, \rightarrow$) та метеорологічний вердикт.
-   - 24-годинний стовпчиковий Sparkline із базовою лінією на 750 мм.
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            MAGICBOX v5.6 TOPOLOGY                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+      
+    [ 🖥️ ESP32-S3 Lamp ]               [ ☁️ Oracle VPS Backend ]             [ 📱 Client Layer ]
+    • Dual-Core Xtensa LX7             • FastAPI + uvloop (PID 2422056)       • Telegram WebApp v5.6
+    • 8 KB WebSocket Buffer            • MemoryGuard (< 65 MB RAM)            • Web Studio Atelier
+    • FreeRTOS Core 0/1 Split          • SQLite WAL + VACUUM INTO Backups     • Zero-Click Auth
+            │                                     │                                    │
+            │◄────── ws://.../ws/box ────────────►│◄───── wss://.../ws/dashboard ─────►│
+            │   (15ms latency, 0% CPU idle)       │   (RealtimeHub, Event-Driven)      │
+            │                                     │                                    │
+            │◄────── Binary Vinyl (37 KB) ────────┤◄───── Spotify OAuth2 & LRCLIB ─────┘
+            │   (Pull-demand, 5 TCP chunks)       │
+            ▼                                     ▼
+    [ Hardware Drivers ]                  [ Third-Party APIs ]
+    • GC9A01 (SPI 80 MHz DMA)             • Spotify Web API (AmbiLight + Lyrics)
+    • MAX98357A (I2S DMA Audio)           • Google Calendar (Zero-Knowledge)
+    • SK6812 (60 RGBW LEDs)               • Open-Meteo & LRCLIB
+    • SHT31 + BMP280 + LDR                • Microsoft Edge-TTS / Voice Clone
+```
+
+### 1. ⚡ Повнодуплексний WebSocket Core (0.00% CPU у простої)
+- Замість важкого постійного HTTP-опитування лампа та веб-студія підключені через постійні бінарні й текстові **WebSocket-тунелі** (`/ws/box` та `/ws/dashboard`).
+- **ESP32-S3 Buffer 8192 B**: Приймальний буфер 8 КБ усуває фрагментацію пакетів і прискорює завантаження вінілових обкладинок (37 КБ) до **5 швидких чанків** без навантаження на шину I2S.
+- **Серіалізація через `asyncio.Lock`**: Виключає гонки корутин при одночасній відправці JSON-телеметрії та бінарних кадрів.
+
+### 2. 🎵 Spotify Vinyl Player & Живий Текст (LRCLIB)
+- **Bayer 4×4 Ordered Dithering**: Обкладинка альбому на сервері перетворюється на кругле вінілове яблуко 136×136 px у форматі RGB565 Big-Endian з промальованими доріжками й центральним отвором.
+- **AmbiLight Sync**: Сервер аналізує домінантні кольори обкладинки та синхронно транслює RGB-тон у 12-й режим підсвічування лампи (`MODE_SPOTIFY_AMBI`).
+- **Синхронізовані рядки пісні**: Автоматичне підтягування тексту пісні через LRCLIB з субсекундною інтерполяцією рядка за поточним прогресом треку.
+- **Demand-Driven цикл**: Опитування Spotify активне **лише тоді, коли відкритий інтерфейс** або лампа перебуває на екрані Smart Hub. При закритті вкладок фоновий воркер автоматично зупиняється (0% CPU).
+
+### 3. 🌸 Турбота про Настю (Routines & Deep Work)
+- **Тихі години (23:00–08:00)**: Автоматичне плавне зниження яскравості до 15% та переведення аудіосистеми в режим Mute.
+- **Розумний світанок (Sunrise Alarm)**: За 20 хвилин до будильника лампа плавно розпалює бурштиновий схід сонця (1% → 100%), після чого звучить гармонійний процедурний акорд або голосове вітання.
+- **Навчальний фокус Pomodoro**: 25 хвилин глибокої концентрації під тепле бурштинове світло без зайвих сповіщень + 5 хвилин відпочинку під смарагдовий бриз. Стан миттєво синхронізується між лампою, веб-студією та Telegram.
+- **Zero-Knowledge Google Calendar**: Сервер запитує лише найближчу подію (`maxResults=1`), коли до неї залишається $\le 15$ хвилин, і транслює коротке нагадування на Smart Hub. Події не логуються і не зберігаються в системних таблицях.
+
+### 4. 📊 Метеостанція та «Чорна скринька» блекаутів
+- **Датчики лабораторного класу**: Sensirion **SHT31** (температура й вологість, похибка $\pm 0.2^\circ\text{C}$) + Bosch **BMP280** (атмосферний тиск, точність $\pm 0.12\text{ гПа}$) + фоторезистор **LDR** (освітленість кімнати).
+- **Барометричний вердикт Dieter Rams**: Розрахунок тренду тиску за 24 години, векторна стрілка зміни та надійний прогноз погоди без інтернету.
+- **Офлайн-буфер блекаутів**: При зникненні Wi-Fi лампа кожні 10 хвилин записує кліматичні зрізи в циклічний RAM-буфер. Щойно зв'язок відновлюється — весь масив передається пакетом у SQLite WAL без втрати історії графіків.
+
+### 5. 📱 Telegram Mini App & Web Studio v5.6
+- **Atelier Glassmorphism**: Преміальний темний інтерфейс на чистих CSS-змінних без сторонніх важких фреймворків, розроблений за стандартами анти-слопу (Zero generic gradients, 1px crisp borders, JetBrains Mono tabular numerals).
+- **0.00s Instant Paint**: Миттєвий рендер останнього стану з `localStorage` до завершення першого мережевого запиту.
+- **Zero-Click Telegram Auth**: Безшовна криптографічна валідація через `initData` Telegram WebApp.
+- **Cache-Busting & no-store**: Гарантоване оновлення коду на iOS/Android без залипання застарілого кешу WebView.
 
 ---
 
-## 🔘 Сенсорне керування (Touch Controls v4.5)
+## 🖥️ Екранні інтерфейси GC9A01 (240×240 IPS)
 
-| Кнопка | Режим Onboarding Wizard | Робочий режим (Короткий дотик) | Робочий режим (Утримання 900 мс) |
+```
+       [ 0: CLIMATE ]              [ 1: LIVING GIF ]             [ 2: SMART HUB ]             [ 3: BAROMETER ]
+    ┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐
+    │     14:32:08     │         │   (·) SWISS      │         │  (◎)  VINYL SPIN │         │    752.4 mmHg    │
+    │      22.4°C      │         │     PENDULUM     │         │   "Birds of ..." │         │  ТРЕНД: СТАБІЛЬНО│
+    │  48%  ·  752 мм  │         │   ⏱ 18m POMO     │         │   Billie Eilish  │         │  ▂▃▅▆▇██▇▆▅▄▃▂   │
+    │  WiFi -58dBm [●] │         │  [ 240x240 DMA ] │         │   01:42 ──●── 03:15│       │  [ 24h Sparkline ]│
+    └──────────────────┘         └──────────────────┘         └──────────────────┘         └──────────────────┘
+```
+
+### Рівень А. Системні вікна
+1. **`SYS_BOOT_SPLASH` (2.8 с)**: Швейцарський хронограф — промінь запалює 60 засічок контуру, герб `MAGICBOX`, версія прошивки та статус самодіагностики (`I2C · I2S · PSRAM · OK`) під фірмовий акорд.
+2. **`SYS_ONBOARDING_WIZARD`**: 6-кроковий майстер першого запуску з вибором звуку, генерацією QR-кодів для підключення до Wi-Fi Captive Portal та швидкої прив'язки Spotify.
+3. **`SYS_NETWORK_DIAG`**: Екран інженерної діагностики за утриманням лівої кнопки (IP, SSID, RSSI, вільна PSRAM/Heap, температура чипа).
+
+### Рівень B. Основне кільце (Короткий клік лівої сенсорної кнопки)
+- **Вікно 0 · Клімат кімнати**: 60 хорологічних міток із секундною точкою, дуга комфортної вологості, температура з акцентним десятковим знаком, тиск та статус хмари.
+- **Вікно 1 · Живий екран / Заставка**: Анімація `.mbx` з flash-пам'яті, бейдж активного Pomodoro або точний швейцарський годинник-маятник.
+- **Вікно 2 · Smart Hub**: Пріоритет 1 — непрочитані повідомлення від Ярослава; Пріоритет 2 — вінілова вертушка Spotify із прогресом треку та текстом; Пріоритет 3 — екран `ALL CAUGHT UP`.
+- **Вікно 3 · Барометр Rams**: Стрілка метеорологічного тренду, контрастний тиск і 24-годинний стовпчиковий спарклайн.
+
+---
+
+## 🔘 Сенсорне керування (Touch Controls)
+
+| Сенсор | Клік у системному майстрі | Робочий клік (до 300 мс) | Утримання (від 900 мс) |
 |---|---|---|---|
-| **Ліва (GPIO 4)** | **`[ ◄ НІ / ПРОПУСТИТИ ]`** (Назад / відмова) | Наступне вікно ($0 \to 1 \to 2 \to 3 \to 0$) | Вікно діагностики (`SYS_NETWORK_DIAG`) |
-| **Кришка (GPIO 6)** | Повтор тестового звуку / перемикання | **Зупинити активне медіа** (якщо грає) / Наступний режим світла ($0..11$) | Увімкнути / Вимкнути підсвітку |
-| **Права (GPIO 7)** | **`[ ТАК / ДАЛІ ► ]`** (Підтвердження) | Годинник на заставці / Наступний TG Inbox / Play-Pause Spotify / Яскравість | Наступний трек Spotify / Запуск реакцій зі звуком |
+| **Лівий (GPIO 4)** | `[ ◄ НІ / ПРОПУСТИТИ ]` | Наступне вікно ($0 \to 1 \to 2 \to 3 \to 0$) | Виклик вікна діагностики `SYS_NETWORK_DIAG` |
+| **Кришка (GPIO 6)** | Тест звуку / Підтвердження | **Зупинити активний звук** / Наступний режим світла ($0..11$) | Увімкнути / Вимкнути підсвітку (Toggle) |
+| **Правий (GPIO 7)** | `[ ТАК / ДАЛІ ► ]` | Перемикання годинника / Наступний TG лист / Play-Pause | Наступний трек Spotify / Тестова реакція |
 
 ---
 
 ## 💡 Світловий рушій (12 режимів SK6812 RGBW)
 
-1. `MODE_WARM_WHITE` — Тепле затишне світло (2700K)
-2. `MODE_COLD_WHITE` — Робоче нейтральне світло
-3. `MODE_SUNSET` — Захід сонця з плавним переливом
-4. `MODE_FIREPLACE` — Мерехтіння каміна (процедурний вогонь)
-5. `MODE_AURORA` — Північне сяйво (смарагдово-індигові хвилі)
-6. `MODE_NEON_PULSE` — Пульсуючий кіберпанк-неон
-7. `MODE_OCEAN` — Глибинний бірюзовий океан
-8. `MODE_FOREST` — Спокійний лісовий мох
-9. `MODE_BREATHING` — Медитативне дихання
-10. `MODE_RAINBOW` — Шовковий спектральний градієнт
-11. `MODE_CANDLE` — Жива тремтяча свічка
-12. `MODE_SPOTIFY_AMBI` — Реактивне підсвічування в тон поточного альбому Spotify
+| № | Ідентифікатор | Атмосфера та призначення |
+|---|---|---|
+| 0 | `MODE_WARM_WHITE` | Теплий ламповий затишок (2700K, нативний White канал) |
+| 1 | `MODE_COLD_WHITE` | Нейтральне робоче денне освітлення для читання |
+| 2 | `MODE_SUNSET` | Бурштиновий захід сонця з повільним переливом |
+| 3 | `MODE_FIREPLACE` | Процедурний вогонь каміна з випадковим мерехтінням вуглинок |
+| 4 | `MODE_AURORA` | Смарагдово-індигове північне сяйво |
+| 5 | `MODE_NEON_PULSE` | М'який пульсуючий кіберпанк-неон |
+| 6 | `MODE_OCEAN` | Спокійна глибинна бірюзова океанічна хвиля |
+| 7 | `MODE_FOREST` | Заспокійливий смарагдово-хвойний лісовий мох |
+| 8 | `MODE_BREATHING` | Медитативне дихання 4-7-8 для зняття напруги |
+| 9 | `MODE_RAINBOW` | Плавний шовковий спектральний градієнт |
+| 10 | `MODE_CANDLE` | Живе тремтіння полум'я воскової свічки |
+| 11 | `MODE_SPOTIFY_AMBI` | **Реактивне підсвічування в тон поточного альбому Spotify** |
 
 ---
 
-## 📦 Структура репозиторію
+## 🛠️ Апаратне підключення (Pinout ESP32-S3)
 
 ```text
-📦 SmartLamp
- ┣ 📂 include
- ┃ ┣ 📜 Config.h                     // FW_VERSION v4.5-Hallmark, DEFAULT_VOLUME 12
- ┃ ┣ 📜 Secrets.h                    // (У .gitignore) Токени TG, Spotify та ключі Oracle
- ┃ ┣ 📜 Secrets.example.h            // Шаблон конфігурації
- ┃ ┃
- ┃ ┣ 📂 core                         // Ядро системи
- ┃ ┃ ┣ 📜 Types.h                    // OnboardingStep, SystemUiState, ScreenMode, LightModeId
- ┃ ┃ ┣ 📜 AppState.h                 // Гучність, Mute, TouchBeep, Медіа-таймери, Spinlock
- ┃ ┃ ┣ 📜 CommandRouter.h            // Обробка гучності, Mute, зупинки медіа та таймерів
- ┃ ┃ ┗ 📜 StorageService.h           // Збереження a_vol, a_mut, t_beep в NVS та Flash заставки
- ┃ ┃
- ┃ ┣ 📂 hardware                     // Сенсори, Звук та Ввід
- ┃ ┃ ┣ 📜 InputService.h             // Драйвер ємнісних сенсорів (Short / Long press)
- ┃ ┃ ┣ 📜 SensorService.h            // SHT31 + BMP280 + АЦП LDR
- ┃ ┃ ┗ 📜 AudioService.h             // Неблокуючий I2S DSP синтезатор із регулюванням гучності й MUTE
- ┃ ┃
- ┃ ┣ 📂 led                          // Світловий рушій SK6812 (60 діодів)
- ┃ ┃ ┣ 📜 LedEffects.h               // 12 математичних шейдерів (включно зі Spotify Ambi)
- ┃ ┃ ┗ 📜 LedService.h               // Контролер яскравості та авто-димінгу
- ┃ ┃
- ┃ ┣ 📂 ui                           // Графічний рушій GC9A01 (240x240)
- ┃ ┃ ┣ 📜 DisplayDriver.h            // SPI 80 МГц + DMA
- ┃ ┃ ┣ 📜 TextUtils.h                // UTF-8 розбиття тексту
- ┃ ┃ ┣ 📜 ReactionRenderer.h         // Векторні реакції (🔥, ⚡, 🐱, 👽, 👑)
- ┃ ┃ ┣ 📜 ScreenRenderer.h           // Рендерер 6-крокового Wizard, заставок і бейджів таймера
- ┃ ┃ ┗ 📜 DisplayService.h           // Стейт-машина дисплея та авто-скидання таймерів медіа
- ┃ ┃
- ┃ ┣ 📂 network                      // Локальна мережа та Web-портал
- ┃ ┃ ┣ 📜 WifiScanner.h              // Pre-Scan ефіру та генерація JSON
- ┃ ┃ ┣ 📜 WebPortalHtml.h            // Hallmark CSS-токени, Atelier Dark тема
- ┃ ┃ ┣ 📜 PortalServer.h             // REST API + Captive Portal + CORS
- ┃ ┃ ┗ 📜 NetworkService.h           // Wi-Fi стейт-машина та Wizard тригери
- ┃ ┃
- ┃ ┗ 📂 cloud                        // Хмарні сервіси
- ┃   ┣ 📜 StandaloneOta.h            // Недоторканний zero-dependency single-header OTA flasher
- ┃   ┣ 📜 CloudOtaService.h          // Інтеграція StandaloneOta з AppState
- ┃   ┣ 📜 TgJsonUtils.h              // Парсер JSON, URL-кодер та Unicode-декодер
- ┃   ┣ 📜 TgKeyboards.h              // Генератор клавіатур бота (3-рядкова ергономіка v4.5)
- ┃   ┣ 📜 TelegramService.h          // Telegram Bot API (TLS Session)
- ┃   ┗ 📜 OracleCloudService.h       // Long-Poll синхронізація, телеметрія гучності та Spotify
- ┃
- ┣ 📂 src
- ┃ ┗ 📜 main.cpp                     // setup() з confirmBootValid() та маршрутизація кнопок Onboarding
- ┃
- ┗ 📂 oracle_server                  // Сервер для Oracle Cloud VM (< 28 МБ RAM)
-   ┣ 📜 deploy_native.sh             // 1-клік інсталятор для Linux (systemd + venv)
-   ┣ 📜 requirements.txt             // Залежності (fastapi, pillow, numpy, httpx, orjson, edge-tts)
-   ┣ 📜 main.py                      // Точка входу FastAPI + Lifespan Watchdog
-   ┗ 📂 app
-     ┣ 📂 core                       // config.py, memory_guard.py, security.py
-     ┣ 📂 domain                     // schemas.py (валідація Pydantic v2, гучність, голос)
-     ┣ 📂 services                   // infographic_service.py (800x500 PNG), audio_service (Voice Clone),
-     ┃                               // media_service (Bayer Dithering + Timers), spotify_service (Zero-Idle)
-     ┣ 📂 api                        // router.py, endpoints_box.py, endpoints_control.py
-     ┗ 📂 web                        // portal_html.py (Hallmark Web Studio v4.5)
+  ┌──────────────────────────────────────────────────────────────┐
+  │                 ESP32-S3-DevKitC-1 Pin Mapping               │
+  ├──────────────────────┬─────────────┬─────────────────────────┤
+  │ Модуль периферії     │ GPIO        │ Призначення             │
+  ├──────────────────────┼─────────────┼─────────────────────────┤
+  │ GC9A01 IPS Дисплей   │ GPIO 10     │ SPI CS (Chip Select)    │
+  │                      │ GPIO 11     │ SPI MOSI (Data)         │
+  │                      │ GPIO 12     │ SPI SCLK (Clock 80 MHz) │
+  │                      │ GPIO 13     │ DC (Command / Data)     │
+  │                      │ GPIO 14     │ RST (Hardware Reset)    │
+  │                      │ GPIO 2      │ Backlight PWM           │
+  ├──────────────────────┼─────────────┼─────────────────────────┤
+  │ MAX98357A I2S ЦАП    │ GPIO 15     │ I2S BCLK (Bit Clock)    │
+  │                      │ GPIO 16     │ I2S LRC (Word Select)   │
+  │                      │ GPIO 17     │ I2S DOUT (Serial Data)  │
+  ├──────────────────────┼─────────────┼─────────────────────────┤
+  │ SK6812 RGBW (60 LED) │ GPIO 5      │ RMT / NeoPixel Data     │
+  ├──────────────────────┼─────────────┼─────────────────────────┤
+  │ Сенсорні зони        │ GPIO 4      │ Лівий сенсор            │
+  │                      │ GPIO 6      │ Сенсор кришки           │
+  │                      │ GPIO 7      │ Правий сенсор           │
+  ├──────────────────────┼─────────────┼─────────────────────────┤
+  │ I2C Шина             │ GPIO 8      │ SDA (SHT31 + BMP280)    │
+  │                      │ GPIO 9      │ SCL (SHT31 + BMP280)    │
+  ├──────────────────────┼─────────────┼─────────────────────────┤
+  │ LDR Фоторезистор     │ GPIO 1      │ ADC1 Ch0 (Яскравість)   │
+  └──────────────────────┴─────────────┴─────────────────────────┘
 ```
 
 ---
 
-## 🛠️ Апаратне забезпечення (Pinout)
+## 📂 Структура репозиторію
 
-- **ESP32-S3-DevKitC-1-N16R8** (16 МБ Flash, 8 МБ OPI PSRAM)
-- **GC9A01 240×240 IPS**: CS: 10, MOSI: 11, SCLK: 12, DC: 13, RST: 14 (SPI 80 МГц DMA)
-- **MAX98357A I2S DAC**: BCLK: 15, LRC: 16, DOUT: 17
-- **SK6812 RGBW стрічка**: Data: 5 (60 діодів)
-- **Сенсорні кнопки**: Left: 4, Top: 6, Right: 7
-- **I2C шина**: SDA: 8, SCL: 9 (SHT31 + BMP280)
-- **Фоторезистор LDR**: ADC: 1
+```text
+SmartLamp/
+├── include/
+│   ├── Config.h                  # Системні ліміти, версія v5.6, таймінги
+│   ├── Secrets.h                 # Локальні токени (у .gitignore)
+│   ├── cloud/
+│   │   ├── OracleCloudService.h  # WebSocket клієнт ESP32-S3 (8KB буфер) + HTTP fallback
+│   │   ├── CloudOtaService.h     # Надійний OTA-флешер із перевіркою SHA-256
+│   │   └── TgJsonUtils.h         # Декодер UTF-8 та парсер JSON
+│   ├── core/
+│   │   ├── AppState.h            # Спільний стан FreeRTOS, блокування, черги команд
+│   │   ├── CommandRouter.h       # Обробка дій кнопок, Spotify, медіа та світла
+│   │   └── StorageService.h      # NVS-сховище конфігурацій та Flash-диск
+│   ├── hardware/
+│   │   ├── AudioService.h        # I2S аудіо-рушій, процедурні акорди, Mute
+│   │   ├── InputService.h        # Обробник ємнісних сенсорів (клік/утримання)
+│   │   └── SensorService.h       # Драйвери SHT31, BMP280 та аналогового LDR
+│   ├── led/
+│   │   ├── LedEffects.h          # 12 процедурних шейдерів SK6812 RGBW
+│   │   └── LedService.h          # Контролер світлодіодів і плавної анімації
+│   └── ui/
+│       ├── DisplayDriver.h       # LovyanGFX конфігурація GC9A01 (80 МГц DMA)
+│       ├── ScreenRenderer.h      # Графічні процедури 4 екранів та Wizard
+│       └── DisplayService.h      # Стейт-машина дисплея та перемикання вікон
+├── oracle_server/
+│   ├── main.py                   # Точка входу FastAPI + Lifespan + Watchdog
+│   ├── deploy_native.sh          # Скрипт розгортання на сервері
+│   └── app/
+│       ├── api/
+│       │   ├── endpoints_box.py     # WebSocket /ws/box + роздача бінарного вінілу
+│       │   └── endpoints_control.py # WebSocket /ws/dashboard + REST API студії
+│       ├── core/
+│       │   ├── events.py         # RealtimeHub: черги, сокети, asyncio.Lock
+│       │   └── memory_guard.py   # Контроль споживання RAM (< 65 МБ) та дисків
+│       ├── services/
+│       │   ├── bot_service.py    # Telegram бот (@SmartLampEdlerAGBot)
+│       │   ├── spotify_service.py# Опитування Spotify, Bayer dithering, LRCLIB
+│       │   ├── nastya_routine_service.py # Тихі години, Pomodoro, Sunrise
+│       │   └── database_service.py# SQLite WAL, мікроклімат, VACUUM бекапи
+│       └── web/
+│           └── portal_html.py    # Повний SPA-код MagicBox Studio v5.6
+├── platformio.ini                # Конфігурація збірки ESP32-S3
+└── README.md
+```
 
 ---
 
-## 🚀 Збірка та прошивка
+## 🚀 Швидкий старт та розгортання
 
-### Збірка мікропрограми (PlatformIO):
+### 1. Збірка прошивки лампи (ESP32-S3)
+Потрібен встановлений [PlatformIO](https://platformio.org/):
 ```bash
+# Клонування репозиторію
+git clone https://github.com/EdlerAG/SmartLamp.git
+cd SmartLamp
+
+# Налаштування секретів
+cp include/Secrets.example.h include/Secrets.h
+# Відредагуйте include/Secrets.h (введіть URL вашого сервера та API-ключ)
+
+# Компіляція мікропрограми
 pio run
+
+# Прошивка через USB-C (порт UART або Native USB)
 pio run -t upload
 ```
 
-### Запуск Oracle сервера локально:
+### 2. Запуск бекенда (Oracle Cloud VPS або будь-який Linux-сервер)
 ```bash
 cd oracle_server
+
+# Створення ізольованого середовища
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# Створення .env файлу за зразком .env.example
+cp .env.example .env
+nano .env
+
+# Запуск через високопродуктивний Uvicorn з uvloop
+uvicorn main:app --host 0.0.0.0 --port 8000 --loop uvloop --http httptools
 ```
+
+Для створення фонового системного сервісу Linux використовуйте готовий скрипт [`deploy_native.sh`](file:///d:/Vlasne/code/SmartLamp/oracle_server/deploy_native.sh):
+```bash
+sudo ./deploy_native.sh
+```
+
+---
+
+## 🛡️ Безпека, автономність та надійність
+
+1. **Захист від блекаутів**: Якщо сервер або Wi-Fi недоступні, лампа зберігає повноцінну автономність — працюють сенсори, підсвітка, перемикання екранів, таймери та локальне накопичення кліматичних даних.
+2. **Нульовий зомбі-стан команд (Command TTL)**: Команди сповіщень та звуку мають час життя 180 с. Застарілі повідомлення ніколи не «вистрілять» посеред ночі після відновлення електропостачання.
+3. **Автоматичні щотижневі бекапи**: Сервер щонеділі виконує неблокуючу гарячу реплікацію бази через SQLite `VACUUM INTO` і автоматично надсилає зашифрований архів у Telegram власнику.
+4. **Суворий ліміт ресурсів (FinOps / MemoryGuard)**: Споживання RAM бекенда обмежено 65–85 МБ, картинки рендеряться в пам'яті через `/dev/shm` без зношування SSD-диска.
+
+---
+
+<p align="center">
+  <b>MagicBox v5.6</b> • Зроблено з любов'ю та інженерною точністю для Насті 🌸<br>
+  <i>Designed by Yaroslav (Edler) • 2026</i>
+</p>
