@@ -1123,6 +1123,11 @@ function onVolSlider(v){
   document.getElementById('volVal').innerText = `${v} / 21`;
 }
 function applyVolume(v){
+  if (studioWs && studioWs.readyState === WebSocket.OPEN) {
+    studioWs.send(JSON.stringify({action: 'volume', volume: parseInt(v)}));
+    toast(`Гучність: ${v} ⚡️`);
+    return;
+  }
   fetch('/api/v5/audio/volume', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -1135,6 +1140,11 @@ function applyVolume(v){
 function toggleMute(){
   currentMuted = !currentMuted;
   updateMuteUI(currentMuted);
+  if (studioWs && studioWs.readyState === WebSocket.OPEN) {
+    studioWs.send(JSON.stringify({action: 'volume', muted: currentMuted}));
+    toast(currentMuted ? 'Звук вимкнено (Mute) ⚡️' : 'Звук увімкнено ⚡️');
+    return;
+  }
   fetch('/api/v5/audio/volume', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -1159,6 +1169,11 @@ function updateMuteUI(m){
 function toggleTouchBeep(){
   currentTouchBeep = !currentTouchBeep;
   updateTouchBeepUI(currentTouchBeep);
+  if (studioWs && studioWs.readyState === WebSocket.OPEN) {
+    studioWs.send(JSON.stringify({action: 'volume', touch_beep: currentTouchBeep}));
+    toast(currentTouchBeep ? 'Кліки клавіш увімкнено ⚡️' : 'Кліки клавіш вимкнено ⚡️');
+    return;
+  }
   fetch('/api/v5/audio/volume', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -1302,15 +1317,6 @@ function spotifyAction(act){
     const spBadgeEl = document.getElementById('spBadge');
     const spPlayBtn = document.getElementById('spPlayBtn');
     const spDisc = document.getElementById('spDisc');
-  const spLyricEl = document.getElementById('spLyric');
-  if (spLyricEl) {
-    if (sp.lyric) {
-      spLyricEl.innerText = `“${sp.lyric}”`;
-      spLyricEl.style.display = 'block';
-    } else {
-      spLyricEl.innerText = '';
-    }
-  }
     if (spBadgeEl) { spBadgeEl.innerText = '⏸ PAUSED'; spBadgeEl.style.color = 'var(--text-secondary)'; }
     if (spPlayBtn) spPlayBtn.innerText = '▶️ Пуск';
     if (spDisc) spDisc.classList.remove('spinning');
@@ -1321,15 +1327,6 @@ function spotifyAction(act){
     const spBadgeEl = document.getElementById('spBadge');
     const spPlayBtn = document.getElementById('spPlayBtn');
     const spDisc = document.getElementById('spDisc');
-  const spLyricEl = document.getElementById('spLyric');
-  if (spLyricEl) {
-    if (sp.lyric) {
-      spLyricEl.innerText = `“${sp.lyric}”`;
-      spLyricEl.style.display = 'block';
-    } else {
-      spLyricEl.innerText = '';
-    }
-  }
     if (spBadgeEl) { spBadgeEl.innerText = '▶️ PLAYING'; spBadgeEl.style.color = 'var(--accent-success)'; }
     if (spPlayBtn) spPlayBtn.innerText = '⏸ Пауза';
     if (spDisc) spDisc.classList.add('spinning');
@@ -1446,52 +1443,7 @@ function updateSpotifyUI(sp) {
   const spDisconnectBtn = document.getElementById('spDisconnectBtn');
   const spBarEl = document.getElementById('spProgressBar');
   const spDisc = document.getElementById('spDisc');
-  const spLyricEl = document.getElementById('spLyric');
-  if (spLyricEl) {
-    if (sp.lyric) {
-      spLyricEl.innerText = `“${sp.lyric}”`;
-      spLyricEl.style.display = 'block';
-    } else {
-      spLyricEl.innerText = '';
-    }
-  }
-
-  if (sp.linked) {
-    if (spLoginBtn) spLoginBtn.style.display = 'none';
-    if (spDisconnectBtn) spDisconnectBtn.style.display = 'inline-flex';
-
-    const isNewTrack = Boolean(sp.track_id && sp.track_id !== spotifyPlayback.track_id);
-    spotifyPlayback.linked = true;
-    spotifyPlayback.playing = Boolean(sp.playing);
-    spotifyPlayback.title = sp.title || '';
-    spotifyPlayback.artist = sp.artist || '';
-    spotifyPlayback.duration_ms = sp.duration_ms || 0;
-    spotifyPlayback.track_id = sp.track_id || '';
-
-    let estimatedLocalMs = spotifyPlayback.progress_ms;
-    if (spotifyPlayback.playing && spotifyPlayback.last_sync_ts > 0) {
-      estimatedLocalMs += (Date.now() - spotifyPlayback.last_sync_ts);
-    }
-    if (isNewTrack || Math.abs(estimatedLocalMs - (sp.progress_ms || 0)) > 2500 || !spotifyPlayback.last_sync_ts) {
-      spotifyPlayback.progress_ms = sp.progress_ms || 0;
-      spotifyPlayback.last_sync_ts = Date.now();
-    }
-
-    if (spDisc) {
-      if (sp.playing) spDisc.classList.add('spinning');
-      else spDisc.classList.remove('spinning');
-      if (sp.cover_url) {
-        if (!spDisc.querySelector('img') || spDisc.querySelector('img').src !== sp.cover_url) {
-          spDisc.innerHTML = `<img src="${sp.cover_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #08090d;pointer-events:none;box-shadow:0 0 4px rgba(0,0,0,0.8)" alt="Vinyl Cover">`;
-        }
-      } else if (!sp.title) {
-        spDisc.innerText = '🎵';
-      }
-    }
-
-    if (sp.title) {
-      if (spTitleEl) spTitleEl.innerText = sp.title;
-      if (spBadgeEl) {
+    if (spBadgeEl) {
         spBadgeEl.innerText = sp.playing ? '▶️ PLAYING' : '⏸ PAUSED';
         spBadgeEl.style.color = sp.playing ? 'var(--accent-success)' : 'var(--text-secondary)';
       }
@@ -1685,8 +1637,8 @@ function adjustPomoInput(delta) {
 }
 
 function startPomodoro(min) {
-  if(dashboardWs && dashboardWs.readyState === WebSocket.OPEN){
-    dashboardWs.send(JSON.stringify({action:'pomo', sub_action:'start', duration_min: min}));
+  if(studioWs && studioWs.readyState === WebSocket.OPEN){
+    studioWs.send(JSON.stringify({action:'pomo', sub_action:'start', duration_min: min}));
     toast(`Pomodoro: фокус на ${min} хв! ⚡️`);
     return;
   }
@@ -1701,8 +1653,8 @@ function startPomodoro(min) {
 }
 
 function stopPomodoro() {
-  if(dashboardWs && dashboardWs.readyState === WebSocket.OPEN){
-    dashboardWs.send(JSON.stringify({action:'pomo', sub_action:'stop'}));
+  if(studioWs && studioWs.readyState === WebSocket.OPEN){
+    studioWs.send(JSON.stringify({action:'pomo', sub_action:'stop'}));
     toast('Pomodoro зупинено ⚡️');
     return;
   }
@@ -1728,8 +1680,8 @@ function sendSilentPush() {
   const input = document.getElementById('silentMsgInput');
   const txt = input.value.trim();
   if (!txt) return;
-  if(dashboardWs && dashboardWs.readyState === WebSocket.OPEN){
-    dashboardWs.send(JSON.stringify({action:'silent_push', message: txt}));
+  if(studioWs && studioWs.readyState === WebSocket.OPEN){
+    studioWs.send(JSON.stringify({action:'silent_push', message: txt}));
     toast('Тихе повідомлення надіслано в Inbox ⚡️');
     input.value = '';
     return;
@@ -2283,21 +2235,7 @@ window.addEventListener('resize', () => {
 });
 initStudioWebSocket();
 
-// SSE Stream
-if (window.EventSource) {
-  try {
-    const sse = new EventSource('/api/v5/stream');
-    sse.addEventListener('telemetry', () => { pollState(false); });
-    sse.addEventListener('command', () => { pollState(false); });
-    sse.addEventListener('state', () => { pollState(false); });
-    sse.addEventListener('spotify', (e) => {
-      try {
-        const sp = JSON.parse(e.data);
-        updateSpotifyUI(sp);
-      } catch (_) {}
-    });
-  } catch (_) {}
-}
+// WebSocket Realtime Architecture Active
 </script>
 </body>
 </html>

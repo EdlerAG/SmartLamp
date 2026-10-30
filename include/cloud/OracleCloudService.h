@@ -512,10 +512,15 @@ private:
             CommandRouter::setLightMode(state, doc["set_mode"].as<uint8_t>());
         }
 
-        if (doc["set_brt"].is<int>()) {
-            if (doc["set_brt"].is<const char*>() && strcmp(doc["set_brt"].as<const char*>(), "auto") == 0) {
-                CommandRouter::setBrightnessPreset(state, true);
-            } else {
+        if (!doc["set_brt"].isNull()) {
+            if (doc["set_brt"].is<const char*>()) {
+                const char* b_str = doc["set_brt"].as<const char*>();
+                if (strcmp(b_str, "auto") == 0) {
+                    CommandRouter::setBrightnessPreset(state, true);
+                } else {
+                    CommandRouter::setBrightnessPreset(state, false, (uint8_t)atoi(b_str));
+                }
+            } else if (doc["set_brt"].is<int>()) {
                 CommandRouter::setBrightnessPreset(state, false, doc["set_brt"].as<uint8_t>());
             }
         }
@@ -597,8 +602,13 @@ private:
             CommandRouter::setSleepTimer(state, doc["sleep"].as<uint16_t>());
         }
 
-        if (doc["react"].is<const char*>()) {
-            uint8_t r = doc["react"].as<uint8_t>();
+        if (!doc["react"].isNull()) {
+            uint8_t r = 0;
+            if (doc["react"].is<int>()) {
+                r = doc["react"].as<uint8_t>();
+            } else if (doc["react"].is<const char*>()) {
+                r = (uint8_t)atoi(doc["react"].as<const char*>());
+            }
             if (r >= NOTIFY_FIRE && r <= NOTIFY_CROWN) {
                 CommandRouter::triggerReaction(state, (NotifyLedType)r, "Oracle Cloud", "CLOUD VIBE!");
                 state.trig_reaction_synth = r;
@@ -675,7 +685,10 @@ public:
     }
 
     uint32_t getIntervalMs() const override {
-        if (state.has_more_cloud_cmds) return 300;
+        if (state.cmd_spotify_action != 0 || state.cmd_send_tg_ack || state.cmd_send_meme_ping != 0 || state.alarm_dismissed) {
+            return 20;
+        }
+        if (state.has_more_cloud_cmds) return 150;
         return Config::ORACLE_SYNC_MS;
     }
 

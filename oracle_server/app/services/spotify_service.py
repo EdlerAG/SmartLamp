@@ -1,6 +1,7 @@
 from __future__ import annotations
 import io
 import os
+import re
 import time
 import base64
 import asyncio
@@ -9,6 +10,7 @@ from typing import Dict, Any, Optional, Tuple, List
 from PIL import Image, ImageOps
 
 from app.core.config import settings
+from app.core.logger import logger
 from app.core.http_client import http_pool
 from app.core.memory_guard import memory_guard
 from app.services.database_service import db_service
@@ -314,7 +316,7 @@ class SpotifyService:
         h, w = size, size
         tile_y = (h + 3) // 4
         tile_x = (w + 3) // 4
-        bayer_grid = np.tile(BAYER_4X4, (tile_y, tile_x))[:h, :w]
+        bayer_grid = np.tile(bayer_matrix, (tile_y, tile_x))[:h, :w]
 
         dither_r = (bayer_grid / 16.0 - 0.5) * 8.0
         dither_g = (bayer_grid / 16.0 - 0.5) * 4.0
