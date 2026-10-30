@@ -1515,7 +1515,7 @@ function updateSpotifyUI(sp) {
       spotifyPlayback.title = '';
       if (spDisc) {
         spDisc.classList.remove('spinning');
-        spDisc.innerHTML = '';
+        spDisc.innerHTML = '🎵';
       }
       if (spLyricEl) spLyricEl.style.display = 'none';
       if (spTitleEl) spTitleEl.innerText = 'Spotify підключено ✅';
@@ -1532,7 +1532,7 @@ function updateSpotifyUI(sp) {
     spotifyPlayback.title = '';
     if (spDisc) {
       spDisc.classList.remove('spinning');
-      spDisc.innerHTML = '';
+      spDisc.innerHTML = '🎵';
     }
     if (spLyricEl) spLyricEl.style.display = 'none';
     if (spTitleEl) spTitleEl.innerText = 'Немає треку';
