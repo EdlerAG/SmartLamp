@@ -22,18 +22,20 @@ class TestOnboardingStage2(unittest.IsolatedAsyncioTestCase):
         db_service.purge_sandbox_test_data()
         self.sent_messages = []
 
-        # Підміняємо _api бота для запису викликів
-        async def mock_api(method: str, payload: dict):
+        # Підміняємо _api бота для запису викликів на рівні класу TelegramBotService
+        from app.services.bot_service import TelegramBotService
+        async def mock_api(self_instance, method: str, payload: dict):
             self.sent_messages.append({"method": method, "payload": payload})
             if method == "sendMessage":
                 return {"ok": True, "result": {"message_id": len(self.sent_messages)}}
             return {"ok": True}
 
-        self.orig_api = bot_service._api
-        bot_service._api = mock_api
+        self.orig_api = TelegramBotService._api
+        TelegramBotService._api = mock_api
 
     async def asyncTearDown(self):
-        bot_service._api = self.orig_api
+        from app.services.bot_service import TelegramBotService
+        TelegramBotService._api = self.orig_api
 
     async def test_01_bot_start_claim_deeplink(self):
         """Тест автоматичної прив'язки через /start c_<secret> та виведення Кроку 1 (Настрій)."""
