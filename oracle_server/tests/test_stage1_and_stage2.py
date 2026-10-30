@@ -114,8 +114,7 @@ class TestStage1AndStage2(unittest.TestCase):
         """Перевірка WebSocket каналу /ws/dashboard (Етап 3, v5.6 Realtime)."""
         token = "test_ws_token_stage_123"
         db_service.create_session(token, role="admin", duration_sec=3600)
-        self.client.cookies.set("session_token", token)
-        with self.client.websocket_connect("/ws/dashboard") as ws:
+        with self.client.websocket_connect("/ws/dashboard", cookies={"session_token": token}) as ws:
             data = ws.receive_json()
             self.assertEqual(data.get("type"), "fast_init")
             self.assertIn("state", data)
