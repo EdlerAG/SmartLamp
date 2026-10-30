@@ -3,6 +3,7 @@ import asyncio
 from typing import Dict, Any, Set, Optional
 from fastapi import WebSocket
 import orjson
+from app.core.logger import logger
 
 
 class RealtimeHub:
@@ -58,7 +59,8 @@ class RealtimeHub:
             try:
                 await self._box_ws.send_text(orjson.dumps(payload).decode("utf-8"))
                 return True
-            except Exception:
+            except Exception as e:
+                logger.debug("Failed sending text to box WS: %s", e)
                 self._box_ws = None
                 return False
 
@@ -71,7 +73,8 @@ class RealtimeHub:
             try:
                 await self._box_ws.send_bytes(data)
                 return True
-            except Exception:
+            except Exception as e:
+                logger.debug("Failed sending binary to box WS: %s", e)
                 self._box_ws = None
                 return False
 
@@ -121,8 +124,8 @@ class RealtimeHub:
                             last_lyric = cur_lyric
                             last_push_time = now
                             await self.broadcast_to_dashboards({"type": "spotify", "spotify": cur_st})
-                    except Exception:
-                        pass
+                    except Exception as poll_err:
+                        logger.debug("Spotify poll error in realtime worker: %s", poll_err)
                 await asyncio.sleep(2.5)
         except asyncio.CancelledError:
             pass
@@ -184,8 +187,8 @@ class RealtimeHub:
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self.send_bytes_to_box(vinyl_data))
-        except Exception:
-            pass
+        except Exception as vinyl_err:
+            logger.debug("Failed queuing vinyl to box: %s", vinyl_err)
 
     def emit_to_dashboards(self, data: Dict[str, Any]) -> None:
         try:
@@ -202,7 +205,8 @@ class RealtimeHub:
             for ws in self._dashboard_clients:
                 try:
                     await ws.send_text(msg)
-                except Exception:
+                except Exception as ws_err:
+                    logger.debug("Pruning dead dashboard WS: %s", ws_err)
                     dead.append(ws)
             for ws in dead:
                 self._dashboard_clients.discard(ws)

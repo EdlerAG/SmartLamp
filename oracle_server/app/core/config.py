@@ -38,8 +38,8 @@ def _resolve_ram_cache_dir(fallback_storage: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    PROJECT_NAME: str = "MagicBox Sovereign Cloud v5.0"
-    VERSION: str = "4.5.0-Hallmark"
+    PROJECT_NAME: str = "SmartLamp Sovereign Cloud v5.6"
+    VERSION: str = "5.6.0-Hallmark"
 
     # Безпека та мережа
     APP_ENV: str = os.getenv("APP_ENV", "development").lower()
@@ -51,6 +51,12 @@ class Settings:
     TG_BOT_TOKEN: str = os.getenv("TG_BOT_TOKEN", "")
     TG_ADMIN_ID: str = os.getenv("TG_ADMIN_ID", "")
     TG_GIRL_ID: str = os.getenv("TG_GIRL_ID", "1294097414")
+    ALLOWED_ADMIN_IDS: tuple[str, ...] = tuple(
+        sorted({x.strip() for x in os.getenv("ALLOWED_ADMIN_IDS", os.getenv("TG_ADMIN_ID", "1047202957")).split(",") if x.strip()})
+    )
+    ALLOWED_USER_IDS: tuple[str, ...] = tuple(
+        sorted({x.strip() for x in os.getenv("ALLOWED_USER_IDS", os.getenv("TG_GIRL_ID", "1294097414,1334785533")).split(",") if x.strip()})
+    )
     SERVER_MANAGES_BOT: bool = os.getenv("SERVER_MANAGES_BOT", "true").lower() == "true"
 
     # Spotify OAuth2 та Vinyl Hub (v4.5)
@@ -113,16 +119,17 @@ for _folder in (
 def validate_security_keys() -> None:
     """Zero-Default Invariant: перевірка безпеки ключів доступу."""
     is_default_key = settings.API_KEY == "smartlamp-secret-key"
+    is_default_pass = settings.DASHBOARD_PASSWORD == "0511"
 
-    if settings.APP_ENV == "production" and is_default_key:
+    if settings.APP_ENV == "production" and (is_default_key or is_default_pass):
         raise RuntimeError(
-            "CRITICAL SECURITY: Запуск у PRODUCTION режимі з дефолтним MAGICBOX_KEY заборонено! "
-            "Вкажіть власний надійний ключ пристрою у файлі .env або змінних середовища."
+            "CRITICAL SECURITY: Запуск у PRODUCTION режимі з дефолтним MAGICBOX_KEY або паролем заборонено! "
+            "Вкажіть власний надійний ключ пристрою та пароль у файлі .env або змінних середовища."
         )
 
-    if is_default_key:
+    if is_default_key or is_default_pass:
         import sys
         sys.stderr.write(
-            "\n⚠️  [УВАГА] MagicBox працює з тестовим MAGICBOX_KEY! "
-            "Перед розміщенням у віддаленій мережі рекомендується встановити власний ключ у .env\n\n"
+            "\n⚠️  [УВАГА БЕЗПЕКИ] SmartLamp працює з тестовим MAGICBOX_KEY або дефолтним паролем! "
+            "Перед розміщенням у віддаленій мережі обов'язково встановіть власні секрети у .env\n\n"
         )

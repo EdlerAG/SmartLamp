@@ -75,14 +75,14 @@ async def login_dashboard(req: LoginRequest, request: Request, response: Respons
             detail="Забагато невдалих спроб входу. Зачекайте 15 хвилин.",
         )
 
-    # Ролі: Ярослав (admin) за API_KEY або DASHBOARD_PASSWORD; Настя (nastya) за паролем '0511'
+    # Ролі доступу: admin за API_KEY або DASHBOARD_PASSWORD; user за призначеним паролем
     role = None
     if secrets.compare_digest(req.password, settings.API_KEY):
         role = "admin"
-    elif secrets.compare_digest(req.password, "0511"):
-        role = "nastya"
     elif secrets.compare_digest(req.password, settings.DASHBOARD_PASSWORD):
-        role = "admin" if settings.DASHBOARD_PASSWORD != "0511" else "nastya"
+        role = "admin"
+    elif secrets.compare_digest(req.password, "0511"):
+        role = "user"
 
     if role:
         clear_login_failures(client_ip)
@@ -145,14 +145,14 @@ async def login_telegram_webapp(request: Request, response: Response):
         user = orjson.loads(user_raw)
         user_id = str(user.get("id", ""))
 
-        ALLOWED_ADMINS = {str(settings.TG_ADMIN_ID), "1047202957"}
-        ALLOWED_GIRLS = {str(settings.TG_GIRL_ID), "1294097414", "1334785533"}
+        ALLOWED_ADMINS = set(settings.ALLOWED_ADMIN_IDS)
+        ALLOWED_USERS = set(settings.ALLOWED_USER_IDS)
 
         role = None
         if user_id in ALLOWED_ADMINS:
             role = "admin"
-        elif user_id in ALLOWED_GIRLS:
-            role = "nastya"
+        elif user_id in ALLOWED_USERS:
+            role = "user"
         else:
             raise HTTPException(status_code=403, detail="Доступ заборонено для цього Telegram акаунту")
 
@@ -254,13 +254,24 @@ async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = 
 
 
 
+@router.post("/api/v5/auth/ws-ticket")
+async def create_ws_ticket(role: str = Depends(verify_access)):
+    """
+    Створює одноразовий квиток для безпечного WebSocket підключення (TTL 60 с).
+    Дозволяє уникнути передачі постійних API-ключів або паролів у URL query-параметрах.
+    """
+    ticket = secrets.token_urlsafe(32)
+    db_service.create_session(ticket, role=role, duration_sec=60)
+    return {"ok": True, "ticket": ticket}
+
+
 @router.websocket("/ws/dashboard")
 async def dashboard_websocket(ws: WebSocket):
     """
     Постійний двосторонній WebSocket канал для MagicBox Studio & Telegram WebApp.
     Миттєва передача команд та стан без HTTP-опитування (0.00% CPU, 15ms latency).
     """
-    token = ws.cookies.get("mb_session") or ws.query_params.get("token") or ws.query_params.get("key") or ""
+    token = ws.cookies.get("mb_session") or ws.query_params.get("ticket") or ws.query_params.get("token") or ws.query_params.get("key") or ""
     role = None
     if token:
         if secrets.compare_digest(token, settings.API_KEY) or secrets.compare_digest(token, settings.DASHBOARD_PASSWORD):
@@ -269,8 +280,12 @@ async def dashboard_websocket(ws: WebSocket):
             role = db_service.validate_session(token)
 
     if not role:
+        logger.debug("Rejecting unauthenticated dashboard WS connection (1008)")
         await ws.close(code=1008)
         return
+
+    if ws.query_params.get("token") or ws.query_params.get("key"):
+        logger.debug("Dashboard WS connected via query param; recommend cookies or /api/v5/auth/ws-ticket")
 
     await realtime_hub.register_dashboard_ws(ws)
     if spotify_service.is_linked():
@@ -511,15 +526,15 @@ async def spotify_oauth_callback(code: str, request: Request):
     if ok:
         try:
             from app.services.bot_service import bot_service
-            for tid in {state_service.admin_id, state_service.girl_id, "1047202957"}:
-                if tid:
-                    await bot_service._api("sendMessage", {
-                        "chat_id": tid,
-                        "text": "✨ <b>Spotify успішно підключено!</b> 🎵\nМузика та альбомні обкладинки тепер транслюються на дисплей шкатулки.",
-                        "parse_mode": "HTML",
-                    })
-        except Exception:
-            pass
+            target_notify_ids = {tid for tid in (state_service.admin_id, state_service.girl_id, *settings.ALLOWED_ADMIN_IDS) if tid}
+            for tid in target_notify_ids:
+                await bot_service._api("sendMessage", {
+                    "chat_id": tid,
+                    "text": "✨ <b>Spotify успішно підключено!</b> 🎵\nМузика та альбомні обкладинки тепер транслюються на дисплей шкатулки.",
+                    "parse_mode": "HTML",
+                })
+        except Exception as notify_err:
+            logger.warning("Telegram notification error on Spotify connect: %s", notify_err)
         return HTMLResponse(
             "<html><body style='background:#08090C;color:#52B788;font-family:sans-serif;text-align:center;padding:50px;'>"
             "<h2>✨ Spotify успішно підключено!</h2>"
@@ -673,18 +688,18 @@ async def google_oauth_callback(code: str, request: Request):
     if ok:
         try:
             from app.services.bot_service import bot_service
-            for tid in {state_service.admin_id, state_service.girl_id, "1047202957"}:
-                if tid:
-                    await bot_service._api("sendMessage", {
-                        "chat_id": tid,
-                        "text": "📅 <b>Google Календар успішно підключено!</b>\nНайближчі плани та пари тепер синхронізуються зі шкатулкою.",
-                        "parse_mode": "HTML",
-                    })
-        except Exception:
-            pass
+            target_notify_ids = {tid for tid in (state_service.admin_id, state_service.girl_id, *settings.ALLOWED_ADMIN_IDS) if tid}
+            for tid in target_notify_ids:
+                await bot_service._api("sendMessage", {
+                    "chat_id": tid,
+                    "text": "📅 <b>Google Календар успішно підключено!</b>\nНайближчі плани тепер синхронізуються зі шкатулкою.",
+                    "parse_mode": "HTML",
+                })
+        except Exception as notify_err:
+            logger.warning("Telegram notification error on Google connect: %s", notify_err)
         return HTMLResponse(
             "<html><body style='background:#08090C;color:#52B788;font-family:sans-serif;text-align:center;padding:50px;'>"
-            "<h2>📅 Google Календар Насті успішно підключено!</h2>"
+            "<h2>📅 Google Календар успішно підключено!</h2>"
             "<p>Найближчі події тепер делікатно нагадуватимуться на шкатулці.</p>"
             "<script>setTimeout(() => window.location.href='/', 1800);</script>"
             "</body></html>"
@@ -801,15 +816,17 @@ async def toggle_dnd(enabled: Optional[bool] = None, _: str = Depends(verify_acc
 
 
 # ====================================================================
-# ФАЗА 4: ЗАХИСТ ЗАТИШКУ ТА РУТИНИ ДЛЯ НАСТІ
+# ФАЗА 4: ЗАХИСТ ЗАТИШКУ ТА ЩОДЕННОЇ РУТИНИ
 # ====================================================================
 
-@router.get("/api/v5/nastya/quiet-hours")
+@router.get("/api/v5/routine/quiet-hours")
+@router.get("/api/v5/nastya/quiet-hours", include_in_schema=False)
 async def get_quiet_hours(_: str = Depends(verify_access)):
     return {"ok": True, **routine_service.get_quiet_hours()}
 
 
-@router.post("/api/v5/nastya/quiet-hours")
+@router.post("/api/v5/routine/quiet-hours")
+@router.post("/api/v5/nastya/quiet-hours", include_in_schema=False)
 async def update_quiet_hours(
     enabled: bool = Query(...),
     start: str = Query("23:00"),
@@ -820,12 +837,14 @@ async def update_quiet_hours(
     return {"ok": True, "enabled": enabled, "start": start, "end": end}
 
 
-@router.get("/api/v5/nastya/alarm")
+@router.get("/api/v5/routine/alarm")
+@router.get("/api/v5/nastya/alarm", include_in_schema=False)
 async def get_alarm(_: str = Depends(verify_access)):
     return {"ok": True, **routine_service.get_alarm_config()}
 
 
-@router.post("/api/v5/nastya/alarm")
+@router.post("/api/v5/routine/alarm")
+@router.post("/api/v5/nastya/alarm", include_in_schema=False)
 async def update_alarm(
     enabled: bool = Query(...),
     time_str: str = Query("07:30"),
@@ -838,7 +857,8 @@ async def update_alarm(
     return {"ok": True, "enabled": enabled, "time": time_str, "days": day_list}
 
 
-@router.post("/api/v5/nastya/alarm/dismiss")
+@router.post("/api/v5/routine/alarm/dismiss")
+@router.post("/api/v5/nastya/alarm/dismiss", include_in_schema=False)
 async def dismiss_alarm(_: str = Depends(verify_access)):
     """Вимкнути ранковий будильник/схід сонця на сьогодні."""
     routine_service.dismiss_alarm()
@@ -850,54 +870,61 @@ async def dismiss_alarm(_: str = Depends(verify_access)):
     return {"ok": True, "dismissed": True}
 
 
-@router.post("/api/v5/nastya/pomodoro/start")
+@router.post("/api/v5/routine/pomodoro/start")
+@router.post("/api/v5/nastya/pomodoro/start", include_in_schema=False)
 async def start_pomodoro(work_min: int = Query(25, ge=5, le=120), _: str = Depends(verify_access)):
     st = routine_service.start_pomodoro(work_min)
     return {"ok": True, **st}
 
 
-@router.post("/api/v5/nastya/pomodoro/stop")
+@router.post("/api/v5/routine/pomodoro/stop")
+@router.post("/api/v5/nastya/pomodoro/stop", include_in_schema=False)
 async def stop_pomodoro(_: str = Depends(verify_access)):
     st = routine_service.stop_pomodoro()
     return {"ok": True, **st}
 
 
-@router.get("/api/v5/nastya/pomodoro/status")
+@router.get("/api/v5/routine/pomodoro/status")
+@router.get("/api/v5/nastya/pomodoro/status", include_in_schema=False)
 async def get_pomodoro(_: str = Depends(verify_access)):
     return {"ok": True, **routine_service.get_pomodoro_status()}
 
 
-@router.post("/api/v5/admin/birthday-trigger")
+@router.post("/api/v5/admin/routine/birthday-celebration")
+@router.post("/api/v5/admin/birthday-trigger", include_in_schema=False)
 async def trigger_birthday_celebration(_: str = Depends(verify_admin_access)):
-    """Адміністративне привітання Насті з Днем Народження (навіть якщо не встиг точно 5-го)."""
+    """Адміністративне святкове привітання з Днем Народження."""
     db_service.set_setting("birthday_greeted", True)
     cmd = CommandPayload(
         birthday_celebrate=True,
         set_mode=4,
         set_brt="3",
-        msg="З ДНЕМ НАРОДЖЕННЯ, НАСТЮ!",
+        msg="З ДНЕМ НАРОДЖЕННЯ!",
         play_url=f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3" if settings.PUBLIC_SERVER_URL else None,
     )
     state_service.enqueue_command(cmd)
 
-    if settings.TG_BOT_TOKEN and state_service.girl_id:
+    target_user_id = state_service.girl_id or settings.TG_GIRL_ID
+    if settings.TG_BOT_TOKEN and target_user_id:
         from app.services.bot_service import bot_service, GIRL_KB
         await bot_service._api("sendMessage", {
-            "chat_id": state_service.girl_id,
-            "text": "🎂 <b>З ДНЕМ НАРОДЖЕННЯ, НАСТЮ!</b> 🎉✨\n\nНехай кожен твій день буде сповнений тепла, затишку, радості та натхнення! Твоя SmartLamp поруч, щоб світити для тебе! 💖🎁",
+            "chat_id": target_user_id,
+            "text": "🎂 <b>З ДНЕМ НАРОДЖЕННЯ!</b> 🎉✨\n\nНехай кожен день буде сповнений тепла, затишку, радості та натхнення! Твоя SmartLamp поруч, щоб світити для тебе! 💖🎁",
             "parse_mode": "HTML",
             "reply_markup": GIRL_KB,
         })
     return {"ok": True, "message": "Привітання з Днем Народження успішно активовано!"}
 
 
-@router.post("/api/v5/nastya/morning-brief/trigger")
+@router.post("/api/v5/routine/morning-brief/trigger")
+@router.post("/api/v5/nastya/morning-brief/trigger", include_in_schema=False)
 async def trigger_morning_brief(_: str = Depends(verify_access)):
-    brief = await routine_service.generate_morning_brief_for_nastya()
-    if settings.TG_BOT_TOKEN and state_service.girl_id:
+    brief = await routine_service.generate_morning_brief()
+    target_user_id = state_service.girl_id or settings.TG_GIRL_ID
+    if settings.TG_BOT_TOKEN and target_user_id:
         from app.services.bot_service import bot_service, GIRL_KB
         await bot_service._api("sendMessage", {
-            "chat_id": state_service.girl_id,
+            "chat_id": target_user_id,
             "text": brief,
             "parse_mode": "HTML",
             "reply_markup": GIRL_KB,
@@ -920,9 +947,10 @@ async def trigger_backup_now(_: str = Depends(verify_admin_access)):
     return {"ok": ok, "message": "Бекап надіслано в Telegram" if ok else "Бекап збережено локально"}
 
 
-@router.get("/api/v5/admin/nastya-schedule")
-async def get_nastya_schedule(_: str = Depends(verify_admin_access)):
-    """Перегляд розкладу Google Календаря Насті (доступно виключно для Ярослава)."""
+@router.get("/api/v5/admin/routine/schedule")
+@router.get("/api/v5/admin/nastya-schedule", include_in_schema=False)
+async def get_routine_schedule(_: str = Depends(verify_admin_access)):
+    """Перегляд розкладу Google Календаря."""
     events = await google_calendar_service.get_upcoming_events(max_results=15)
     return {
         "ok": True,
@@ -932,22 +960,24 @@ async def get_nastya_schedule(_: str = Depends(verify_admin_access)):
 
 
 @router.post("/api/v5/admin/sandbox-reset")
+@router.post("/api/v5/admin/reset-sandbox-for-nastya", include_in_schema=False)
 async def reset_sandbox_for_nastya(_: str = Depends(verify_admin_access)):
     """
     Передподарункове скидання:
     - Відключає тестові Spotify та Google Calendar.
     - Видаляє тестові події, клімат, блекаути та історію здоров'я плати.
-    - Встановлює TG ID Насті (1294097414).
+    - Встановлює TG ID отримувача зі змінних середовища.
     - Зберігає кастомні наліпки/гіфки, звуки та налаштування AI.
     """
     spotify_service.disconnect()
     google_calendar_service.disconnect()
     purged = db_service.purge_sandbox_test_data()
-    state_service.save_auth_ids(girl_id="1294097414")
-    db_service.log_event("admin", "sandbox", "reset_to_nastya", {"purged": purged, "girl_id": "1294097414"})
+    target_user = str(settings.TG_GIRL_ID or "1294097414")
+    state_service.save_auth_ids(girl_id=target_user)
+    db_service.log_event("admin", "sandbox", "reset_sandbox", {"purged": purged, "target_user": target_user})
     return {
         "ok": True,
-        "message": "Тестові сервіси відключено, тестові дані очищено. Власницею встановлено Настю (1294097414).",
+        "message": f"Тестові сервіси відключено, тестові дані очищено. Власником встановлено профіль {target_user}.",
         "purged": purged,
     }
 
@@ -1071,7 +1101,8 @@ async def alias_pomo_start(request: Request, _: str = Depends(verify_access)):
 async def alias_pomo_stop(_: str = Depends(verify_access)):
     return await stop_pomodoro(_=_)
 
-@router.post("/api/v5/admin/nastya/birthday-celebration")
+@router.post("/api/v5/admin/routine/birthday-celebration")
+@router.post("/api/v5/admin/nastya/birthday-celebration", include_in_schema=False)
 async def alias_birthday(_: str = Depends(verify_admin_access)):
     return await trigger_birthday_celebration(_)
 
@@ -1079,15 +1110,17 @@ async def alias_birthday(_: str = Depends(verify_admin_access)):
 async def alias_backup(_: str = Depends(verify_admin_access)):
     return await trigger_backup_now(_)
 
-@router.get("/api/v5/admin/nastya/calendar-view")
+@router.get("/api/v5/admin/routine/calendar-view")
+@router.get("/api/v5/admin/nastya/calendar-view", include_in_schema=False)
 async def alias_calendar_view(_: str = Depends(verify_admin_access)):
-    return await get_nastya_schedule(_)
+    return await get_routine_schedule(_)
 
 @router.post("/api/v5/admin/server-update/apply")
 async def alias_server_update(_: str = Depends(verify_admin_access)):
     return await trigger_server_update(_)
 
-@router.post("/api/v5/admin/nastya/silent-push")
+@router.post("/api/v5/admin/routine/silent-push")
+@router.post("/api/v5/admin/nastya/silent-push", include_in_schema=False)
 async def alias_silent_push(request: Request, _: str = Depends(verify_admin_access)):
     body = await request.json()
     msg = body.get("message", "").strip()

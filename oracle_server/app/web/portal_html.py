@@ -148,7 +148,7 @@ body {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   white-space: nowrap;
 }
 .tab-btn:hover {
@@ -344,6 +344,15 @@ input::placeholder, textarea::placeholder {
 }
 .vinyl-disc.spinning {
   animation: spinVinyl 5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Range Sliders */
@@ -546,7 +555,7 @@ input::placeholder, textarea::placeholder {
           <div style="width:100%;height:5px;background:var(--border-hairline);border-radius:3px;margin-top:8px;overflow:hidden">
             <div id="spProgressBar" style="width:0%;height:100%;background:var(--accent-spotify);transition:width 0.4s linear;border-radius:3px"></div>
           </div>
-          <div id="spLyric" style="display:none;margin-top:8px;font-size:11px;font-style:italic;color:var(--accent-spotify);background:rgba(30,215,96,0.08);padding:4px 8px;border-radius:6px;border-left:2px solid var(--accent-spotify);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:all 0.3s ease"></div>
+          <div id="spLyric" style="display:none;margin-top:8px;font-size:11px;font-style:italic;color:var(--accent-spotify);background:rgba(30,215,96,0.08);padding:4px 8px;border-radius:6px;border-left:2px solid var(--accent-spotify);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity 0.3s ease, transform 0.3s ease"></div>
         </div>
       </div>
 
@@ -2154,12 +2163,12 @@ function applyState(d) {
     const ap = document.getElementById('adminPanel');
     if (ap) ap.style.display = 'block';
     const rb = document.getElementById('roleBadge');
-    if (rb) { rb.innerText = '🛡️ ЯРОСЛАВ'; rb.style.color = 'var(--accent-cool)'; }
-  } else if (d.user_role === 'nastya') {
+    if (rb) { rb.innerText = '🛡️ ADMIN'; rb.style.color = 'var(--accent-cool)'; }
+  } else {
     const ap = document.getElementById('adminPanel');
     if (ap) ap.style.display = 'none';
     const rb = document.getElementById('roleBadge');
-    if (rb) { rb.innerText = '🌸 НАСТЯ'; rb.style.color = 'var(--accent-pink)'; }
+    if (rb) { rb.innerText = '✨ USER'; rb.style.color = 'var(--accent-pink)'; }
   }
 
   const ch = d.climate_history || [];
@@ -2334,6 +2343,13 @@ function initStudioWebSocket() {
       if (oTxt) oTxt.innerText = 'MAGICBOX · СИНХРОНІЗАЦІЯ';
       if (evt && evt.code === 1008) {
         isAuthReady = false;
+        const oDot = document.getElementById('onlineDot');
+        if (oDot) oDot.className = 'pulse';
+        const oTxt = document.getElementById('onlineTxt');
+        if (oTxt) oTxt.innerText = 'ПОТРІБНА АВТОРИЗАЦІЯ 🔒';
+        toast('Сесію завершено. Будь ласка, авторизуйтесь знову 🔒');
+        const lm = document.getElementById('loginModal');
+        if (lm) lm.style.display = 'flex';
         return;
       }
       if (document.visibilityState !== 'hidden') {

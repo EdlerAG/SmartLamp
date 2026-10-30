@@ -17,6 +17,12 @@ venv/
 .env
 storage/
 oracle_server/*.bin
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+smartlamp.db
+oracle_server/smartlamp.db
 
 # OS files
 .DS_Store

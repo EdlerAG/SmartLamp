@@ -184,9 +184,9 @@ async def box_websocket_endpoint(ws: WebSocket):
             resp = await build_box_sync_response(payload)
             await realtime_hub.push_to_box(resp)
     except WebSocketDisconnect:
-        pass
-    except Exception:
-        pass
+        logger.debug("Box WebSocket disconnected cleanly")
+    except Exception as ws_err:
+        logger.warning("Box WebSocket runtime error: %s", ws_err)
     finally:
         realtime_hub.unregister_box_ws(ws)
 

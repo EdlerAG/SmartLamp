@@ -1061,8 +1061,9 @@ class TelegramBotService:
             spotify_service.disconnect()
             google_calendar_service.disconnect()
             purged = db_service.purge_sandbox_test_data()
-            state_service.save_auth_ids(girl_id="1294097414")
-            db_service.log_event("admin", "sandbox", "reset_to_nastya", {"purged": purged, "girl_id": "1294097414"})
+            target_user = str(settings.TG_GIRL_ID or "1294097414")
+            state_service.save_auth_ids(girl_id=target_user)
+            db_service.log_event("admin", "sandbox", "reset_sandbox", {"purged": purged, "target_user": target_user})
             rep_msg = (
                 "🎁 <b>ПЕРЕДПОДАРУНКОВЕ СКИДАННЯ ВИКОНАНО!</b>\n"
                 "━━━━━━━━━━━━━━━━━━\n"
@@ -1071,7 +1072,7 @@ class TelegramBotService:
                 f"клімат ({purged.get('climate_history', 0)}), "
                 f"блекаути ({purged.get('power_outages', 0)})\n"
                 "• Збережено: кастомні .mbx гіфки, звуки та налаштування AI\n"
-                "• TG ID власниці закріплено за Настею: <b>1294097414</b>"
+                f"• TG ID користувача закріплено: <b>{target_user}</b>"
             )
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🎁 Скинуто для Насті!", "show_alert": True})
             await self._api("editMessageText", {
@@ -1193,12 +1194,13 @@ class TelegramBotService:
                 })
                 return
 
-            if text.startswith("/sandbox_reset") or "Скинути для Насті" in text:
+            if text.startswith("/sandbox_reset") or "Скинути для Насті" in text or "Скинути пісочницю" in text:
                 spotify_service.disconnect()
                 google_calendar_service.disconnect()
                 purged = db_service.purge_sandbox_test_data()
-                state_service.save_auth_ids(girl_id="1294097414")
-                db_service.log_event("admin", "sandbox", "reset_to_nastya", {"purged": purged, "girl_id": "1294097414"})
+                target_user = str(settings.TG_GIRL_ID or "1294097414")
+                state_service.save_auth_ids(girl_id=target_user)
+                db_service.log_event("admin", "sandbox", "reset_sandbox", {"purged": purged, "target_user": target_user})
                 rep_msg = (
                     "🎁 <b>ПЕРЕДПОДАРУНКОВЕ СКИДАННЯ ВИКОНАНО!</b>\n"
                     "━━━━━━━━━━━━━━━━━━\n"
@@ -1207,7 +1209,7 @@ class TelegramBotService:
                     f"клімат ({purged.get('climate_history', 0)}), "
                     f"блекаути ({purged.get('power_outages', 0)})\n"
                     "• Збережено: кастомні .mbx гіфки, звуки та налаштування AI\n"
-                    "• TG ID власниці закріплено за Настею: <b>1294097414</b>"
+                    f"• TG ID користувача закріплено: <b>{target_user}</b>"
                 )
                 await self._api("sendMessage", {
                     "chat_id": chat_id,

@@ -59,6 +59,12 @@ class TestV56Core(unittest.TestCase):
         self.assertFalse(realtime_hub.is_box_ws_connected)
         self.assertEqual(len(realtime_hub._dashboard_clients), 0)
 
+    def test_settings_v56_security_and_version(self):
+        from app.core.config import settings
+        self.assertEqual(settings.VERSION, "5.6.0-Hallmark")
+        self.assertIn("1047202957", settings.ALLOWED_ADMIN_IDS)
+        self.assertIn("1294097414", settings.ALLOWED_USER_IDS)
+
 
 if __name__ == "__main__":
     unittest.main()
