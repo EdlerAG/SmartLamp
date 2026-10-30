@@ -161,6 +161,22 @@ class DatabaseService:
                 created_at FLOAT NOT NULL
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS device_claim (
+                claim_hash VARCHAR(64) PRIMARY KEY,
+                claimed_by_chat_id VARCHAR(64),
+                claimed_at FLOAT,
+                created_at FLOAT NOT NULL
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS setup_steps (
+                step_id VARCHAR(32) PRIMARY KEY,
+                status VARCHAR(16) NOT NULL,
+                completed_at FLOAT,
+                updated_at FLOAT NOT NULL
+            );
+        """)
         # Створення високопродуктивних B-Tree індексів
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cal_start_ts ON calendar_events(start_ts);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_outages_disc ON power_outages(disconnected_at);")
@@ -168,6 +184,7 @@ class DatabaseService:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_climate_ts ON climate_history(ts);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_ts ON event_log(ts);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_cat ON event_log(category, ts);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_chat ON device_claim(claimed_by_chat_id);")
 
         # Міграція: додаємо ws_rec та ota до box_health_history якщо вони відсутні
         for col_name, col_type in (("ws_rec", "INTEGER DEFAULT 0"), ("ota", "INTEGER DEFAULT 0")):
@@ -799,6 +816,7 @@ class DatabaseService:
         """
         Повне очищення тестових даних перед подарунком:
         - Видаляє тестові події календаря, історію клімату, блекаути, здоров'я плати та лог подій.
+        - Скидає прив'язку пристрою (device_claim) та кроки налаштування (setup_steps).
         - ЗБЕРІГАЄ завантажені кастомні медіа (.mbx, MP3 звуки), пресети голосу та сесії.
         """
         stats = {}
@@ -810,12 +828,190 @@ class DatabaseService:
             stats["box_health"] = conn.execute("DELETE FROM box_health_history").rowcount
             stats["event_log"] = conn.execute("DELETE FROM event_log").rowcount
             stats["telemetry_rollups"] = conn.execute("DELETE FROM telemetry_rollups").rowcount
+            stats["device_claim"] = conn.execute("DELETE FROM device_claim").rowcount
+            stats["setup_steps"] = conn.execute("DELETE FROM setup_steps").rowcount
             conn.commit()
+
+            # Скидаємо збереженого власника в KV кеші
+            self._kv_cache.pop("owner_chat_id", None)
+            conn.execute("DELETE FROM kv_settings WHERE key = 'owner_chat_id'")
+            conn.commit()
+
+            self.init_setup_steps()
             logger.info("Sandbox test data purged successfully: %s", stats)
             return stats
         except Exception as e:
             logger.error("purge_sandbox_test_data error: %s", e)
             return stats
+
+    # --- ОНБОРДИНГ, ПРИВ'ЯЗКА ТА ЕТАПИ НАЛАШТУВАННЯ ---
+    def init_setup_steps(self) -> None:
+        """Ініціалізація етапів першого підключення за замовчуванням."""
+        now = time.time()
+        default_steps = [
+            ("wifi", "done", now),          # Плата вже на зв'язку з сервером
+            ("pairing", "pending", None),   # Сканування QR та /start в боті
+            ("mood", "pending", None),      # Вибір колірної теми / настрою
+            ("spotify", "pending", None),   # Підключення Spotify
+            ("calendar", "pending", None),  # Підключення Google Calendar
+            ("quiet_hours", "pending", None),# Налаштування нічного режиму
+            ("portal_tour", "pending", None),# Ознайомлення з веб-панеллю
+        ]
+        try:
+            conn = self._get_conn()
+            for step_id, status, comp_at in default_steps:
+                conn.execute(
+                    "INSERT OR IGNORE INTO setup_steps (step_id, status, completed_at, updated_at) VALUES (?, ?, ?, ?)",
+                    (step_id, status, comp_at, now),
+                )
+            conn.commit()
+        except Exception as e:
+            logger.warning("init_setup_steps error: %s", e)
+
+    def register_device_claim(self, secret: str) -> None:
+        """Реєструє або оновлює секрет прив'язки від ESP32 (зберігається лише SHA-256 хеш)."""
+        if not secret or len(secret) < 6:
+            return
+        claim_hash = hashlib.sha256(secret.strip().encode("utf-8")).hexdigest()
+        now = time.time()
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                "INSERT OR IGNORE INTO device_claim (claim_hash, claimed_by_chat_id, claimed_at, created_at) VALUES (?, NULL, NULL, ?)",
+                (claim_hash, now),
+            )
+            conn.commit()
+        except Exception as e:
+            logger.error("register_device_claim error: %s", e)
+
+    def claim_device(self, secret: str, chat_id: str) -> bool:
+        """
+        Атомарна прив'язка шкатулки до Telegram chat_id власниці:
+        - Перевіряє або реєструє хеш секрету.
+        - Запобігає захопленню чужою особою, якщо вже прив'язано.
+        - Оновлює статус етапу 'pairing' на 'done'.
+        """
+        if not secret or not chat_id:
+            return False
+        claim_hash = hashlib.sha256(secret.strip().encode("utf-8")).hexdigest()
+        now = time.time()
+        chat_id_str = str(chat_id).strip()
+        try:
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT claimed_by_chat_id FROM device_claim WHERE claim_hash = ?",
+                (claim_hash,),
+            ).fetchone()
+
+            if not row:
+                # Перша реєстрація секрету разом із прив'язкою
+                conn.execute(
+                    "INSERT INTO device_claim (claim_hash, claimed_by_chat_id, claimed_at, created_at) VALUES (?, ?, ?, ?)",
+                    (claim_hash, chat_id_str, now, now),
+                )
+            else:
+                existing = row["claimed_by_chat_id"]
+                if existing and existing != chat_id_str:
+                    logger.warning("Claim rejected: already claimed by chat_id %s", existing)
+                    return False
+                conn.execute(
+                    "UPDATE device_claim SET claimed_by_chat_id = ?, claimed_at = ? WHERE claim_hash = ?",
+                    (chat_id_str, now, claim_hash),
+                )
+            conn.commit()
+
+            self.set_owner_chat_id(chat_id_str)
+            self.update_setup_step("pairing", "done")
+            logger.info("Device successfully claimed by owner chat_id: %s", chat_id_str)
+            return True
+        except Exception as e:
+            logger.error("claim_device error: %s", e)
+            return False
+
+    def is_device_claimed(self) -> bool:
+        """Перевіряє, чи шафа вже прив'язана до власниці."""
+        if self.get_owner_chat_id():
+            return True
+        try:
+            row = self._get_conn().execute(
+                "SELECT 1 FROM device_claim WHERE claimed_by_chat_id IS NOT NULL LIMIT 1"
+            ).fetchone()
+            return bool(row)
+        except Exception:
+            return False
+
+    def get_owner_chat_id(self) -> Optional[str]:
+        """Повертає Telegram chat_id поточної законної власниці."""
+        val = self.get_setting("owner_chat_id", None)
+        if val:
+            return str(val)
+        if settings.TG_GIRL_ID:
+            return str(settings.TG_GIRL_ID)
+        return None
+
+    def set_owner_chat_id(self, chat_id: str) -> None:
+        """Зберігає Telegram chat_id власниці в KV-налаштуваннях."""
+        self.set_setting("owner_chat_id", str(chat_id).strip())
+
+    def get_setup_state(self) -> Dict[str, Any]:
+        """Повертає поточний статус усіх етапів першого налаштування."""
+        self.init_setup_steps()
+        try:
+            rows = self._get_conn().execute("SELECT * FROM setup_steps").fetchall()
+            return {
+                r["step_id"]: {
+                    "status": r["status"],
+                    "completed_at": r["completed_at"],
+                    "updated_at": r["updated_at"],
+                }
+                for r in rows
+            }
+        except Exception as e:
+            logger.error("get_setup_state error: %s", e)
+            return {}
+
+    def update_setup_step(self, step_id: str, status: str) -> None:
+        """Оновлює статус етапу: 'pending', 'done', 'skipped', 'dismissed'."""
+        now = time.time()
+        completed_at = now if status == "done" else None
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                """
+                INSERT INTO setup_steps (step_id, status, completed_at, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(step_id) DO UPDATE SET
+                    status=excluded.status,
+                    completed_at=COALESCE(excluded.completed_at, setup_steps.completed_at),
+                    updated_at=excluded.updated_at
+                """,
+                (step_id, status, completed_at, now),
+            )
+            conn.commit()
+        except Exception as e:
+            logger.error("update_setup_step error for '%s': %s", step_id, e)
+
+    def get_theme_mood(self) -> str:
+        """Повертає поточну тему настрою: 'cozy' (Затишок), 'sakura' (Сакура), 'ocean' (Океан), 'nordic' (Північ)."""
+        return str(self.get_setting("theme_mood", "cozy"))
+
+    def set_theme_mood(self, mood: str) -> str:
+        """Встановлює тему настрою та автоматично позначає крок 'mood' як завершений."""
+        valid_moods = {"cozy", "sakura", "ocean", "nordic"}
+        clean_mood = mood.lower().strip()
+        if clean_mood not in valid_moods:
+            clean_mood = "cozy"
+        self.set_setting("theme_mood", clean_mood)
+        self.update_setup_step("mood", "done")
+        return clean_mood
+
+    def get_viewer_alerts_enabled(self) -> bool:
+        """Повертає статус технічних сповіщень для глядача (admin/viewer)."""
+        return bool(self.get_setting("viewer_alerts_enabled", True))
+
+    def set_viewer_alerts_enabled(self, enabled: bool) -> None:
+        """Вмикає або вимикає надсилання технічних сповіщень глядачу."""
+        self.set_setting("viewer_alerts_enabled", bool(enabled))
 
 
 db_service = DatabaseService()

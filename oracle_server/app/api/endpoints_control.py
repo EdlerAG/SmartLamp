@@ -43,7 +43,9 @@ from app.services.routine_service import routine_service
 from app.services.google_calendar_service import google_calendar_service
 from app.services.maintenance_service import maintenance_service
 from app.services.server_updater import server_updater
+from app.services.setup_service import setup_service
 from app.web.portal_html import PORTAL_HTML
+from app.web.legal_html import PRIVACY_POLICY_HTML, TERMS_OF_SERVICE_HTML
 
 router = APIRouter(tags=["Web Studio & Remote Control v5.0"])
 
@@ -68,6 +70,24 @@ async def serve_web_studio(request: Request):
     )
 
 
+@router.api_route("/privacy", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
+async def serve_privacy_policy():
+    """Публічна сторінка політики конфіденційності для Google Cloud OAuth Branding."""
+    return HTMLResponse(
+        content=PRIVACY_POLICY_HTML,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@router.api_route("/terms", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
+async def serve_terms_of_service():
+    """Публічна сторінка умов використання для Google Cloud OAuth Branding."""
+    return HTMLResponse(
+        content=TERMS_OF_SERVICE_HTML,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 @router.post("/api/v5/auth/login")
 async def login_dashboard(req: LoginRequest, request: Request, response: Response):
     client_ip = request.client.host if request.client else "unknown"
@@ -77,14 +97,14 @@ async def login_dashboard(req: LoginRequest, request: Request, response: Respons
             detail="Забагато невдалих спроб входу. Зачекайте 15 хвилин.",
         )
 
-    # Ролі доступу: admin за API_KEY або DASHBOARD_PASSWORD; user за призначеним паролем
+    # Ролі доступу: admin за API_KEY або DASHBOARD_PASSWORD; owner за персональним кодом власниці
     role = None
     if secrets.compare_digest(req.password, settings.API_KEY):
         role = "admin"
     elif secrets.compare_digest(req.password, settings.DASHBOARD_PASSWORD):
         role = "admin"
     elif secrets.compare_digest(req.password, "0511"):
-        role = "user"
+        role = "owner"
 
     if role:
         clear_login_failures(client_ip)
@@ -1235,3 +1255,56 @@ async def stream_tts_audio(text: str = Query(..., min_length=1, max_length=500),
         "Cache-Control": "no-cache",
         "Transfer-Encoding": "chunked",
     })
+
+
+# ====================================================================
+# ONBOARDING, CLAIM & MOOD SETUP API
+# ====================================================================
+
+@router.get("/api/v5/setup/state")
+async def get_onboarding_state(_: str = Depends(verify_access)):
+    """Повертає поточний статус онбордингу, бітову маску та стан кроків."""
+    return setup_service.get_full_status()
+
+
+@router.post("/api/v5/setup/step/{step_id}")
+async def update_onboarding_step(step_id: str, payload: Dict[str, str], _: str = Depends(verify_access)):
+    """Оновлення статусу кроку: 'pending', 'done', 'skipped', 'dismissed'."""
+    status = payload.get("status", "done")
+    setup_service.advance_step(step_id, status)
+    return {"ok": True, "step": step_id, "status": status}
+
+
+@router.post("/api/v5/setup/mood")
+async def set_onboarding_mood(payload: Dict[str, str], _: str = Depends(verify_access)):
+    """Встановлення колірної теми / настрою ('cozy', 'sakura', 'ocean', 'nordic')."""
+    mood = payload.get("mood", "cozy")
+    saved_mood = setup_service.set_mood(mood)
+    return {"ok": True, "mood": saved_mood}
+
+
+@router.post("/api/v5/setup/claim")
+async def claim_device_endpoint(payload: Dict[str, str], _: str = Depends(verify_access)):
+    """Прив'язка пристрою за секретним кодом від плати."""
+    secret = payload.get("secret", "").strip()
+    chat_id = payload.get("chat_id", "").strip()
+    if not secret or not chat_id:
+        raise HTTPException(status_code=400, detail="Потрібно вказати secret та chat_id")
+    ok = setup_service.record_claim(secret, chat_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Пристрій не знайдено або вже прив'язано до іншого користувача")
+    return {"ok": True, "claimed": True, "owner_chat_id": chat_id}
+
+
+@router.get("/api/v5/admin/viewer-alerts")
+async def get_viewer_alerts_status(_: str = Depends(verify_admin_access)):
+    """Отримання статусу надсилання технічних сповіщень глядачу."""
+    return {"ok": True, "enabled": db_service.get_viewer_alerts_enabled()}
+
+
+@router.post("/api/v5/admin/viewer-alerts")
+async def set_viewer_alerts_status(payload: Dict[str, bool], _: str = Depends(verify_admin_access)):
+    """Увімкнення або вимкнення технічних сповіщень глядачу."""
+    enabled = bool(payload.get("enabled", True))
+    db_service.set_viewer_alerts_enabled(enabled)
+    return {"ok": True, "enabled": enabled}

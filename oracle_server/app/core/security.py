@@ -83,11 +83,27 @@ async def verify_admin_access(
     mb_session: Optional[str] = Cookie(None),
     authorization: Optional[str] = Header(None),
 ) -> str:
-    """Суворий захист для чутливих адміністративних операцій (OTA, зміна паролів, системні налаштування)."""
+    """Захист для операцій керування пристроєм та інтеграціями (доступно власниці або адміністратору)."""
+    role = await verify_access(request, x_device_key, mb_session, authorization)
+    if role not in ("admin", "owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Доступ дозволено лише власниці або адміністратору",
+        )
+    return role
+
+
+async def verify_system_admin_access(
+    request: Request,
+    x_device_key: Optional[str] = Header(None),
+    mb_session: Optional[str] = Cookie(None),
+    authorization: Optional[str] = Header(None),
+) -> str:
+    """Суворий технічний захист (OTA оновлення прошивки, оновлення коду сервера, бекапи)."""
     role = await verify_access(request, x_device_key, mb_session, authorization)
     if role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: Доступ дозволено лише адміністратору",
+            detail="Forbidden: Доступ дозволено виключно системному адміністратору",
         )
     return role

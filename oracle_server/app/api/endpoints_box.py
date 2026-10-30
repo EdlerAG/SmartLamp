@@ -24,6 +24,7 @@ from app.services.ota_service import ota_service
 from app.services.spotify_service import spotify_service
 from app.services.routine_service import routine_service
 from app.services.google_calendar_service import google_calendar_service
+from app.services.setup_service import setup_service
 
 router = APIRouter(tags=["ESP32-S3 Box Gateway v5.0"])
 
@@ -43,6 +44,10 @@ def invalidate_calendar_cache() -> None:
 
 async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any]:
     """Уніфікований обробник синхронізації та формування пакету для HTTP та WebSocket."""
+    # 0. Реєстрація секрету прив'язки, якщо переданий платою
+    if payload.claim:
+        db_service.register_device_claim(payload.claim)
+
     # 1. Обробка команд плеєра Spotify з кнопок лампи
     if payload.sp_act > 0:
         if payload.sp_act == 1:
@@ -112,9 +117,13 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
     # 6. Перевірка тихих годин
     resp["quiet_hours"] = routine_service.is_quiet_hours_now()
 
-    # 7. Перевірка найближчої події календаря Насті для Smart Hub (з швидким RAM TTL-кешем 30с)
+    # 7. Перевірка найближчої події календаря для Smart Hub (з швидким RAM TTL-кешем 30с)
     cal_ev = await _get_cached_calendar_event()
     resp["cal_event"] = cal_ev
+
+    # 8. Компактна бітова маска кроків налаштування ('su') та активна тема ('mood')
+    resp["su"] = setup_service.get_setup_bitmask()
+    resp["mood"] = db_service.get_theme_mood()
 
     return resp
 

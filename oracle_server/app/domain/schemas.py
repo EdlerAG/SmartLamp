@@ -38,6 +38,7 @@ class BoxTelemetryPayload(BaseModel):
     alarm_off: bool = False # Будильник вимкнено фізичною кнопкою на шкатулці
     ota: int = 0 # 1: оновлення в процесі
     ws_rec: int = 0 # Лічильник реконектів WebSocket
+    claim: Optional[str] = None # Секрет першого підключення (base32) від плати
 
 
 class CommandPayload(BaseModel):
