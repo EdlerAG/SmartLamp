@@ -150,83 +150,19 @@ namespace ScreenRenderer {
                 break;
             }
 
-            // Крок 2: Підключення до AP лампи
-            case OnboardingStep::WIZ_STEP_WIFI_AP: {
-                canvas.setFont(&fonts::efontCN_12);
-                canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
-                canvas.drawString("КРОК 1/3 · WI-FI ШКАТУЛКИ", 120, 24);
-
-                const char* qr_payload = "WIFI:S:MagicBox-AP;T:nopass;;";
-                if (strcmp(qr_payload, cached_qr_str) != 0) {
-                    strncpy(cached_qr_str, qr_payload, qr_len - 1);
-                    cached_qr_str[qr_len - 1] = '\0';
-                    qr_cache.fillScreen(TFT_WHITE);
-                    qr_cache.qrcode(qr_payload, 5, 5, 100, 3);
-                }
-
-                canvas.fillRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BG_SURFACE);
-                canvas.drawRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
-                qr_cache.pushSprite(&canvas, 70, 42);
-
-                canvas.setFont(&fonts::efontCN_12);
-                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-                canvas.drawString("1. Скануй QR камерою", 120, 154);
-
-                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("SSID: MagicBox-AP (Open)", 120, 172);
-
-                // Кнопка далі
-                canvas.fillRoundRect(136, 188, 80, 24, 12, HallmarkTheme::BG_SURFACE);
-                canvas.drawRoundRect(136, 188, 80, 24, 12, HallmarkTheme::ACCENT_COOL);
-                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-                canvas.drawString("ДАЛІ ►", 176, 200);
-                break;
-            }
-
-            // Крок 3: Портал вибору домашньої мережі
-            case OnboardingStep::WIZ_STEP_WIFI_PORTAL: {
-                canvas.setFont(&fonts::efontCN_12);
-                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-                canvas.drawString("КРОК 2/3 · ДОМАШНІЙ WI-FI", 120, 24);
-
-                const char* qr_payload = "http://192.168.4.1/";
-                if (strcmp(qr_payload, cached_qr_str) != 0) {
-                    strncpy(cached_qr_str, qr_payload, qr_len - 1);
-                    cached_qr_str[qr_len - 1] = '\0';
-                    qr_cache.fillScreen(TFT_WHITE);
-                    qr_cache.qrcode(qr_payload, 5, 5, 100, 3);
-                }
-
-                canvas.fillRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BG_SURFACE);
-                canvas.drawRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
-                qr_cache.pushSprite(&canvas, 70, 42);
-
-                canvas.setFont(&fonts::efontCN_12);
-                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-                canvas.drawString("2. Обери мережу в браузері", 120, 154);
-
-                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("http://192.168.4.1", 120, 172);
-
-                canvas.fillRoundRect(24, 188, 80, 24, 12, HallmarkTheme::BG_SURFACE);
-                canvas.drawRoundRect(24, 188, 80, 24, 12, HallmarkTheme::BORDER_HAIRLINE);
-                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("◄ НАЗАД", 64, 200);
-
-                canvas.fillRoundRect(136, 188, 80, 24, 12, HallmarkTheme::BG_SURFACE);
-                canvas.drawRoundRect(136, 188, 80, 24, 12, HallmarkTheme::ACCENT_COOL);
-                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-                canvas.drawString("ДАЛІ ►", 176, 200);
-                break;
-            }
-
-            // Крок 4: Hellcat Telegram Bot (@SmartLampEdlerAGBot)
+            // Крок 1: Hellcat Telegram Bot QR з deep-link claim (@SmartLampEdlerAGBot?start=c_<claim_secret>)
             case OnboardingStep::WIZ_STEP_TG_BOT: {
                 canvas.setFont(&fonts::efontCN_12);
                 canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
-                canvas.drawString("HELLCAT TELEGRAM CONTROL", 120, 22);
+                canvas.drawString("КРОК 1/2 · TELEGRAM-БОТ", 120, 22);
 
-                const char* qr_payload = "https://t.me/SmartLampEdlerAGBot";
+                char qr_payload[160];
+                if (strlen(state.claim_secret) >= 4) {
+                    snprintf(qr_payload, sizeof(qr_payload), "https://t.me/SmartLampEdlerAGBot?start=c_%s", state.claim_secret);
+                } else {
+                    snprintf(qr_payload, sizeof(qr_payload), "https://t.me/SmartLampEdlerAGBot");
+                }
+
                 if (strcmp(qr_payload, cached_qr_str) != 0) {
                     strncpy(cached_qr_str, qr_payload, qr_len - 1);
                     cached_qr_str[qr_len - 1] = '\0';
@@ -240,15 +176,15 @@ namespace ScreenRenderer {
 
                 canvas.setFont(&fonts::efontCN_12);
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-                canvas.drawString("@SmartLampEdlerAGBot", 120, 148);
+                canvas.drawString("1. Скануй QR камерою", 120, 148);
 
                 canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("Скануй для керування лампою", 120, 166);
+                canvas.drawString("Бот допоможе з налаштуванням", 120, 166);
 
                 canvas.fillRoundRect(24, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
                 canvas.drawRoundRect(24, 186, 88, 26, 13, HallmarkTheme::BORDER_HAIRLINE);
                 canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("◄ ПРОПУСТИТИ", 68, 199);
+                canvas.drawString("◄ НАЗАД", 68, 199);
 
                 canvas.fillRoundRect(128, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
                 canvas.drawRoundRect(128, 186, 88, 26, 13, HallmarkTheme::ACCENT_AMBER);
@@ -257,54 +193,13 @@ namespace ScreenRenderer {
                 break;
             }
 
-            // Крок 5: Пропозиція підключення Spotify
-            case OnboardingStep::WIZ_STEP_SPOTIFY_ASK: {
+            // Крок 2: Точка доступу лампи для підключення до домашнього Wi-Fi
+            case OnboardingStep::WIZ_STEP_WIFI_AP: {
                 canvas.setFont(&fonts::efontCN_12);
-                canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
-                canvas.drawString("КРОК 3/3 · МУЗИКА SPOTIFY", 120, 28);
+                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
+                canvas.drawString("КРОК 2/2 · ДОМАШНІЙ WI-FI", 120, 22);
 
-                // Вінілова платівка
-                canvas.fillCircle(120, 86, 34, HallmarkTheme::BG_SURFACE);
-                canvas.drawCircle(120, 86, 34, HallmarkTheme::ACCENT_SUCCESS);
-                canvas.drawCircle(120, 86, 26, HallmarkTheme::BORDER_HAIRLINE);
-                canvas.drawCircle(120, 86, 18, HallmarkTheme::BORDER_HAIRLINE);
-                canvas.fillCircle(120, 86, 6, HallmarkTheme::ACCENT_WARM);
-
-                canvas.setFont(&fonts::efontCN_12);
-                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-                canvas.drawString("Підключити акаунт Spotify?", 120, 134);
-
-                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("Для вінілового плеєра та Ambi", 120, 154);
-
-                // Кнопки: Пізніше / Підключити
-                canvas.fillRoundRect(22, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
-                canvas.drawRoundRect(22, 186, 88, 26, 13, HallmarkTheme::BORDER_HAIRLINE);
-                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("◄ ПІЗНІШЕ", 66, 199);
-
-                canvas.fillRoundRect(128, 186, 92, 26, 13, HallmarkTheme::BG_SURFACE);
-                canvas.drawRoundRect(128, 186, 92, 26, 13, HallmarkTheme::ACCENT_SUCCESS);
-                canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
-                canvas.drawString("ПІДКЛЮЧИТИ ►", 174, 199);
-                break;
-            }
-
-            // Крок 5: QR-код для швидкого входу у Spotify
-            case OnboardingStep::WIZ_STEP_SPOTIFY_QR: {
-                canvas.setFont(&fonts::efontCN_12);
-                canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
-                canvas.drawString("ВХІД У SPOTIFY", 120, 24);
-
-                char qr_payload[160];
-                char or_url[128];
-                state.getOracleConfig(or_url, sizeof(or_url), nullptr, 0);
-                if (strlen(or_url) > 8) {
-                    snprintf(qr_payload, sizeof(qr_payload), "%s/api/v5/spotify/login_redirect", or_url);
-                } else {
-                    snprintf(qr_payload, sizeof(qr_payload), "http://192.168.4.1/api/v5/spotify/login_redirect");
-                }
-
+                const char* qr_payload = "WIFI:S:MagicBox-AP;T:nopass;;";
                 if (strcmp(qr_payload, cached_qr_str) != 0) {
                     strncpy(cached_qr_str, qr_payload, qr_len - 1);
                     cached_qr_str[qr_len - 1] = '\0';
@@ -312,49 +207,116 @@ namespace ScreenRenderer {
                     qr_cache.qrcode(qr_payload, 5, 5, 100, 3);
                 }
 
-                canvas.fillRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BG_SURFACE);
-                canvas.drawRoundRect(70, 42, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
-                qr_cache.pushSprite(&canvas, 70, 42);
+                canvas.fillRoundRect(70, 38, 100, 100, 8, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(70, 38, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
+                qr_cache.pushSprite(&canvas, 70, 38);
 
                 canvas.setFont(&fonts::efontCN_12);
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-                canvas.drawString("Скануй для входу в Spotify", 120, 154);
+                canvas.drawString("2. Обери домашній Wi-Fi", 120, 148);
 
                 canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("Очікування авторизації...", 120, 172);
+                canvas.drawString("SSID: MagicBox-AP (192.168.4.1)", 120, 166);
 
-                canvas.fillRoundRect(24, 188, 92, 24, 12, HallmarkTheme::BG_SURFACE);
-                canvas.drawRoundRect(24, 188, 92, 24, 12, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.fillRoundRect(24, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(24, 186, 88, 26, 13, HallmarkTheme::BORDER_HAIRLINE);
                 canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("◄ ПРОПУСТИТИ", 70, 200);
+                canvas.drawString("◄ НАЗАД", 68, 199);
+
+                canvas.fillRoundRect(128, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(128, 186, 88, 26, 13, HallmarkTheme::ACCENT_COOL);
+                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
+                canvas.drawString("ДАЛІ ►", 172, 199);
                 break;
             }
 
-            // Крок 6: Завершено
+            // Крок 3: Анімація з'єднання з домашнім Wi-Fi та хмарою
+            case OnboardingStep::WIZ_STEP_CONNECTING: {
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
+                canvas.drawString("ПІДКЛЮЧЕННЯ ДО ХМАРИ", 120, 24);
+
+                uint32_t phase = (millis() / 25) % 360;
+                canvas.drawCircle(120, 90, 36, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.drawArc(120, 90, 36, 33, phase, (phase + 120) % 360, HallmarkTheme::ACCENT_COOL);
+                canvas.fillCircle(120, 90, 24, HallmarkTheme::BG_SURFACE);
+
+                canvas.setFont(&fonts::FreeSansBold12pt7b);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString("...", 120, 88);
+
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+                canvas.drawString(state.wifi_connected ? "Wi-Fi підключено ✓" : "З'єднання з Wi-Fi...", 120, 142);
+
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("З'єднуюсь із сервером...", 120, 162);
+
+                canvas.fillRoundRect(24, 186, 88, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(24, 186, 88, 26, 13, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("◄ WI-FI", 68, 199);
+                break;
+            }
+
+            // Крок 4: Екран очікування налаштування в боті + живий чекліст su
+            case OnboardingStep::WIZ_STEP_WAITING_CHECKLIST: {
+                canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
+                canvas.drawString("ШКАТУЛКА ОНЛАЙН ✨", 120, 20);
+
+                // Картка чекліста
+                canvas.fillRoundRect(20, 34, 200, 142, 10, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(20, 34, 200, 142, 10, HallmarkTheme::BORDER_HAIRLINE);
+
+                uint8_t su = state.setup_bitmask;
+                bool s_wifi = (su & 0x01) || state.wifi_connected;
+                bool s_pair = (su & 0x02);
+                bool s_mood = (su & 0x04);
+                bool s_sp   = (su & 0x08) || state.sp_linked;
+                bool s_cal  = (su & 0x10) || state.cal_active;
+
+                auto drawItem = [&](int y, const char* name, bool done) {
+                    canvas.setFont(&fonts::efontCN_12);
+                    canvas.setTextColor(done ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::TEXT_SECONDARY);
+                    canvas.drawString(done ? "✓" : "○", 36, y);
+                    canvas.setTextColor(done ? HallmarkTheme::TEXT_PRIMARY : HallmarkTheme::TEXT_SECONDARY);
+                    canvas.setTextDatum(textdatum_t::middle_left);
+                    canvas.drawString(name, 50, y);
+                    canvas.setTextDatum(textdatum_t::middle_center);
+                };
+
+                drawItem(50,  "Wi-Fi зв'язок", s_wifi);
+                drawItem(74,  "Прив'язка бота", s_pair);
+                drawItem(98,  "Атмосфера лампи", s_mood);
+                drawItem(122, "Музика Spotify", s_sp);
+                drawItem(146, "Розклад & Календар", s_cal);
+
+                canvas.fillRoundRect(128, 186, 92, 26, 13, HallmarkTheme::BG_SURFACE);
+                canvas.drawRoundRect(128, 186, 92, 26, 13, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawString("ПІЗНІШЕ ►", 174, 199);
+                break;
+            }
+
+            // Крок 5: Завершено! Перехід на робочий стіл
             case OnboardingStep::WIZ_STEP_DONE: {
                 canvas.drawArc(120, 120, 116, 112, 0, 360, HallmarkTheme::ACCENT_SUCCESS);
 
                 canvas.setFont(&fonts::efontCN_16_b);
                 canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
-                canvas.drawString("ВІТАЮ!", 120, 78);
+                canvas.drawString("ВІТАЮ! ✨", 120, 78);
 
                 canvas.setFont(&fonts::efontCN_14);
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-                canvas.drawString("ВСЕ НАЛАШТОВАНО", 120, 106);
-
-                if (state.sp_linked) {
-                    canvas.setFont(&fonts::efontCN_12);
-                    canvas.setTextColor(HallmarkTheme::ACCENT_SUCCESS);
-                    canvas.drawString("SPOTIFY ПІДКЛЮЧЕНО ✓", 120, 134);
-                } else {
-                    canvas.setFont(&fonts::efontCN_12);
-                    canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-                    canvas.drawString("Ready to Shine ✨", 120, 134);
-                }
+                canvas.drawString("ШКАТУЛКА ГОТОВА", 120, 106);
 
                 canvas.setFont(&fonts::efontCN_12);
+                canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
+                canvas.drawString("Приємного користування", 120, 134);
+
                 canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawString("Шкатулка готова до роботи", 120, 160);
+                canvas.drawString("Запуск годинника...", 120, 160);
 
                 canvas.fillRoundRect(136, 188, 80, 24, 12, HallmarkTheme::BG_SURFACE);
                 canvas.drawRoundRect(136, 188, 80, 24, 12, HallmarkTheme::ACCENT_SUCCESS);

@@ -37,6 +37,51 @@ public:
     void setOnboarded(bool val) {
         if (prefs.begin("box_state", false)) {
             prefs.putBool("onboarded", val);
+            if (val) prefs.remove("wiz_step");
+            prefs.end();
+        }
+    }
+
+    uint8_t getOnboardingStep() {
+        if (prefs.begin("box_state", true)) {
+            uint8_t s = prefs.getUChar("wiz_step", 0);
+            prefs.end();
+            return s;
+        }
+        return 0;
+    }
+
+    void setOnboardingStep(uint8_t step) {
+        if (prefs.begin("box_state", false)) {
+            prefs.putUChar("wiz_step", step);
+            prefs.end();
+        }
+    }
+
+    String getOrCreateClaimSecret() {
+        if (prefs.begin("box_state", false)) {
+            String secret = prefs.getString("claim_secret", "");
+            if (secret.length() < 8) {
+                static const char chars[] = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz";
+                char buf[13];
+                for (int i = 0; i < 12; i++) {
+                    buf[i] = chars[esp_random() % (sizeof(chars) - 1)];
+                }
+                buf[12] = '\0';
+                secret = String(buf);
+                prefs.putString("claim_secret", secret);
+            }
+            prefs.end();
+            return secret;
+        }
+        return "MAGICBOXDEMO";
+    }
+
+    void resetClaimSecret() {
+        if (prefs.begin("box_state", false)) {
+            prefs.remove("claim_secret");
+            prefs.remove("wiz_step");
+            prefs.putBool("onboarded", false);
             prefs.end();
         }
     }
@@ -115,6 +160,17 @@ public:
         state.onboarded        = isOnboarded();
         state.saver_crc        = getSaverCrc();
         state.saver_show_clock = getSaverShowClock();
+
+        String s = getOrCreateClaimSecret();
+        strncpy(state.claim_secret, s.c_str(), sizeof(state.claim_secret) - 1);
+        state.claim_secret[sizeof(state.claim_secret) - 1] = '\0';
+
+        if (!state.onboarded) {
+            uint8_t step = getOnboardingStep();
+            if (step <= (uint8_t)OnboardingStep::WIZ_STEP_DONE) {
+                state.onboarding_step = (OnboardingStep)step;
+            }
+        }
 
         if (prefs.begin("box_state", false)) {
             if (prefs.isKey("l_mode")) state.light_mode     = prefs.getUChar("l_mode", 0) % TOTAL_LIGHT_MODES;

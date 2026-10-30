@@ -1218,12 +1218,14 @@ const MOOD_TO_MODE = {
   sakura: 5,     // 🌸 Сакура Неон
   ocean: 7,      // 🌊 Океанський бриз
   nordic: 6,     // 🌌 Північне сяйво
-  chernobyl: 8   // ⚡ Кібер-комета (Смарагдове сяйво)
+  chornobyl: 8,  // ⚡ Кібер-комета (Смарагдове сяйво)
+  chernobyl: 8
 };
 
 function selectMoodTheme(mood, autoSyncLamp = true) {
+  if (mood === 'chernobyl') mood = 'chornobyl';
   if (!MOOD_TO_MODE.hasOwnProperty(mood)) mood = 'cozy';
-  const allMoods = ['cozy', 'sakura', 'ocean', 'nordic', 'chernobyl'];
+  const allMoods = ['cozy', 'sakura', 'ocean', 'nordic', 'chornobyl', 'chernobyl'];
   allMoods.forEach(m => {
     document.body.classList.remove('theme-' + m);
     const btn = document.getElementById('moodBtn-' + m);
@@ -1320,6 +1322,7 @@ function loadOnboardingState() {
         sakura: '🌸 Сакура',
         ocean: '🌊 Океан',
         nordic: '❄️ Північ',
+        chornobyl: '☢️ Чорнобиль',
         chernobyl: '☢️ Чорнобиль'
       };
       const curMood = d.theme_mood || 'cozy';

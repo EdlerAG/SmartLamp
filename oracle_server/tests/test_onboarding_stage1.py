@@ -147,16 +147,16 @@ class TestOnboardingStage1(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(row)
 
-    def test_07_chernobyl_mood_theme(self):
-        """Перевірка вибору атмосфери 'chernobyl' та оновлення bitmask."""
-        res = self.client.post("/api/v5/setup/mood", json={"mood": "chernobyl"}, headers=self.admin_headers)
+    def test_07_chornobyl_mood_theme(self):
+        """Перевірка вибору атмосфери 'chornobyl' та оновлення bitmask."""
+        res = self.client.post("/api/v5/setup/mood", json={"mood": "chornobyl"}, headers=self.admin_headers)
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json().get("mood"), "chernobyl")
+        self.assertEqual(res.json().get("mood"), "chornobyl")
 
         state_res = self.client.get("/api/v5/setup/state", headers=self.admin_headers)
         self.assertEqual(state_res.status_code, 200)
         data = state_res.json()
-        self.assertEqual(data["theme_mood"], "chernobyl")
+        self.assertEqual(data["theme_mood"], "chornobyl")
         self.assertEqual(data["steps"]["mood"]["status"], "done")
 
 

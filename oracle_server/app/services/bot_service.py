@@ -395,7 +395,7 @@ class TelegramBotService:
                 [{"text": "🌸 Сакура (Пастельний рожевий)", "callback_data": "setup_mood:sakura"}],
                 [{"text": "🌊 Океан (Глибокий бірюзовий)", "callback_data": "setup_mood:ocean"}],
                 [{"text": "❄️ Північ (Арктичне сяйво)", "callback_data": "setup_mood:nordic"}],
-                [{"text": "☢️ Чорнобиль (Смарагдове сяйво)", "callback_data": "setup_mood:chernobyl"}],
+                [{"text": "☢️ Чорнобиль (Смарагдове сяйво)", "callback_data": "setup_mood:chornobyl"}],
             ]
         }
         await self._api("sendMessage", {
@@ -1160,7 +1160,7 @@ class TelegramBotService:
         elif data.startswith("setup_mood:"):
             mood = data.split(":")[1].strip()
             saved_mood = setup_service.set_mood(mood)
-            mood_mode_map = {"cozy": 0, "sakura": 5, "ocean": 7, "nordic": 6, "chernobyl": 8}
+            mood_mode_map = {"cozy": 0, "sakura": 5, "ocean": 7, "nordic": 6, "chornobyl": 8, "chernobyl": 8}
             mode_idx = mood_mode_map.get(saved_mood, 0)
             state_service.enqueue_raw({"set_mode": mode_idx})
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Атмосферу {saved_mood} обрано! ✨"})

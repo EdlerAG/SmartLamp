@@ -15,6 +15,8 @@ struct AppState {
     volatile OnboardingStep onboarding_step     = OnboardingStep::WIZ_STEP_WELCOME_SOUND;
     volatile uint32_t      onboarding_ready_ms  = 0;
     volatile uint32_t      diag_opened_ms       = 0;
+    char                   claim_secret[16]     = "";
+    volatile uint8_t       setup_bitmask        = 0;
 
     // Кліматичні дані + тренд барометра
     volatile float temperature   = 22.0f;

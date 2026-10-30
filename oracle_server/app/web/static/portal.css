@@ -450,6 +450,7 @@ body.theme-nordic {
   --border-focus: #818cf8;
   --accent-cool: #818cf8;
 }
+body.theme-chornobyl,
 body.theme-chernobyl {
   --bg-primary: #030a06;
   --bg-elevated: #07170e;
@@ -500,6 +501,7 @@ body.theme-nordic .mood-pill.active {
   background: rgba(129, 140, 248, 0.18);
   box-shadow: 0 0 12px rgba(129, 140, 248, 0.3);
 }
+body.theme-chornobyl .mood-pill.active,
 body.theme-chernobyl .mood-pill.active {
   background: rgba(16, 185, 129, 0.2);
   box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);

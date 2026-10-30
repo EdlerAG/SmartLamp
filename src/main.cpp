@@ -58,30 +58,32 @@ void handleOnboardingButton(EventType ev_type) {
                 appState.audio_muted = true;
                 appState.audio_volume = 0;
                 storageService.saveAudioSettings(0, true, appState.touch_beep_enabled);
-                appState.onboarding_step = appState.wifi_connected
-                    ? OnboardingStep::WIZ_STEP_TG_BOT
-                    : OnboardingStep::WIZ_STEP_WIFI_AP;
-                break;
-
-            case OnboardingStep::WIZ_STEP_WIFI_AP:
-                // Пропустити підключення точки доступу -> показуємо TG Bot
                 appState.onboarding_step = OnboardingStep::WIZ_STEP_TG_BOT;
-                break;
-
-            case OnboardingStep::WIZ_STEP_WIFI_PORTAL:
-                // Повернутися до QR-коду AP
-                appState.onboarding_step = OnboardingStep::WIZ_STEP_WIFI_AP;
+                storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_TG_BOT);
                 break;
 
             case OnboardingStep::WIZ_STEP_TG_BOT:
-                // Пропустити TG Bot -> переходимо до Spotify або Done
-                appState.onboarding_step = appState.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK;
+                // Повернутися до вибору звуку
+                appState.onboarding_step = OnboardingStep::WIZ_STEP_WELCOME_SOUND;
+                storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_WELCOME_SOUND);
                 break;
 
-            case OnboardingStep::WIZ_STEP_SPOTIFY_ASK:
-            case OnboardingStep::WIZ_STEP_SPOTIFY_QR:
-                // Пропустити налаштування Spotify
+            case OnboardingStep::WIZ_STEP_WIFI_AP:
+                // Повернутися до QR-коду бота
+                appState.onboarding_step = OnboardingStep::WIZ_STEP_TG_BOT;
+                storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_TG_BOT);
+                break;
+
+            case OnboardingStep::WIZ_STEP_CONNECTING:
+                // Повернутися до вибору Wi-Fi
+                appState.onboarding_step = OnboardingStep::WIZ_STEP_WIFI_AP;
+                storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_WIFI_AP);
+                break;
+
+            case OnboardingStep::WIZ_STEP_WAITING_CHECKLIST:
+                // Пропустити очікування налаштування в боті -> перехід до завершення
                 appState.onboarding_step = OnboardingStep::WIZ_STEP_DONE;
+                storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_DONE);
                 break;
 
             case OnboardingStep::WIZ_STEP_DONE:
@@ -104,29 +106,35 @@ void handleOnboardingButton(EventType ev_type) {
                 appState.audio_volume = 12;
                 storageService.saveAudioSettings(12, false, appState.touch_beep_enabled);
                 audioService.playBootChord();
-                appState.onboarding_step = appState.wifi_connected
-                    ? OnboardingStep::WIZ_STEP_TG_BOT
-                    : OnboardingStep::WIZ_STEP_WIFI_AP;
-                break;
-
-            case OnboardingStep::WIZ_STEP_WIFI_AP:
-                appState.onboarding_step = OnboardingStep::WIZ_STEP_WIFI_PORTAL;
-                break;
-
-            case OnboardingStep::WIZ_STEP_WIFI_PORTAL:
                 appState.onboarding_step = OnboardingStep::WIZ_STEP_TG_BOT;
+                storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_TG_BOT);
                 break;
 
             case OnboardingStep::WIZ_STEP_TG_BOT:
-                appState.onboarding_step = appState.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK;
+                // Перехід до підключення Wi-Fi
+                appState.onboarding_step = appState.wifi_connected
+                    ? OnboardingStep::WIZ_STEP_CONNECTING
+                    : OnboardingStep::WIZ_STEP_WIFI_AP;
+                storageService.setOnboardingStep((uint8_t)appState.onboarding_step);
                 break;
 
-            case OnboardingStep::WIZ_STEP_SPOTIFY_ASK:
-                appState.onboarding_step = OnboardingStep::WIZ_STEP_SPOTIFY_QR;
+            case OnboardingStep::WIZ_STEP_WIFI_AP:
+                if (appState.wifi_connected) {
+                    appState.onboarding_step = OnboardingStep::WIZ_STEP_CONNECTING;
+                    storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_CONNECTING);
+                }
                 break;
 
-            case OnboardingStep::WIZ_STEP_SPOTIFY_QR:
+            case OnboardingStep::WIZ_STEP_CONNECTING:
+                if (appState.oracle_online) {
+                    appState.onboarding_step = OnboardingStep::WIZ_STEP_WAITING_CHECKLIST;
+                    storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_WAITING_CHECKLIST);
+                }
+                break;
+
+            case OnboardingStep::WIZ_STEP_WAITING_CHECKLIST:
                 appState.onboarding_step = OnboardingStep::WIZ_STEP_DONE;
+                storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_DONE);
                 break;
 
             case OnboardingStep::WIZ_STEP_DONE:
@@ -144,9 +152,6 @@ void handleOnboardingButton(EventType ev_type) {
     if (ev_type == EventType::BTN_TOP_SHORT) {
         if (appState.onboarding_step == OnboardingStep::WIZ_STEP_WELCOME_SOUND) {
             audioService.playBootChord();
-        } else if (appState.onboarding_step == OnboardingStep::WIZ_STEP_TG_BOT) {
-            appState.onboarding_step = appState.sp_linked ? OnboardingStep::WIZ_STEP_DONE : OnboardingStep::WIZ_STEP_SPOTIFY_ASK;
-            appState.ui_force_dirty = true;
         }
         appState.registerActivity();
     }

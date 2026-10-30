@@ -451,6 +451,21 @@ private:
         state.oracle_manages_bot  = doc["bot_managed"] | false;
         state.has_more_cloud_cmds = doc["has_more"] | false;
 
+        // Майстер налаштування Onboarding (su бітмаска та mood атмосфера)
+        if (doc["su"].is<uint8_t>()) {
+            state.setup_bitmask = doc["su"].as<uint8_t>();
+        }
+        if (doc["mood"].is<const char*>()) {
+            const char* m = doc["mood"].as<const char*>();
+            if (m && m[0] != '\0') {
+                if (strcmp(m, "cozy") == 0) state.light_mode = MODE_WARM_COZY;
+                else if (strcmp(m, "sakura") == 0) state.light_mode = MODE_SAKURA_NEON;
+                else if (strcmp(m, "ocean") == 0) state.light_mode = MODE_OCEAN_BREEZE;
+                else if (strcmp(m, "nordic") == 0) state.light_mode = MODE_AURORA_WAVE;
+                else if (strcmp(m, "chornobyl") == 0 || strcmp(m, "chernobyl") == 0) state.light_mode = MODE_CYBER_RUNNER;
+            }
+        }
+
         // Статус підключення Spotify від сервера (для майстра Onboarding та плеєра)
         if (doc["sp_linked"].is<bool>()) {
             state.sp_linked = doc["sp_linked"].as<bool>();

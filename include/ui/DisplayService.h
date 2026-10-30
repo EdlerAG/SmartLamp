@@ -169,7 +169,6 @@ public:
             } else {
                 if (!state.onboarded || state.ap_mode_active) {
                     state.sys_ui_state = SystemUiState::SYS_ONBOARDING_WIZARD;
-                    state.onboarding_step = OnboardingStep::WIZ_STEP_WELCOME_SOUND;
                 } else {
                     state.sys_ui_state = SystemUiState::SYS_NORMAL;
                 }
@@ -178,19 +177,21 @@ public:
         }
 
         if (state.sys_ui_state == SystemUiState::SYS_ONBOARDING_WIZARD) {
-            // Автоматичні переходи між кроками Onboarding під час підключення мереж
-            if (state.onboarding_step == OnboardingStep::WIZ_STEP_WIFI_AP && WiFi.softAPgetStationNum() > 0) {
-                state.onboarding_step = OnboardingStep::WIZ_STEP_WIFI_PORTAL;
+            // Автоматичні переходи між кроками Onboarding v5.5 Sovereign Edition
+            if (state.onboarding_step == OnboardingStep::WIZ_STEP_WIFI_AP && state.wifi_connected) {
+                state.onboarding_step = OnboardingStep::WIZ_STEP_CONNECTING;
                 state.ui_force_dirty = true;
             }
-            if (state.onboarding_step == OnboardingStep::WIZ_STEP_WIFI_PORTAL && state.wifi_connected) {
-                state.onboarding_step = OnboardingStep::WIZ_STEP_TG_BOT;
+            if (state.onboarding_step == OnboardingStep::WIZ_STEP_CONNECTING && state.oracle_online) {
+                state.onboarding_step = OnboardingStep::WIZ_STEP_WAITING_CHECKLIST;
                 state.ui_force_dirty = true;
             }
-            if (state.onboarding_step == OnboardingStep::WIZ_STEP_SPOTIFY_QR && state.sp_linked) {
-                state.onboarding_step = OnboardingStep::WIZ_STEP_DONE;
-                state.trig_boot_chord = true;
-                state.ui_force_dirty = true;
+            if (state.onboarding_step == OnboardingStep::WIZ_STEP_WAITING_CHECKLIST) {
+                if ((state.setup_bitmask & 0x07) == 0x07) {
+                    state.onboarding_step = OnboardingStep::WIZ_STEP_DONE;
+                    state.trig_boot_chord = true;
+                    state.ui_force_dirty = true;
+                }
             }
             if (state.onboarding_step == OnboardingStep::WIZ_STEP_DONE) {
                 if (state.onboarding_ready_ms == 0) {

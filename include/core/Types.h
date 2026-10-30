@@ -24,15 +24,14 @@ enum class SystemUiState : uint8_t {
     SYS_BIRTHDAY_CELEBRATE  // Святковий екран привітання Насті з Днем Народження (05.11 або ручний тригер)
 };
 
-// Покроковий сценарій першого налаштування (Onboarding Wizard v5.4 Hellcat Edition)
+// Покроковий сценарій першого налаштування (Onboarding Wizard v5.5 Sovereign Edition)
 enum class OnboardingStep : uint8_t {
-    WIZ_STEP_WELCOME_SOUND = 0, // Крок 1 — Привітання та вибір профілю звуку (Тиша / Зі звуком)
-    WIZ_STEP_WIFI_AP       = 1, // Крок 2 — Підключення телефону до точки доступу MagicBox-AP
-    WIZ_STEP_WIFI_PORTAL   = 2, // Крок 3 — Вибір домашньої Wi-Fi мережі у браузері
-    WIZ_STEP_TG_BOT        = 3, // Крок 4 — Hellcat Telegram Bot QR (@SmartLampEdlerAGBot)
-    WIZ_STEP_SPOTIFY_ASK   = 4, // Крок 5 — Пропозиція підключення Spotify для вінілового плеєра
-    WIZ_STEP_SPOTIFY_QR    = 5, // Крок 6 — Сканування QR для авторизації у Spotify (login_redirect)
-    WIZ_STEP_DONE          = 6  // Крок 7 — Завершення налаштування та перехід до роботи
+    WIZ_STEP_WELCOME_SOUND     = 0, // 0: Привітання та вибір профілю звуку (Тиша / Зі звуком)
+    WIZ_STEP_TG_BOT            = 1, // 1: QR Telegram-бота з deep-link claim (c_<claim_secret>)
+    WIZ_STEP_WIFI_AP           = 2, // 2: QR точки доступу MagicBox-AP (192.168.4.1)
+    WIZ_STEP_CONNECTING        = 3, // 3: Анімація з'єднання з Wi-Fi та хмарним сервером
+    WIZ_STEP_WAITING_CHECKLIST = 4, // 4: Очікування налаштування в боті + чекліст su
+    WIZ_STEP_DONE              = 5  // 5: Завершення налаштування («Готово ✨»)
 };
 
 // Рівень Б: Основні 5 вікон-заставок (перемикаються лівою кнопкою)

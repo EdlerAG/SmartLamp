@@ -188,6 +188,7 @@ public:
                  "\"sp_act\":%d,\"sp_playing\":%s,"
                  "\"heap\":%lu,\"psram_free\":%lu,"
                  "\"rst\":\"%s\","
+                 "\"claim\":\"%s\","
                  "\"alarm_off\":%s,"
                  "\"ack\":%s,\"ping\":%u,"
                  "\"ota\":%u,\"ws_rec\":%u}",
@@ -205,6 +206,7 @@ public:
                  (int)sp_act, state.spotify.playing ? "true" : "false",
                  (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
                  state.reset_reason,
+                 state.claim_secret,
                  alarm_off_flag ? "true" : "false",
                  ack_flag ? "true" : "false", ping_val,
                  state.ota_in_progress ? 1 : 0, (unsigned int)state.ws_reconnect_cnt);
