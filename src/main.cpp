@@ -365,6 +365,7 @@ void loop() {
     // Рівень 2: Динамічний CPU Frequency Scaling (80 МГц у спокої, 240 МГц при навантаженні)
     static uint32_t current_cpu_mhz = 240;
     bool high_freq_needed = appState.ota_in_progress || appState.ap_mode_active ||
+                            appState.tls_in_flight || appState.spotify_vinyl_needed ||
                             audioService.isPlaying() || ledService.isAnimating() ||
                             displayService.isHighFpsNeeded() ||
                             (millis() - appState.last_user_activity_ms < 15000);
