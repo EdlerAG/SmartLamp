@@ -1733,7 +1733,7 @@ class TelegramBotService:
             return
 
         if text.startswith("/setup"):
-            state = setup_service.get_setup_payload()
+            state = setup_service.get_full_status()
             mood = state.get("theme_mood", "cozy")
             mood_names = {
                 "cozy": "🕯️ Затишок",
