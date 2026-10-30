@@ -156,7 +156,8 @@ class TestOnboardingStage1(unittest.TestCase):
         state_res = self.client.get("/api/v5/setup/state", headers=self.admin_headers)
         self.assertEqual(state_res.status_code, 200)
         data = state_res.json()
-        self.assertEqual(data["steps"]["mood"]["mood"], "chernobyl")
+        self.assertEqual(data["theme_mood"], "chernobyl")
+        self.assertEqual(data["steps"]["mood"]["status"], "done")
 
 
 if __name__ == "__main__":

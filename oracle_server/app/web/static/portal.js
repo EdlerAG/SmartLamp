@@ -1280,10 +1280,17 @@ function loadOnboardingState() {
     .then(d => {
       if (!d || !d.steps) return;
       const s = d.steps;
+      
+      const stepKeys = ['wifi', 'pairing', 'mood', 'spotify', 'calendar', 'quiet_hours'];
+      let doneCount = 0;
+      stepKeys.forEach(k => {
+        if (s[k] && s[k].status === 'done') doneCount++;
+      });
+
       const badge = document.getElementById('onboardProgressBadge');
       if (badge) {
-        badge.innerText = `${d.completed_count || 0}/6 Готово`;
-        if (d.completed_count === 6) {
+        badge.innerText = `${doneCount}/6 Готово`;
+        if (doneCount === 6) {
           badge.style.background = 'rgba(16,185,129,0.25)';
           badge.style.color = 'var(--accent-success)';
         }
@@ -1305,8 +1312,8 @@ function loadOnboardingState() {
         }
       }
 
-      updateStepUI('step-wifi', Boolean(s.wifi && s.wifi.done), (s.wifi && s.wifi.done) ? 'Підключено' : 'Очікування...');
-      updateStepUI('step-pairing', Boolean(s.pairing && s.pairing.done), (s.pairing && s.pairing.done) ? 'Прив\'язано' : 'Очікування...');
+      updateStepUI('step-wifi', Boolean(s.wifi && s.wifi.status === 'done'), (s.wifi && s.wifi.status === 'done') ? 'Підключено' : 'Очікування...');
+      updateStepUI('step-pairing', Boolean(d.claimed || (s.pairing && s.pairing.status === 'done')), (d.claimed || (s.pairing && s.pairing.status === 'done')) ? 'Прив\'язано' : 'Очікування...');
 
       const moodNames = {
         cozy: '🕯️ Затишок',
@@ -1315,17 +1322,21 @@ function loadOnboardingState() {
         nordic: '❄️ Північ',
         chernobyl: '☢️ Чорнобиль'
       };
-      const curMood = (s.mood && s.mood.mood) || 'cozy';
-      updateStepUI('step-mood', Boolean(s.mood && s.mood.done), moodNames[curMood] || curMood);
+      const curMood = d.theme_mood || 'cozy';
+      updateStepUI('step-mood', Boolean(s.mood && s.mood.status === 'done'), moodNames[curMood] || curMood);
 
-      const spText = (s.spotify && s.spotify.done) ? (s.spotify.skipped ? 'Пропущено' : 'Підключено') : 'Не підключено';
-      updateStepUI('step-spotify', Boolean(s.spotify && s.spotify.done), spText);
+      const spDone = Boolean(d.spotify_linked || (s.spotify && s.spotify.status === 'done'));
+      const spSkipped = Boolean(s.spotify && s.spotify.status === 'skipped');
+      const spText = spDone ? 'Підключено' : (spSkipped ? 'Пропущено' : 'Не підключено');
+      updateStepUI('step-spotify', spDone || spSkipped, spText);
 
-      const calText = (s.calendar && s.calendar.done) ? (s.calendar.skipped ? 'Пропущено' : 'Підключено') : 'Не підключено';
-      updateStepUI('step-calendar', Boolean(s.calendar && s.calendar.done), calText);
+      const calDone = Boolean(d.calendar_linked || (s.calendar && s.calendar.status === 'done'));
+      const calSkipped = Boolean(s.calendar && s.calendar.status === 'skipped');
+      const calText = calDone ? 'Підключено' : (calSkipped ? 'Пропущено' : 'Не підключено');
+      updateStepUI('step-calendar', calDone || calSkipped, calText);
 
-      const qhText = (s.quiet_hours && s.quiet_hours.start) ? `${s.quiet_hours.start} - ${s.quiet_hours.end}` : '22:00 - 08:00';
-      updateStepUI('step-quiet_hours', Boolean(s.quiet_hours && s.quiet_hours.done), qhText);
+      const qhDone = Boolean(s.quiet_hours && s.quiet_hours.status === 'done');
+      updateStepUI('step-quiet_hours', qhDone, '22:00 - 08:00');
     })
     .catch(() => {});
 }
