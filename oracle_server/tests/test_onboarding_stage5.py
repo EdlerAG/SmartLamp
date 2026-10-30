@@ -62,34 +62,34 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
         state_service.last_seen = time.time()
         self.assertTrue(state_service.is_online())
 
-        with patch.object(routine_service, "is_quiet_hours_now", return_value=True):
-            sent = await reminder_service.check_and_send_reminders(force_check=False)
-            self.assertFalse(sent)
-            self.assertEqual(len(self.sent_messages), 0)
+        routine_service.set_quiet_hours(True, "00:00", "23:59")
+        sent = await reminder_service.check_and_send_reminders(force_check=False)
+        self.assertFalse(sent)
+        self.assertEqual(len(self.sent_messages), 0)
 
     async def test_03_send_spotify_reminder_and_record_ts(self):
         """Відправка нагадування про Spotify та фіксація timestamp і лічильника."""
         state_service.last_seen = time.time()
         self.assertTrue(state_service.is_online())
+        routine_service.set_quiet_hours(False)
 
-        with patch.object(routine_service, "is_quiet_hours_now", return_value=False):
-            sent = await reminder_service.check_and_send_reminders(force_check=True)
-            self.assertTrue(sent)
-            self.assertGreater(len(self.sent_messages), 0)
+        sent = await reminder_service.check_and_send_reminders(force_check=True)
+        self.assertTrue(sent)
+        self.assertGreater(len(self.sent_messages), 0)
 
-            # Перевіряємо, що збережено лічильник і timestamp
-            count = int(db_service.get_setting("reminder_count_spotify", 0))
-            self.assertEqual(count, 1)
+        # Перевіряємо, що збережено лічильник і timestamp
+        count = int(db_service.get_setting("reminder_count_spotify", 0))
+        self.assertEqual(count, 1)
 
-            # Друга спроба одразу має надіслати календар
-            sent2 = await reminder_service.check_and_send_reminders(force_check=True)
-            self.assertTrue(sent2)
-            cal_count = int(db_service.get_setting("reminder_count_calendar", 0))
-            self.assertEqual(cal_count, 1)
+        # Друга спроба одразу має надіслати календар
+        sent2 = await reminder_service.check_and_send_reminders(force_check=True)
+        self.assertTrue(sent2)
+        cal_count = int(db_service.get_setting("reminder_count_calendar", 0))
+        self.assertEqual(cal_count, 1)
 
-            # Третя спроба — обидва вже мають timestamp менше 24h тому
-            sent3 = await reminder_service.check_and_send_reminders(force_check=True)
-            self.assertFalse(sent3)
+        # Третя спроба — обидва вже мають timestamp менше 24h тому
+        sent3 = await reminder_service.check_and_send_reminders(force_check=True)
+        self.assertFalse(sent3)
 
     async def test_04_bot_reminder_callbacks(self):
         """Обробка кнопок [Пізніше] та [Більше не нагадувати]."""
@@ -100,7 +100,7 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
             "message": {"message_id": 100, "chat": {"id": 777000123}},
             "data": "reminder_later:spotify",
         }
-        await bot_service.handle_update({"update_id": 1, "callback_query": cb_later})
+        await bot_service._handle_callback(cb_later)
         ts = float(db_service.get_setting("reminder_ts_spotify", 0.0))
         self.assertGreater(ts, 0.0)
 
@@ -111,26 +111,30 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
             "message": {"message_id": 101, "chat": {"id": 777000123}},
             "data": "reminder_dismiss:spotify",
         }
-        await bot_service.handle_update({"update_id": 2, "callback_query": cb_dismiss})
+        await bot_service._handle_callback(cb_dismiss)
         st = db_service.get_setup_state().get("spotify", {}).get("status")
         self.assertEqual(st, "dismissed")
 
     async def test_05_bot_setup_and_reset_commands(self):
         """Перевірка команд /setup та /reset."""
         # /setup
-        upd_setup = {
-            "update_id": 3,
-            "message": {"message_id": 102, "chat": {"id": 777000123}, "text": "/setup"}
+        msg_setup = {
+            "message_id": 102,
+            "chat": {"id": 777000123},
+            "text": "/setup",
+            "from": {"id": 777000123}
         }
-        await bot_service.handle_update(upd_setup)
+        await bot_service._handle_message(msg_setup)
         self.assertGreater(len(self.sent_messages), 0)
 
         # /reset
-        upd_reset = {
-            "update_id": 4,
-            "message": {"message_id": 103, "chat": {"id": 777000123}, "text": "/reset"}
+        msg_reset = {
+            "message_id": 103,
+            "chat": {"id": 777000123},
+            "text": "/reset",
+            "from": {"id": 777000123}
         }
-        await bot_service.handle_update(upd_reset)
+        await bot_service._handle_message(msg_reset)
 
         # reset_act:accounts
         cb_reset_acc = {
@@ -139,7 +143,7 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
             "message": {"message_id": 104, "chat": {"id": 777000123}},
             "data": "reset_act:accounts",
         }
-        await bot_service.handle_update({"update_id": 5, "callback_query": cb_reset_acc})
+        await bot_service._handle_callback(cb_reset_acc)
         self.assertFalse(spotify_service.is_linked())
         self.assertFalse(google_calendar_service.is_linked())
 
