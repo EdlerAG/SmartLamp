@@ -140,14 +140,27 @@ async def box_websocket_endpoint(ws: WebSocket):
         return
 
     await realtime_hub.register_box_ws(ws)
+    await ws.send_text(orjson.dumps({"type": "hello", "v": 1, "ts": time.time()}).decode("utf-8"))
     try:
         while True:
             try:
-                raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=45.0)
+                raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=40.0)
             except asyncio.TimeoutError:
-                logger.debug("Box WebSocket heartbeat timeout (45s) - closing inactive socket")
-                break
+                # Активний Heartbeat Ping перед розривом зв'язку
+                try:
+                    await ws.send_text(orjson.dumps({"type": "ping", "v": 1, "ts": time.time()}).decode("utf-8"))
+                    raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=8.0)
+                except Exception:
+                    logger.debug("Box WebSocket heartbeat timeout - closing inactive socket")
+                    break
+
             data = orjson.loads(raw_msg)
+            msg_type = data.get("type")
+            if msg_type == "pong":
+                continue
+            if msg_type == "ping":
+                await ws.send_text(orjson.dumps({"type": "pong", "v": 1, "ts": time.time()}).decode("utf-8"))
+                continue
 
             if data.get("type") == "get_vinyl":
                 if os.path.exists(settings.SPOTIFY_VINYL_PATH):

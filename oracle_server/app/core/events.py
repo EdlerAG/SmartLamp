@@ -126,7 +126,9 @@ class RealtimeHub:
                             await self.broadcast_to_dashboards({"type": "spotify", "spotify": cur_st})
                     except Exception as poll_err:
                         logger.debug("Spotify poll error in realtime worker: %s", poll_err)
-                await asyncio.sleep(2.5)
+                # Адаптивний сон: 2.5с під час відтворення, 8.0с на паузі (економія CPU та лімітів Spotify API)
+                poll_delay = 2.5 if last_playing else 8.0
+                await asyncio.sleep(poll_delay)
         except asyncio.CancelledError:
             pass
         finally:

@@ -146,6 +146,13 @@ class DatabaseService:
                 created_at FLOAT NOT NULL
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pending_commands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cmd_json TEXT NOT NULL,
+                created_at FLOAT NOT NULL
+            );
+        """)
         # Створення високопродуктивних B-Tree індексів
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cal_start_ts ON calendar_events(start_ts);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_outages_disc ON power_outages(disconnected_at);")
@@ -153,6 +160,14 @@ class DatabaseService:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_climate_ts ON climate_history(ts);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_ts ON event_log(ts);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_cat ON event_log(category, ts);")
+
+        # Міграція: додаємо ws_rec та ota до box_health_history якщо вони відсутні
+        for col_name, col_type in (("ws_rec", "INTEGER DEFAULT 0"), ("ota", "INTEGER DEFAULT 0")):
+            try:
+                conn.execute(f"ALTER TABLE box_health_history ADD COLUMN {col_name} {col_type};")
+            except Exception:
+                pass
+
         conn.commit()
 
     # --- СЕСІЇ ТА АВТОРИЗАЦІЯ ---
@@ -589,15 +604,24 @@ class DatabaseService:
             return []
 
     # --- ЗДОРОВ'Я ПЛАТИ ТА АПАРАТНА ТЕЛЕМЕТРІЯ ---
-    def record_box_health(self, rssi: int, heap: int, psram: int, uptime: int, reset_reason: int = 0) -> None:
+    def record_box_health(
+        self,
+        rssi: int,
+        heap: int,
+        psram: int,
+        uptime: int,
+        reset_reason: int = 0,
+        ws_rec: int = 0,
+        ota: int = 0,
+    ) -> None:
         now_ts = int(time.time())
         cutoff = now_ts - (7 * 86400)
         try:
             conn = self._get_conn()
             conn.execute(
-                "INSERT OR REPLACE INTO box_health_history (ts, rssi, heap, psram, uptime, reset_reason) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (now_ts, int(rssi), int(heap), int(psram), int(uptime), int(reset_reason)),
+                "INSERT OR REPLACE INTO box_health_history (ts, rssi, heap, psram, uptime, reset_reason, ws_rec, ota) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (now_ts, int(rssi), int(heap), int(psram), int(uptime), int(reset_reason), int(ws_rec), int(ota)),
             )
             if now_ts % 7200 < 300:
                 conn.execute("DELETE FROM box_health_history WHERE ts < ?", (cutoff,))
@@ -609,7 +633,7 @@ class DatabaseService:
         cutoff = int(time.time()) - (hours * 3600)
         try:
             rows = self._get_conn().execute(
-                "SELECT ts, rssi, heap, psram, uptime, reset_reason "
+                "SELECT ts, rssi, heap, psram, uptime, reset_reason, COALESCE(ws_rec, 0) as ws_rec, COALESCE(ota, 0) as ota "
                 "FROM box_health_history WHERE ts >= ? ORDER BY ts ASC",
                 (cutoff,),
             ).fetchall()
@@ -617,6 +641,44 @@ class DatabaseService:
         except Exception as e:
             logger.warning("get_box_health_series error: %s", e)
             return []
+
+    # --- ПЕРСИСТЕНТНА ЧЕРГА КОМАНД (PERSISTENT COMMAND QUEUE) ---
+    def save_pending_command(self, cmd: Dict[str, Any]) -> int:
+        try:
+            conn = self._get_conn()
+            cur = conn.execute(
+                "INSERT INTO pending_commands (cmd_json, created_at) VALUES (?, ?)",
+                (orjson.dumps(cmd).decode("utf-8"), time.time()),
+            )
+            conn.commit()
+            return cur.lastrowid or 0
+        except Exception as e:
+            logger.warning("save_pending_command error: %s", e)
+            return 0
+
+    def load_pending_commands(self) -> List[Dict[str, Any]]:
+        try:
+            rows = self._get_conn().execute(
+                "SELECT cmd_json FROM pending_commands ORDER BY id ASC LIMIT 50"
+            ).fetchall()
+            cmds = []
+            for r in rows:
+                try:
+                    cmds.append(orjson.loads(r["cmd_json"]))
+                except Exception:
+                    pass
+            return cmds
+        except Exception as e:
+            logger.warning("load_pending_commands error: %s", e)
+            return []
+
+    def clear_pending_commands(self) -> None:
+        try:
+            conn = self._get_conn()
+            conn.execute("DELETE FROM pending_commands")
+            conn.commit()
+        except Exception as e:
+            logger.warning("clear_pending_commands error: %s", e)
 
     # --- ДОБОВА АГРЕГАЦІЯ ТА РОЛАПИ (ROLLUPS) ---
     def save_daily_rollup(self, date_str: str, data: Dict[str, Any]) -> None:

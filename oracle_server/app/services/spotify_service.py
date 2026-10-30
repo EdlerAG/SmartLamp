@@ -156,8 +156,8 @@ class SpotifyService:
                     db_service.set_setting("spotify_refresh_token", refresh_tok)
                 await self.fetch_current_playback(force=True)
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Spotify callback exchange error: %s", e)
         return False
 
     async def _ensure_access_token(self) -> Optional[str]:
@@ -199,8 +199,8 @@ class SpotifyService:
                 if new_refresh:
                     db_service.set_setting("spotify_refresh_token", new_refresh)
                 return self._access_token
-        except Exception:
-            pass
+        except Exception as refresh_err:
+            logger.warning("Spotify token refresh error: %s", refresh_err)
         return None
 
     async def player_action(self, action: str) -> bool:
@@ -255,10 +255,11 @@ class SpotifyService:
                     cur_st = self.get_cached_state()
                     realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
                     realtime_hub.emit_spotify_to_box(cur_st)
-                except Exception:
-                    pass
+                except Exception as emit_err:
+                    logger.debug("Spotify action broadcast error: %s", emit_err)
             return ok
-        except Exception:
+        except Exception as action_err:
+            logger.warning("Spotify player action HTTP error for '%s': %s", action, action_err)
             return False
 
     @staticmethod
@@ -306,8 +307,8 @@ class SpotifyService:
                     if peak > 0:
                         mean_c = np.clip(mean_c * (235.0 / peak), 0, 255)
                     ambi_rgb = [int(mean_c[0]), int(mean_c[1]), int(mean_c[2])]
-        except Exception:
-            pass
+        except Exception as color_err:
+            logger.debug("Spotify album color extraction fallback: %s", color_err)
 
         # 2. Малюємо вініловий обідок з концентричними доріжками (44 < dist <= 68)
         vinyl_mask = (dist > 44.0) & (dist <= 68.0)
@@ -376,8 +377,8 @@ class SpotifyService:
                         cur_st = self.get_cached_state()
                         realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
                         realtime_hub.emit_spotify_to_box(cur_st)
-                    except Exception:
-                        pass
+                    except Exception as emit_err:
+                        logger.debug("Spotify 204 pause state emit error: %s", emit_err)
                 return self.get_cached_state()
 
             if resp.status_code == 200:
@@ -447,8 +448,8 @@ class SpotifyService:
                     realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
                     if track_changed or (is_playing != prev_playing):
                         realtime_hub.emit_spotify_to_box(cur_st)
-                except Exception:
-                    pass
+                except Exception as emit_err:
+                    logger.debug("Spotify state emit error: %s", emit_err)
 
                 return self.get_cached_state()
         except Exception as e:
@@ -473,8 +474,8 @@ class SpotifyService:
         try:
             from app.core.events import realtime_hub
             dash_active = len(realtime_hub._dashboard_clients) > 0
-        except Exception:
-            pass
+        except Exception as check_err:
+            logger.debug("Failed checking active dashboard count: %s", check_err)
 
         if not hub_active and not ambi_active and not dash_active:
             return self.get_cached_state()
@@ -512,7 +513,8 @@ class SpotifyService:
                 self._current_lyrics = parsed
             else:
                 self._current_lyrics = []
-        except Exception:
+        except Exception as lrc_err:
+            logger.debug("Lyrics fetch error from lrclib: %s", lrc_err)
             self._current_lyrics = []
 
     def _get_active_lyric(self, progress_ms: int) -> str:

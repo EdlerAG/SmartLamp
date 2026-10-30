@@ -65,6 +65,72 @@ class TestV56Core(unittest.TestCase):
         self.assertIn("1047202957", settings.ALLOWED_ADMIN_IDS)
         self.assertIn("1294097414", settings.ALLOWED_USER_IDS)
 
+    def test_persistent_command_queue(self):
+        db_service.clear_pending_commands()
+        self.assertEqual(len(db_service.load_pending_commands()), 0)
+
+        cmd1 = {"set_mode": 3, "set_brt": "2"}
+        cmd2 = {"msg": "Тест персистентності"}
+        db_service.save_pending_command(cmd1)
+        db_service.save_pending_command(cmd2)
+
+        loaded = db_service.load_pending_commands()
+        self.assertEqual(len(loaded), 2)
+        self.assertEqual(loaded[0].get("set_mode"), 3)
+        self.assertEqual(loaded[1].get("msg"), "Тест персистентності")
+
+        db_service.clear_pending_commands()
+        self.assertEqual(len(db_service.load_pending_commands()), 0)
+
+    def test_box_health_ws_rec_and_ota(self):
+        db_service.record_box_health(
+            rssi=-62,
+            heap=240000,
+            psram=4100000,
+            uptime=7200,
+            reset_reason=1,
+            ws_rec=5,
+            ota=1,
+        )
+        series = db_service.get_box_health_series(hours=1)
+        self.assertGreaterEqual(len(series), 1)
+        latest = series[-1]
+        self.assertIn("ws_rec", latest)
+        self.assertIn("ota", latest)
+        self.assertEqual(latest["ws_rec"], 5)
+        self.assertEqual(latest["ota"], 1)
+
+    def test_metrics_and_ws_ticket(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        from app.core.config import settings
+
+        client = TestClient(app)
+        headers = {"X-Device-Key": settings.API_KEY}
+
+        # 1. WS-Ticket
+        t_resp = client.post("/api/v5/auth/ws-ticket", headers=headers)
+        self.assertEqual(t_resp.status_code, 200)
+        t_data = t_resp.json()
+        self.assertTrue(t_data.get("ok"))
+        ticket = t_data.get("ticket")
+        self.assertTrue(bool(ticket))
+        # Validate ticket session
+        role = db_service.validate_session(ticket)
+        self.assertEqual(role, "device")
+        db_service.delete_session(ticket)
+
+        # 2. Metrics endpoint
+        m_resp = client.get("/api/v5/metrics", headers=headers)
+        self.assertEqual(m_resp.status_code, 200)
+        m_data = m_resp.json()
+        self.assertTrue(m_data.get("ok"))
+        self.assertIn("realtime", m_data)
+        self.assertIn("box", m_data)
+        self.assertIn("system", m_data)
+        self.assertIn("ws_reconnects", m_data["box"])
+        self.assertIn("ota_in_progress", m_data["box"])
+
 
 if __name__ == "__main__":
     unittest.main()

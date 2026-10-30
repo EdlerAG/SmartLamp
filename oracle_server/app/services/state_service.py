@@ -38,6 +38,7 @@ class StateService:
         "ai_persona_name",
         "ai_system_prompt",
         "ai_temperature",
+        "boot_time",
     )
 
     DEFAULT_AI_PROMPT = (
@@ -47,12 +48,15 @@ class StateService:
     )
 
     def __init__(self) -> None:
+        self.boot_time: float = time.time()
         self.last_seen: float = 0.0
         self.latest_telemetry: Dict[str, Any] = {}
         self.last_history_sample: float = 0.0
         self.last_health_sample: float = 0.0
         self.last_known_rst: str = ""
-        self.command_queue: Deque[Dict[str, Any]] = deque(maxlen=32)
+        # Відновлення персистентної черги команд після перезавантаження сервера
+        loaded_cmds = db_service.load_pending_commands()
+        self.command_queue: Deque[Dict[str, Any]] = deque(loaded_cmds, maxlen=32)
 
         self.admin_id: str = db_service.get_setting("admin_id", settings.TG_ADMIN_ID) or settings.TG_ADMIN_ID
         self.girl_id: str = db_service.get_setting("girl_id", settings.TG_GIRL_ID) or settings.TG_GIRL_ID
@@ -113,6 +117,8 @@ class StateService:
                 psram=payload.psram_free,
                 uptime=0,
                 reset_reason=0,
+                ws_rec=payload.ws_rec,
+                ota=payload.ota,
             )
 
         # Аудит перезавантажень плати (ESP32 Reset Reason)
@@ -164,6 +170,7 @@ class StateService:
                     return len(self.command_queue)
 
         self.command_queue.append(data)
+        db_service.save_pending_command(data)
         realtime_hub.notify_new_command()
         realtime_hub.emit_to_dashboards({"type": "command_queued", "pending_commands": len(self.command_queue)})
         # ⚡️ Миттєвий пуш на лампу через WebSocket, якщо вона на зв'язку (з бота, розкладу або API)
@@ -180,6 +187,12 @@ class StateService:
 
         while self.command_queue:
             cmd = dict(self.command_queue.popleft())
+            # Синхронізація збереженої черги в базі даних
+            db_service.clear_pending_commands()
+            if self.command_queue:
+                for rem in self.command_queue:
+                    db_service.save_pending_command(rem)
+
             created = cmd.get("created_at", now)
             ttl = cmd.get("ttl_sec", 86400.0)
 

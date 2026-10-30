@@ -941,6 +941,47 @@ async def get_system_health(_: str = Depends(verify_admin_access)):
     return {"ok": True, "report": maintenance_service.get_health_report()}
 
 
+@router.get("/api/v5/metrics")
+async def get_system_metrics(_: str = Depends(verify_access)):
+    """
+    Розширені системні метрики спостережуваності (Observability & Diagnostics):
+    - Realtime WS: активність підключення лампи, кількість підключених дашбордів
+    - Черга команд: кількість у персистентній черзі
+    - Апаратні ресурси: RSS, доступна оперативна пам'ять, swap, CPU load
+    - Телеметрія лампи: RSSI, реконекти, heap/psram ESP32
+    - Spotify: статус лінкування, відтворення
+    """
+    now = time.time()
+    last_seen_sec = round(now - state_service.last_seen, 1) if state_service.last_seen > 0 else None
+
+    return {
+        "ok": True,
+        "version": settings.VERSION,
+        "uptime_sec": round(now - state_service.boot_time, 1),
+        "realtime": {
+            "box_ws_connected": realtime_hub.is_box_ws_connected,
+            "dashboard_clients": len(realtime_hub._dashboard_clients),
+            "last_seen_sec_ago": last_seen_sec,
+            "is_online": state_service.is_online(),
+        },
+        "queue": {
+            "pending_count": len(state_service.command_queue),
+        },
+        "box": {
+            "rssi": state_service.latest_telemetry.get("rssi"),
+            "heap": state_service.latest_telemetry.get("heap"),
+            "psram_free": state_service.latest_telemetry.get("psram_free"),
+            "ws_reconnects": state_service.latest_telemetry.get("ws_rec", 0),
+            "ota_in_progress": state_service.latest_telemetry.get("ota", 0),
+        },
+        "spotify": {
+            "linked": spotify_service.is_linked(),
+            "playing": spotify_service.get_cached_state().get("playing", False),
+        },
+        "system": memory_guard.get_telemetry(),
+    }
+
+
 @router.post("/api/v5/admin/backup")
 async def trigger_backup_now(_: str = Depends(verify_admin_access)):
     ok = await maintenance_service.send_weekly_backup_to_admin()
