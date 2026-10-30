@@ -266,9 +266,7 @@ async def dashboard_websocket(ws: WebSocket):
         if secrets.compare_digest(token, settings.API_KEY) or secrets.compare_digest(token, settings.DASHBOARD_PASSWORD):
             role = "admin"
         else:
-            session = db_service.validate_session(token)
-            if session:
-                role = session.get("role", "admin")
+            role = db_service.validate_session(token)
 
     if not role:
         await ws.close(code=1008)
@@ -348,10 +346,8 @@ async def dashboard_websocket(ws: WebSocket):
                 dur = int(data.get("duration_min", 25))
                 if pomo_sub == "start":
                     res = nastya_routine_service.start_pomodoro(dur)
-                    state_service.enqueue_raw({"pomo_action": "start", "pomo_min": dur})
                 else:
                     res = nastya_routine_service.stop_pomodoro()
-                    state_service.enqueue_raw({"pomo_action": "stop"})
                 await ws.send_text(orjson.dumps({"type": "pomo_ack", "pomodoro": res}).decode("utf-8"))
 
             elif act == "dnd":
