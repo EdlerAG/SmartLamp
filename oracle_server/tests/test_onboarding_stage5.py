@@ -8,7 +8,7 @@ from app.services.setup_service import setup_service
 from app.services.state_service import state_service
 from app.services.routine_service import routine_service
 from app.services.reminder_service import reminder_service
-from app.services.bot_service import bot_service
+from app.services.bot_service import bot_service, TelegramBotService
 from app.services.spotify_service import spotify_service
 from app.services.google_calendar_service import google_calendar_service
 
@@ -33,9 +33,19 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
         # Встановлюємо лампу онлайн
         state_service.last_seen = time.time()
 
-        # Мокаємо bot_service._api
-        self.mock_api = AsyncMock(return_value={"ok": True, "result": {"message_id": 999}})
-        bot_service._api = self.mock_api
+        # Мокаємо TelegramBotService._api
+        self.sent_messages = []
+        async def mock_api(inst, method, payload=None, timeout=None):
+            self.sent_messages.append({"method": method, "payload": payload})
+            if method == "sendMessage":
+                return {"ok": True, "result": {"message_id": len(self.sent_messages)}}
+            return {"ok": True}
+
+        self.orig_api = TelegramBotService._api
+        TelegramBotService._api = mock_api
+
+    async def asyncTearDown(self):
+        TelegramBotService._api = self.orig_api
 
     async def test_01_reminder_offline_guard(self):
         """Нагадування не надсилається, якщо лампа офлайн."""
@@ -45,7 +55,7 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
 
         sent = await reminder_service.check_and_send_reminders(force_check=False)
         self.assertFalse(sent)
-        self.mock_api.assert_not_called()
+        self.assertEqual(len(self.sent_messages), 0)
 
     async def test_02_reminder_quiet_hours_guard(self):
         """Нагадування не надсилається під час тихих годин."""
@@ -55,7 +65,7 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
         with patch.object(routine_service, "is_quiet_hours_now", return_value=True):
             sent = await reminder_service.check_and_send_reminders(force_check=False)
             self.assertFalse(sent)
-            self.mock_api.assert_not_called()
+            self.assertEqual(len(self.sent_messages), 0)
 
     async def test_03_send_spotify_reminder_and_record_ts(self):
         """Відправка нагадування про Spotify та фіксація timestamp і лічильника."""
@@ -65,15 +75,14 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
         with patch.object(routine_service, "is_quiet_hours_now", return_value=False):
             sent = await reminder_service.check_and_send_reminders(force_check=True)
             self.assertTrue(sent)
-            self.mock_api.assert_called()
+            self.assertGreater(len(self.sent_messages), 0)
 
             # Перевіряємо, що збережено лічильник і timestamp
             count = int(db_service.get_setting("reminder_count_spotify", 0))
             self.assertEqual(count, 1)
 
-            # Друга спроба одразу має бути відхилена через інтервал 24h
+            # Друга спроба одразу має надіслати календар
             sent2 = await reminder_service.check_and_send_reminders(force_check=True)
-            # Тепер черга календаря!
             self.assertTrue(sent2)
             cal_count = int(db_service.get_setting("reminder_count_calendar", 0))
             self.assertEqual(cal_count, 1)
@@ -114,7 +123,7 @@ class TestOnboardingStage5(unittest.IsolatedAsyncioTestCase):
             "message": {"message_id": 102, "chat": {"id": 777000123}, "text": "/setup"}
         }
         await bot_service.handle_update(upd_setup)
-        self.mock_api.assert_called()
+        self.assertGreater(len(self.sent_messages), 0)
 
         # /reset
         upd_reset = {
