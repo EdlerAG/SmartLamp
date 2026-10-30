@@ -23,6 +23,7 @@ from app.services.database_service import db_service
 from app.services.state_service import state_service
 from app.services.blackout_service import blackout_service
 from app.services.bot_service import bot_service
+from app.services.reminder_service import reminder_service
 
 
 async def _supervised_bot_loop() -> None:
@@ -48,11 +49,13 @@ async def lifespan(app: FastAPI):
     memory_guard.recalculate_disk_usage()
     memory_guard.trim_ram()
 
-    # Запуск супервізора Telegram бота
+    # Запуск супервізора Telegram бота та сервісу нагадувань
     bot_task = asyncio.create_task(_supervised_bot_loop(), name="tg_bot_supervisor")
+    reminder_service.start()
 
     yield
 
+    reminder_service.stop()
     bot_task.cancel()
     blackout_service.shutdown()
     db_service.close()

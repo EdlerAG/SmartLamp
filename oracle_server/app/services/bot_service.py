@@ -1194,6 +1194,56 @@ class TelegramBotService:
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Налаштування завершено! 🎉"})
             await self._render_onboarding_finish_step(chat_id, msg_id)
 
+        elif data == "setup_menu:mood":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._render_onboarding_mood_step(chat_id)
+
+        elif data.startswith("reminder_later:"):
+            step = data.split(":")[1]
+            setup_service.mark_reminder_sent(step)
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Нагадаю пізніше ✨"})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "✨ <b>Домовились!</b> Нагадаю про це пізніше. Команда /setup доступна у будь-який час.",
+                "parse_mode": "HTML",
+            })
+
+        elif data.startswith("reminder_dismiss:"):
+            step = data.split(":")[1]
+            setup_service.advance_step(step, "dismissed")
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Більше не нагадуватиму 👌"})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "👌 <b>Зрозумів, більше не турбуватиму з цим!</b>\nЯкщо захочеш підключити згодом — команда /setup завжди до твоїх послуг.",
+                "parse_mode": "HTML",
+            })
+
+        elif data.startswith("reset_act:"):
+            act = data.split(":")[1]
+            if act == "accounts":
+                spotify_service.clear_tokens()
+                google_calendar_service.clear_tokens()
+                setup_service.advance_step("spotify", "pending")
+                setup_service.advance_step("calendar", "pending")
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Акаунти скинуто"})
+                await self._api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "text": "🔄 <b>Акаунти Spotify та Google Calendar успішно відключено!</b>\nWi-Fi та прив'язка збережені.",
+                    "parse_mode": "HTML",
+                })
+            elif act == "factory":
+                maintenance_service.purge_sandbox_data()
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Заводське скидання виконано"})
+                await self._api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "text": "📦 <b>Шкатулку повністю скинуто до заводського стану!</b>\nПрив'язку та всі акаунти очищено. Вона готова до вручення власниці! 🎁",
+                    "parse_mode": "HTML",
+                })
+
         elif data == "admin:health":
             rep = maintenance_service.get_health_report()
             box = rep["box"]
@@ -1680,6 +1730,64 @@ class TelegramBotService:
                     "text": "❌ Будь ласка, надішліть посилання на iCal у форматі:\n<code>/set_calendar https://calendar.google.com/calendar/ical/.../basic.ics</code>",
                     "parse_mode": "HTML",
                 })
+            return
+
+        if text.startswith("/setup"):
+            state = setup_service.get_setup_payload()
+            mood = state.get("theme_mood", "cozy")
+            mood_names = {
+                "cozy": "🕯️ Затишок",
+                "sakura": "🌸 Сакура",
+                "ocean": "🌊 Океан",
+                "nordic": "❄️ Північ",
+                "chornobyl": "☢️ Чорнобиль",
+                "chernobyl": "☢️ Чорнобиль"
+            }
+            txt = (
+                "⚙️ <b>Центр налаштування MagicBox</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                f"🎨 <b>Атмосфера:</b> {mood_names.get(mood, mood)}\n"
+                f"🎵 <b>Spotify:</b> {'Підключено ✓' if state.get('spotify_linked') else 'Не підключено'}\n"
+                f"📅 <b>Google Календар:</b> {'Підключено ✓' if state.get('calendar_linked') else 'Не підключено'}\n"
+                f"🌙 <b>Тихий режим:</b> 22:00 – 08:00\n\n"
+                "Обери параметр, який бажаєш налаштувати або змінити:"
+            )
+            buttons = [
+                [{"text": "🎨 Змінити атмосферу (Настрій)", "callback_data": "setup_menu:mood"}],
+                [{"text": "🎵 Налаштувати Spotify", "callback_data": "spotify:setup_info"}],
+                [{"text": "📅 Налаштувати Календар", "callback_data": "google:setup_info"}],
+                [{"text": "🌙 Тихі години", "callback_data": "dnd:quiet_info"}]
+            ]
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": txt,
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": buttons}
+            })
+            return
+
+        if text.startswith("/reset"):
+            owner_id = db_service.get_owner_chat_id()
+            if str(chat_id) != str(owner_id) and chat_id not in ALLOWED_ADMINS:
+                await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Команда доступна лише для власниці або адміністратора."})
+                return
+
+            buttons = [
+                [{"text": "🔄 Скинути лише акаунти (Spotify / Google)", "callback_data": "reset_act:accounts"}],
+                [{"text": "📦 Повне заводське скидання (до вручення)", "callback_data": "reset_act:factory"}]
+            ]
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": (
+                    "⚠️ <b>Меню скидання налаштувань MagicBox</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    "Обери потрібну дію:\n"
+                    "1. <b>Лише акаунти</b> — відключить Spotify і Календар, але збереже Wi-Fi та прив'язку.\n"
+                    "2. <b>Повне заводське скидання</b> — очистить усі дані та прив'язку, щоб вручити шкатулку як нову."
+                ),
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": buttons}
+            })
             return
 
         # 4. Обробка текстових команд
