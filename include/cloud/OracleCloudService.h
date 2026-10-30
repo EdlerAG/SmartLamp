@@ -462,7 +462,7 @@ private:
             if (is_soon && !state.dnd_mode && state.light_mode != MODE_LIGHT_OFF) {
                 state.triggerLedNotification(NOTIFY_AMBILIGHT, false);
             }
-        } else if (doc["cal_event"].is<JsonObject>() && doc["cal_event"].isNull()) {
+        } else if (doc["cal_event"].isNull()) {
             state.clearCalendarEvent();
         }
 
@@ -563,7 +563,12 @@ private:
                 state.pomoStop();
             } else if (strcmp(act, "start") == 0) {
                 bool is_brk = doc["pomo_break"] | false;
-                int p_min = doc["pomo_min"] | (is_brk ? 5 : 25);
+                int p_min = is_brk ? 5 : 25;
+                if (doc["pomo_min"].is<int>()) {
+                    p_min = doc["pomo_min"].as<int>();
+                } else if (doc["pomo_min"].is<const char*>()) {
+                    p_min = atoi(doc["pomo_min"].as<const char*>());
+                }
                 if (is_brk) {
                     state.pomo_break_duration_min = (uint8_t)constrain(p_min, 1, 30);
                     state.pomo_end_ms = millis() + (uint32_t)state.pomo_break_duration_min * 60000UL;
@@ -598,10 +603,19 @@ private:
             CommandRouter::setMediaTimer(state, doc["media_timer"].as<uint16_t>());
         }
 
-        if (doc["sleep"].is<bool>()) {
-            CommandRouter::setSleepTimer(state, doc["sleep"].as<uint16_t>());
+        if (!doc["sleep"].isNull()) {
+            uint16_t slp = 0;
+            if (doc["sleep"].is<uint16_t>()) {
+                slp = doc["sleep"].as<uint16_t>();
+            } else if (doc["sleep"].is<const char*>()) {
+                slp = (uint16_t)atoi(doc["sleep"].as<const char*>());
+            } else if (doc["sleep"].is<int>()) {
+                slp = (uint16_t)max(0, doc["sleep"].as<int>());
+            }
+            CommandRouter::setSleepTimer(state, slp);
         }
 
+        bool has_reaction = false;
         if (!doc["react"].isNull()) {
             uint8_t r = 0;
             if (doc["react"].is<int>()) {
@@ -612,10 +626,11 @@ private:
             if (r >= NOTIFY_FIRE && r <= NOTIFY_CROWN) {
                 CommandRouter::triggerReaction(state, (NotifyLedType)r, "Oracle Cloud", "CLOUD VIBE!");
                 state.trig_reaction_synth = r;
+                has_reaction = true;
             }
         }
 
-        if (doc["msg"].is<const char*>()) {
+        if (!has_reaction && doc["msg"].is<const char*>()) {
             const char* raw_msg = doc["msg"] | "";
             if (raw_msg && raw_msg[0] != '\0') {
                 const char* raw_sender = doc["sender"] | "Oracle AI";

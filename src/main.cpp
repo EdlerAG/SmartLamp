@@ -46,7 +46,7 @@ void cloudCore0Task(void* pvParameters) {
 
     for (;;) {
         core0CloudServices.tickAll();
-        vTaskDelay(pdMS_TO_TICKS(80));
+        vTaskDelay(pdMS_TO_TICKS(15));
     }
 }
 

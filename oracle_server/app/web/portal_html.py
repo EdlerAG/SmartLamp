@@ -1201,10 +1201,12 @@ function saveVoiceConfig(e){
   const provider = document.getElementById('ttsProviderSelect').value;
   const edge_voice = document.getElementById('edgeVoiceSelect').value;
   const clone_voice_id = document.getElementById('cloneVoiceIdInput').value.trim();
+  const voice_name = (provider === 'edge') ? edge_voice : (clone_voice_id || edge_voice);
+  const voice_id = clone_voice_id;
   fetch('/api/v5/audio/voice-config', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({provider, edge_voice, clone_voice_id})
+    body: JSON.stringify({provider, voice_name, voice_id})
   }).then(r => r.json()).then(d => {
     toast('Конфігурацію голосу збережено');
   });
@@ -1235,7 +1237,7 @@ function stopMedia(){
 }
 
 function setMediaTimer(minutes){
-  sendCmd({media_timer_min: minutes});
+  sendCmd({media_timer: minutes});
   toast(minutes === 0 ? 'Таймер скинуто (безкінечно)' : `Таймер встановлено на ${minutes} хв`);
 }
 
@@ -1254,7 +1256,7 @@ function uploadMedia(e){
   fd.append('file', file);
 
   toast('Завантаження та конвертація у 136x136 Bayer 4x4...');
-  fetch(`/api/v1/media/upload?name=${encodeURIComponent(name)}&slot=${slot}`, {
+  fetch(`/api/v5/media/upload?save_name=${encodeURIComponent(name)}&reaction_slot=${slot}&set_as_saver=false`, {
     method: 'POST',
     body: fd
   }).then(r => r.json()).then(d => {
@@ -1299,13 +1301,21 @@ function renderGallery(list){
 }
 
 function triggerMedia(name){
-  sendCmd({play_media: name});
-  toast(`Запущено медіа: ${name}`);
+  fetch(`/api/v5/media/trigger/${encodeURIComponent(name)}?saver=false&timer_min=0`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      toast(`Запущено медіа: ${name}`);
+      pollState();
+    });
 }
 
 function setAsSaver(name){
-  sendCmd({set_screensaver_media: name});
-  toast(`Встановлено як заставку: ${name}`);
+  fetch(`/api/v5/media/trigger/${encodeURIComponent(name)}?saver=true`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      toast(`Встановлено як заставку: ${name}`);
+      pollState();
+    });
 }
 
 function spotifyAction(act){
@@ -1518,7 +1528,7 @@ function triggerServerUpdate(){
 
 function deleteMedia(name){
   if(!confirm(`Видалити медіа "${name}"?`)) return;
-  fetch(`/api/v1/media/delete?name=${encodeURIComponent(name)}`, {method:'DELETE'})
+  fetch(`/api/v5/media/${encodeURIComponent(name)}`, {method:'DELETE'})
     .then(r => r.json())
     .then(d => {
       toast('Видалено');
@@ -1533,7 +1543,7 @@ function saveAiPersona(e){
   fetch('/api/v5/ai/persona', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({name, prompt, temperature: 0.7})
+    body: JSON.stringify({persona_name: name, system_prompt: prompt, temperature: 0.7})
   }).then(r => r.json()).then(d => {
     toast('Характер ШІ оновлено');
   });
@@ -1541,18 +1551,17 @@ function saveAiPersona(e){
 
 function askAiBriefing(){
   toast('Генерую ШІ-брифінг...');
-  fetch('/api/v5/ai/ask', {
+  fetch('/api/v1/ai/briefing', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      prompt: "Розкажи короткий затишний ранковий брифінг українською мовою для Насті: погода, час, приємне побажання на день."
-    })
+    body: JSON.stringify({custom_note: "", speak: true})
   }).then(r => r.json()).then(d => {
     const box = document.getElementById('aiResponseBox');
     if(box){
-      box.innerText = d.reply || 'Немає відповіді від ШІ';
+      box.innerText = d.ai_forecast || d.screen_text || d.reply || 'Брифінг озвучено на шкатулці!';
       box.style.display = 'block';
     }
+    toast('ШІ-брифінг відправлено на шкатулку ⚡️');
   });
 }
 
@@ -1898,7 +1907,7 @@ function addCalendarEvent() {
   fetch('/api/v5/calendar/events', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ summary, time: timeVal, date: 'today' })
+    body: JSON.stringify({ summary, time_str: timeVal || '12:00', date_str: '' })
   }).then(r => r.json()).then(d => {
     if (d.ok) {
       toast('Подію додано!');

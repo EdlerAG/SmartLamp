@@ -314,14 +314,22 @@ async def dashboard_websocket(ws: WebSocket):
 
             elif act == "pomo":
                 pomo_sub = data.get("sub_action", "")
-                dur = data.get("duration_min", 25)
+                dur = int(data.get("duration_min", 25))
                 if pomo_sub == "start":
                     res = nastya_routine_service.start_pomodoro(dur)
-                    state_service.enqueue_raw({"pomo_action": "start", "pomo_dur": dur})
                 else:
                     res = nastya_routine_service.stop_pomodoro()
-                    state_service.enqueue_raw({"pomo_action": "stop"})
                 await ws.send_text(orjson.dumps({"type": "pomo_ack", "pomodoro": res}).decode("utf-8"))
+
+            elif act == "dnd":
+                cur_dnd = state_service.latest_telemetry.get("dnd", False)
+                new_dnd = not cur_dnd if "enabled" not in data else bool(data["enabled"])
+                state_service.enqueue_raw({
+                    "dnd": new_dnd,
+                    "muted": new_dnd,
+                    "set_brt": "0" if new_dnd else "auto",
+                })
+                await ws.send_text(orjson.dumps({"type": "dnd_ack", "ok": True, "dnd": new_dnd}).decode("utf-8"))
 
             elif act == "silent_push":
                 msg = data.get("message", "").strip()
@@ -989,3 +997,59 @@ async def send_system_command(payload: Dict[str, str], _: str = Depends(verify_a
     state_service.enqueue_command(cmd)
     logger.info("Enqueued sys_cmd: %s", action)
     return {"ok": True, "action": action}
+
+
+# --- Route Aliases for Backward Compatibility ---
+@router.post("/api/v5/routine/quiet-hours")
+async def alias_quiet_hours(request: Request, _: str = Depends(verify_access)):
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    start = body.get("start", "23:00")
+    end = body.get("end", "08:00")
+    nastya_routine_service.set_quiet_hours(enabled, start, end)
+    return {"ok": True, "enabled": enabled, "start": start, "end": end}
+
+@router.post("/api/v5/routine/morning-brief")
+async def alias_morning_brief(_: str = Depends(verify_access)):
+    return await trigger_morning_brief(_)
+
+@router.post("/api/v5/routine/alarm")
+async def alias_update_alarm(request: Request, _: str = Depends(verify_access)):
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    time_str = body.get("time", "07:30")
+    return await update_alarm(enabled=enabled, time_str=time_str, _=_)
+
+@router.post("/api/v5/routine/pomodoro/start")
+async def alias_pomo_start(request: Request, _: str = Depends(verify_access)):
+    body = await request.json()
+    dur = body.get("duration_min", 25)
+    return await start_pomodoro(work_min=dur, _=_)
+
+@router.post("/api/v5/routine/pomodoro/stop")
+async def alias_pomo_stop(_: str = Depends(verify_access)):
+    return await stop_pomodoro(_=_)
+
+@router.post("/api/v5/admin/nastya/birthday-celebration")
+async def alias_birthday(_: str = Depends(verify_admin_access)):
+    return await trigger_birthday_celebration(_)
+
+@router.post("/api/v5/admin/backup-telegram")
+async def alias_backup(_: str = Depends(verify_admin_access)):
+    return await trigger_backup_now(_)
+
+@router.get("/api/v5/admin/nastya/calendar-view")
+async def alias_calendar_view(_: str = Depends(verify_admin_access)):
+    return await get_nastya_schedule(_)
+
+@router.post("/api/v5/admin/server-update/apply")
+async def alias_server_update(_: str = Depends(verify_admin_access)):
+    return await trigger_server_update(_)
+
+@router.post("/api/v5/admin/nastya/silent-push")
+async def alias_silent_push(request: Request, _: str = Depends(verify_admin_access)):
+    body = await request.json()
+    msg = body.get("message", "").strip()
+    if msg:
+        state_service.enqueue_raw({"msg": msg, "sender": "Studio", "silent": True})
+    return {"ok": True}

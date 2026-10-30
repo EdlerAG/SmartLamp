@@ -242,7 +242,9 @@ class SpotifyService:
 
                 try:
                     from app.core.events import realtime_hub
-                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": self.get_cached_state()})
+                    cur_st = self.get_cached_state()
+                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
+                    realtime_hub.emit_spotify_to_box(cur_st)
                 except Exception:
                     pass
             return ok
@@ -421,7 +423,10 @@ class SpotifyService:
 
                 try:
                     from app.core.events import realtime_hub
-                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": self.get_cached_state()})
+                    cur_st = self.get_cached_state()
+                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
+                    if track_changed or is_playing != self._cached_state.get("playing", False):
+                        realtime_hub.emit_spotify_to_box(cur_st)
                 except Exception:
                     pass
 

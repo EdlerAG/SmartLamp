@@ -649,20 +649,31 @@ namespace ScreenRenderer {
             return;
         }
 
-        // --- ПРІОРИТЕТ 2: Грає Spotify (Hallmark Vinyl Deck — 30 FPS) ---
-        if (state.spotify.playing) {
+        // --- ПРІОРИТЕТ 2: Spotify (Hallmark Vinyl Deck — 30 FPS) ---
+        bool has_spotify_deck = (state.spotify.playing || (state.spotify.track_id[0] != '\0' && (now - state.spotify.last_sync_ms < 60000UL)));
+        if (has_spotify_deck) {
             drawPerimeterTicks(canvas);
 
             // 1. Обертання вінілової платівки 136x136 px у центрі (120, 94)
             vinylSprite.pushRotateZoom(&canvas, 120, 94, vinyl_angle, 1.0f, 1.0f);
-            vinyl_angle += 1.8f;
-            if (vinyl_angle >= 360.0f) vinyl_angle -= 360.0f;
+            if (state.spotify.playing) {
+                vinyl_angle += 1.8f;
+                if (vinyl_angle >= 360.0f) vinyl_angle -= 360.0f;
+            }
 
             // 2. Векторний тонарм (голка звукознімача) зверху справа
-            canvas.drawLine(186, 26, 154, 76, HallmarkTheme::TEXT_SECONDARY);
-            canvas.drawLine(187, 26, 155, 76, HallmarkTheme::TEXT_SECONDARY);
-            canvas.fillCircle(186, 26, 5, HallmarkTheme::ACCENT_WARM); // База тонарма
-            canvas.fillCircle(154, 76, 3, HallmarkTheme::ACCENT_COOL); // Голка на платівці
+            if (state.spotify.playing) {
+                canvas.drawLine(186, 26, 154, 76, HallmarkTheme::TEXT_SECONDARY);
+                canvas.drawLine(187, 26, 155, 76, HallmarkTheme::TEXT_SECONDARY);
+                canvas.fillCircle(186, 26, 5, HallmarkTheme::ACCENT_WARM);
+                canvas.fillCircle(154, 76, 3, HallmarkTheme::ACCENT_COOL);
+            } else {
+                // Паркова позиція тонарма коли платівка зупинена на паузі
+                canvas.drawLine(186, 26, 192, 72, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.drawLine(187, 26, 193, 72, HallmarkTheme::BORDER_HAIRLINE);
+                canvas.fillCircle(186, 26, 5, HallmarkTheme::TEXT_SECONDARY);
+                canvas.fillCircle(192, 72, 3, HallmarkTheme::TEXT_SECONDARY);
+            }
 
             // 3. Інтерпольована дуга прогресу треку по периметру (R = 116)
             uint32_t cur_prog = state.spotify.progress_ms;
@@ -710,7 +721,7 @@ namespace ScreenRenderer {
         }
 
         // --- ПРІОРИТЕТ 2.5: Найближча подія Google Календаря Насті (<= 15 хв до початку) ---
-        if (state.cal_active && state.cal_is_soon && !state.tg_unread && !state.spotify.playing) {
+        if (state.cal_active && state.cal_is_soon && !state.tg_unread && !has_spotify_deck) {
             drawPerimeterTicks(canvas);
 
             canvas.fillRoundRect(22, 28, 196, 148, 10, HallmarkTheme::BG_SURFACE);

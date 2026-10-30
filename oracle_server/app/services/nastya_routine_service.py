@@ -159,7 +159,7 @@ class NastyaRoutineService:
         # Ставимо тепле затишне світло для концентрації (бурштин або камін)
         state_service.enqueue_raw({
             "pomo_action": "start",
-            "pomo_min": str(work_min),
+            "pomo_min": work_min,
             "set_mode": 2, # Бурштинова свічка
             "set_brt": "2", # 65%
             "media_timer": work_min,
@@ -201,7 +201,7 @@ class NastyaRoutineService:
                     state_service.enqueue_raw({
                         "pomo_action": "start",
                         "pomo_break": True,
-                        "pomo_min": "5",
+                        "pomo_min": 5,
                         "set_mode": 7, # Океанський спокійний бриз
                         "media_timer": 5,
                         "play_url": f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/notification.mp3",

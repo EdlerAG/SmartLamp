@@ -81,8 +81,37 @@ class RealtimeHub:
             return
         from app.services.state_service import state_service
         next_cmd = state_service.pop_next_sync_response()
-        if next_cmd.get("has_cmd"):
+        if next_cmd.get("has_cmd") or next_cmd.get("spotify") or next_cmd.get("cal_event"):
             await self.push_to_box(next_cmd)
+
+    def emit_spotify_to_box(self, spotify_state: Dict[str, Any]) -> None:
+        if self._box_ws is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.push_to_box({
+                "bot_managed": True,
+                "has_cmd": False,
+                "has_more": False,
+                "sp_linked": True,
+                "spotify": spotify_state,
+            }))
+        except RuntimeError:
+            pass
+
+    def emit_calendar_to_box(self, cal_event: Optional[Dict[str, Any]]) -> None:
+        if self._box_ws is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.push_to_box({
+                "bot_managed": True,
+                "has_cmd": False,
+                "has_more": False,
+                "cal_event": cal_event,
+            }))
+        except RuntimeError:
+            pass
 
     def emit_to_dashboards(self, data: Dict[str, Any]) -> None:
         try:

@@ -107,8 +107,7 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
 
     # 7. Перевірка найближчої події календаря Насті для Smart Hub (з швидким RAM TTL-кешем 30с)
     cal_ev = await _get_cached_calendar_event()
-    if cal_ev:
-        resp["cal_event"] = cal_ev
+    resp["cal_event"] = cal_ev
 
     return resp
 
