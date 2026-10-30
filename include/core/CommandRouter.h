@@ -143,7 +143,7 @@ public:
     }
 
     static void triggerReaction(AppState& state, NotifyLedType type, const char* sender = nullptr, const char* label = nullptr) {
-        if (sender && label) {
+        if (sender && label && label[0] != '\0') {
             state.setTelegramData(sender, label);
         }
         state.triggerLedNotification(type, true);

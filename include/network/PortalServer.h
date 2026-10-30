@@ -90,11 +90,11 @@ public:
                 CommandRouter::setSleepTimer(state, (uint16_t)server.arg("sleep").toInt());
             } else if (server.hasArg("react")) {
                 String r = server.arg("react");
-                if (r == "fire")       CommandRouter::triggerReaction(state, NOTIFY_FIRE, "App Hub", "FIRE VIBE!");
-                else if (r == "zap")   CommandRouter::triggerReaction(state, NOTIFY_LIGHTNING, "App Hub", "KUS-ZAP!");
-                else if (r == "cat")   CommandRouter::triggerReaction(state, NOTIFY_CAT, "App Hub", "TYTS-KUS!");
-                else if (r == "ufo")   CommandRouter::triggerReaction(state, NOTIFY_UFO, "App Hub", "UFO BEAM!");
-                else if (r == "crown") CommandRouter::triggerReaction(state, NOTIFY_CROWN, "App Hub", "QUEEN VIBE!");
+                if (r == "fire")       CommandRouter::triggerReaction(state, NOTIFY_FIRE);
+                else if (r == "zap")   CommandRouter::triggerReaction(state, NOTIFY_LIGHTNING);
+                else if (r == "cat")   CommandRouter::triggerReaction(state, NOTIFY_CAT);
+                else if (r == "ufo")   CommandRouter::triggerReaction(state, NOTIFY_UFO);
+                else if (r == "crown") CommandRouter::triggerReaction(state, NOTIFY_CROWN);
             } else {
                 String act = server.arg("do");
                 if (act == "mode") {
@@ -107,7 +107,7 @@ public:
                 } else if (act == "reaction") {
                     uint8_t rid = (uint8_t)server.arg("id").toInt();
                     NotifyLedType rtype = (NotifyLedType)constrain(rid + 1, (int)NOTIFY_FIRE, (int)NOTIFY_CROWN);
-                    CommandRouter::triggerReaction(state, rtype, "API", "REACTION!");
+                    CommandRouter::triggerReaction(state, rtype);
                 } else if (act == "power") {
                     CommandRouter::togglePower(state);
                 } else if (act == "next_msg") {

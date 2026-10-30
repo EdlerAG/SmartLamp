@@ -659,6 +659,10 @@ struct AppState {
         return has;
     }
 
+    bool hasPendingMedia() const { return pending_media_url[0] != '\0'; }
+    bool hasPendingOta() const { return pending_ota_url[0] != '\0'; }
+    bool hasPendingAudio() const { return pending_audio_url[0] != '\0'; }
+
     void setNetworkInfo(const char* ssid, const char* ip) {
         portENTER_CRITICAL(&mux);
         strncpy(wifi_ssid, ssid, sizeof(wifi_ssid) - 1);
