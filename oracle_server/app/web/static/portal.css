@@ -412,3 +412,112 @@ input::placeholder, textarea::placeholder {
   box-shadow: 0 8px 24px rgba(0,0,0,0.6);
   white-space: nowrap;
 }
+
+/* --- ATMOSPHERIC MOOD THEMES --- */
+body.theme-cozy {
+  --bg-primary: #0a0805;
+  --bg-elevated: #151108;
+  --bg-surface: #1e190d;
+  --bg-surface-active: #2b2314;
+  --border-hairline: #332918;
+  --border-focus: #f59e0b;
+  --accent-cool: #f59e0b;
+}
+body.theme-sakura {
+  --bg-primary: #0d060a;
+  --bg-elevated: #190e15;
+  --bg-surface: #24141e;
+  --bg-surface-active: #331d2b;
+  --border-hairline: #3d2234;
+  --border-focus: #f472b6;
+  --accent-cool: #f472b6;
+}
+body.theme-ocean {
+  --bg-primary: #04090f;
+  --bg-elevated: #08131e;
+  --bg-surface: #0e1c2d;
+  --bg-surface-active: #152940;
+  --border-hairline: #1c3654;
+  --border-focus: #06b6d4;
+  --accent-cool: #06b6d4;
+}
+body.theme-nordic {
+  --bg-primary: #060714;
+  --bg-elevated: #0c0f24;
+  --bg-surface: #141738;
+  --bg-surface-active: #1c224e;
+  --border-hairline: #272f6b;
+  --border-focus: #818cf8;
+  --accent-cool: #818cf8;
+}
+body.theme-chernobyl {
+  --bg-primary: #030a06;
+  --bg-elevated: #07170e;
+  --bg-surface: #0c2417;
+  --bg-surface-active: #133823;
+  --border-hairline: #1a4a2f;
+  --border-focus: #10b981;
+  --accent-cool: #10b981;
+}
+
+.mood-pill {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+.mood-pill:hover {
+  background: var(--bg-surface-active);
+  border-color: var(--border-focus);
+}
+.mood-pill.active {
+  border-color: var(--border-focus);
+  background: rgba(56, 189, 248, 0.15);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+body.theme-cozy .mood-pill.active {
+  background: rgba(245, 158, 11, 0.18);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+}
+body.theme-sakura .mood-pill.active {
+  background: rgba(244, 114, 182, 0.18);
+  box-shadow: 0 0 12px rgba(244, 114, 182, 0.3);
+}
+body.theme-ocean .mood-pill.active {
+  background: rgba(6, 182, 212, 0.18);
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.3);
+}
+body.theme-nordic .mood-pill.active {
+  background: rgba(129, 140, 248, 0.18);
+  box-shadow: 0 0 12px rgba(129, 140, 248, 0.3);
+}
+body.theme-chernobyl .mood-pill.active {
+  background: rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+}
+
+.onboard-step-item {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.onboard-step-item.done {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.05);
+}
+.onboard-step-item.pending {
+  border-color: rgba(245, 158, 11, 0.3);
+}

@@ -992,12 +992,12 @@ class DatabaseService:
             logger.error("update_setup_step error for '%s': %s", step_id, e)
 
     def get_theme_mood(self) -> str:
-        """Повертає поточну тему настрою: 'cozy' (Затишок), 'sakura' (Сакура), 'ocean' (Океан), 'nordic' (Північ)."""
+        """Повертає поточну тему настрою: 'cozy' (Затишок), 'sakura' (Сакура), 'ocean' (Океан), 'nordic' (Північ), 'chernobyl' (Чорнобиль)."""
         return str(self.get_setting("theme_mood", "cozy"))
 
     def set_theme_mood(self, mood: str) -> str:
         """Встановлює тему настрою та автоматично позначає крок 'mood' як завершений."""
-        valid_moods = {"cozy", "sakura", "ocean", "nordic"}
+        valid_moods = {"cozy", "sakura", "ocean", "nordic", "chernobyl"}
         clean_mood = mood.lower().strip()
         if clean_mood not in valid_moods:
             clean_mood = "cozy"

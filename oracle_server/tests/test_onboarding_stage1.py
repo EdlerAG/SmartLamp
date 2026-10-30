@@ -147,6 +147,17 @@ class TestOnboardingStage1(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(row)
 
+    def test_07_chernobyl_mood_theme(self):
+        """Перевірка вибору атмосфери 'chernobyl' та оновлення bitmask."""
+        res = self.client.post("/api/v5/setup/mood", json={"mood": "chernobyl"}, headers=self.admin_headers)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json().get("mood"), "chernobyl")
+
+        state_res = self.client.get("/api/v5/setup/state", headers=self.admin_headers)
+        self.assertEqual(state_res.status_code, 200)
+        data = state_res.json()
+        self.assertEqual(data["steps"]["mood"]["mood"], "chernobyl")
+
 
 if __name__ == "__main__":
     unittest.main()

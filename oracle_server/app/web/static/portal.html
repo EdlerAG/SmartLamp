@@ -112,6 +112,44 @@
     </div>
   </div>
 
+  <!-- Onboarding Checklist Widget -->
+  <div id="onboardingCard" class="card" style="margin-bottom:12px;background:radial-gradient(ellipse at top right, rgba(56,189,248,0.06), transparent 70%), var(--bg-elevated);border:1px solid var(--border-hairline)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">✨</span>
+        <b style="font-size:13px;letter-spacing:0.3px">МАЙСТЕР ПІДКЛЮЧЕННЯ ШКАТУЛКИ</b>
+        <span id="onboardProgressBadge" class="mono" style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(16,185,129,0.15);color:var(--accent-success);border:1px solid var(--accent-success)">0/6 Готово</span>
+      </div>
+      <button onclick="toggleOnboardingWidget()" class="btn" style="padding:2px 8px;font-size:11px" id="onboardToggleBtn">Згорнути ▲</button>
+    </div>
+    <div id="onboardStepsList" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:6px">
+      <div class="onboard-step-item" id="step-wifi">
+        <span style="font-size:11px;color:var(--text-secondary)">📶 Wi-Fi</span>
+        <b class="mono" style="font-size:11px;color:var(--accent-success)" id="step-wifi-val">Очікування...</b>
+      </div>
+      <div class="onboard-step-item" id="step-pairing">
+        <span style="font-size:11px;color:var(--text-secondary)">👑 Власниця</span>
+        <b class="mono" style="font-size:11px" id="step-pairing-val">Очікування...</b>
+      </div>
+      <div class="onboard-step-item" id="step-mood">
+        <span style="font-size:11px;color:var(--text-secondary)">🎨 Атмосфера</span>
+        <b class="mono" style="font-size:11px" id="step-mood-val">Затишок</b>
+      </div>
+      <div class="onboard-step-item" id="step-spotify">
+        <span style="font-size:11px;color:var(--text-secondary)">🎵 Spotify</span>
+        <b class="mono" style="font-size:11px" id="step-spotify-val">Не підключено</b>
+      </div>
+      <div class="onboard-step-item" id="step-calendar">
+        <span style="font-size:11px;color:var(--text-secondary)">📅 Календар</span>
+        <b class="mono" style="font-size:11px" id="step-calendar-val">Не підключено</b>
+      </div>
+      <div class="onboard-step-item" id="step-quiet_hours">
+        <span style="font-size:11px;color:var(--text-secondary)">🌙 Ніч (Тиша)</span>
+        <b class="mono" style="font-size:11px" id="step-quiet_hours-val">22:00 - 08:00</b>
+      </div>
+    </div>
+  </div>
+
   <!-- Segmented Navigation Tabs (Top) -->
   <div class="tabs-header">
     <button class="tab-btn active" id="tab-btn-music" onclick="switchTab('music')">
@@ -223,6 +261,31 @@
 
   <!-- TAB 2: 💡 СВІТЛО & ЕФЕКТИ -->
   <div id="view-light" class="tab-view" style="display:none">
+    <!-- Атмосфера & Настрій (Mood Themes) -->
+    <div class="card" style="margin-bottom:14px">
+      <h3><span>✨ Атмосфера & Колірна Тема (Mood Sync)</span></h3>
+      <p style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">
+        Миттєва зміна колірної гами Студії та освітлення шкатулки під твій поточний настрій:
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:8px" id="moodThemesGrid">
+        <button class="mood-pill" id="moodBtn-cozy" onclick="selectMoodTheme('cozy')">
+          <span>🕯️</span> <span>Затишок</span>
+        </button>
+        <button class="mood-pill" id="moodBtn-sakura" onclick="selectMoodTheme('sakura')">
+          <span>🌸</span> <span>Сакура</span>
+        </button>
+        <button class="mood-pill" id="moodBtn-ocean" onclick="selectMoodTheme('ocean')">
+          <span>🌊</span> <span>Океан</span>
+        </button>
+        <button class="mood-pill" id="moodBtn-nordic" onclick="selectMoodTheme('nordic')">
+          <span>❄️</span> <span>Північ</span>
+        </button>
+        <button class="mood-pill" id="moodBtn-chernobyl" onclick="selectMoodTheme('chernobyl')">
+          <span>☢️</span> <span>Чорнобиль</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Яскравість & Пресети -->
     <div class="card">
       <h3><span>☀️ Швидка Яскравість Лампи</span></h3>
@@ -352,16 +415,19 @@
 
     <!-- Google Календар & Розклад -->
     <div class="card">
-      <h3>
-        <span>📅 Приватний Календар & Розклад</span>
-        <span id="calStatusBadge" class="mono" style="font-size:10px;color:var(--text-muted)">НЕ ПІДКЛЮЧЕНО</span>
-      </h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="margin:0"><span>📅 Приватний Календар & Розклад</span></h3>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span id="calViewerBadge" class="mono" style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(56,189,248,0.12);color:var(--accent-cool);border:1px solid var(--accent-cool);display:none">👀 Режим перегляду</span>
+          <span id="calStatusBadge" class="mono" style="font-size:10px;color:var(--text-muted)">НЕ ПІДКЛЮЧЕНО</span>
+        </div>
+      </div>
       <div id="calNextEvent" class="mono" style="font-size:12px;color:var(--accent-cool);margin-bottom:10px">
         📅 Найближча подія: --
       </div>
 
       <!-- Додати подію -->
-      <div style="display:grid;grid-template-columns:80px 1fr auto;gap:6px;align-items:center;margin-bottom:10px">
+      <div id="calAddEventRow" style="display:grid;grid-template-columns:80px 1fr auto;gap:6px;align-items:center;margin-bottom:10px">
         <input type="text" id="calTimeInput" placeholder="14:30" class="mono" style="margin:0;padding:6px;font-size:11px">
         <input type="text" id="calSummaryInput" placeholder="Назва події (напр. Лекція)..." style="margin:0;padding:6px;font-size:11px">
         <button class="btn btn-emerald" style="padding:6px 12px;font-size:11px" onclick="addCalendarEvent()">+ Додати</button>

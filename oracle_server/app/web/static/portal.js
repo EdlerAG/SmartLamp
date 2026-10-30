@@ -1139,13 +1139,16 @@ function loadCalendarEvents() {
       d.events.forEach(ev => {
         const timeStr = ev.start || 'Цілий день';
         const isPast = ev.is_past ? 'opacity:0.45;' : '';
+        const delBtn = window._currentUserRole === 'admin'
+          ? ''
+          : `<button class="btn btn-danger" style="padding:2px 6px;font-size:10px" onclick="deleteCalendarEvent('${ev.id}')">✕</button>`;
         html += `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border-hairline);${isPast}">
             <div>
               <b class="mono" style="color:var(--accent-cool);margin-right:6px">${escapeHtml(timeStr)}</b>
               <span>${escapeHtml(ev.summary || 'Без назви')}</span>
             </div>
-            <button class="btn btn-danger" style="padding:2px 6px;font-size:10px" onclick="deleteCalendarEvent('${ev.id}')">✕</button>
+            ${delBtn}
           </div>
         `;
       });
@@ -1209,6 +1212,124 @@ function systemAction(action) {
   });
 }
 
+// --- ATMOSPHERIC MOOD THEMES & ONBOARDING SUITE ---
+const MOOD_TO_MODE = {
+  cozy: 0,       // ☀️ Теплий затишок
+  sakura: 5,     // 🌸 Сакура Неон
+  ocean: 7,      // 🌊 Океанський бриз
+  nordic: 6,     // 🌌 Північне сяйво
+  chernobyl: 8   // ⚡ Кібер-комета (Смарагдове сяйво)
+};
+
+function selectMoodTheme(mood, autoSyncLamp = true) {
+  if (!MOOD_TO_MODE.hasOwnProperty(mood)) mood = 'cozy';
+  const allMoods = ['cozy', 'sakura', 'ocean', 'nordic', 'chernobyl'];
+  allMoods.forEach(m => {
+    document.body.classList.remove('theme-' + m);
+    const btn = document.getElementById('moodBtn-' + m);
+    if (btn) btn.classList.remove('active');
+  });
+  document.body.classList.add('theme-' + mood);
+  const activeBtn = document.getElementById('moodBtn-' + mood);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  try {
+    localStorage.setItem('mb_mood', mood);
+  } catch (_) {}
+
+  if (autoSyncLamp) {
+    const lampMode = MOOD_TO_MODE[mood];
+    if (lampMode !== undefined) {
+      setMode(lampMode);
+    }
+    fetch('/api/v5/setup/mood', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mood: mood })
+    }).then(r => r.json()).then(d => {
+      if (d && d.ok) {
+        toast('Атмосферу змінено');
+        loadOnboardingState();
+      }
+    }).catch(() => {});
+  }
+}
+
+function toggleOnboardingWidget() {
+  const list = document.getElementById('onboardStepsList');
+  const btn = document.getElementById('onboardToggleBtn');
+  if (!list || !btn) return;
+  const isHidden = list.style.display === 'none';
+  if (isHidden) {
+    list.style.display = 'grid';
+    btn.innerText = 'Згорнути ▲';
+    try { localStorage.setItem('mb_onboard_open', '1'); } catch (_) {}
+  } else {
+    list.style.display = 'none';
+    btn.innerText = 'Розгорнути ▼';
+    try { localStorage.setItem('mb_onboard_open', '0'); } catch (_) {}
+  }
+}
+
+function loadOnboardingState() {
+  fetch('/api/v5/setup/state')
+    .then(r => {
+      if (!r.ok) return null;
+      return r.json();
+    })
+    .then(d => {
+      if (!d || !d.steps) return;
+      const s = d.steps;
+      const badge = document.getElementById('onboardProgressBadge');
+      if (badge) {
+        badge.innerText = `${d.completed_count || 0}/6 Готово`;
+        if (d.completed_count === 6) {
+          badge.style.background = 'rgba(16,185,129,0.25)';
+          badge.style.color = 'var(--accent-success)';
+        }
+      }
+
+      function updateStepUI(id, isDone, text) {
+        const item = document.getElementById(id);
+        const val = document.getElementById(id + '-val');
+        if (!item || !val) return;
+        val.innerText = text;
+        if (isDone) {
+          item.classList.add('done');
+          item.classList.remove('pending');
+          val.style.color = 'var(--accent-success)';
+        } else {
+          item.classList.remove('done');
+          item.classList.add('pending');
+          val.style.color = 'var(--text-secondary)';
+        }
+      }
+
+      updateStepUI('step-wifi', Boolean(s.wifi && s.wifi.done), (s.wifi && s.wifi.done) ? 'Підключено' : 'Очікування...');
+      updateStepUI('step-pairing', Boolean(s.pairing && s.pairing.done), (s.pairing && s.pairing.done) ? 'Прив\'язано' : 'Очікування...');
+
+      const moodNames = {
+        cozy: '🕯️ Затишок',
+        sakura: '🌸 Сакура',
+        ocean: '🌊 Океан',
+        nordic: '❄️ Північ',
+        chernobyl: '☢️ Чорнобиль'
+      };
+      const curMood = (s.mood && s.mood.mood) || 'cozy';
+      updateStepUI('step-mood', Boolean(s.mood && s.mood.done), moodNames[curMood] || curMood);
+
+      const spText = (s.spotify && s.spotify.done) ? (s.spotify.skipped ? 'Пропущено' : 'Підключено') : 'Не підключено';
+      updateStepUI('step-spotify', Boolean(s.spotify && s.spotify.done), spText);
+
+      const calText = (s.calendar && s.calendar.done) ? (s.calendar.skipped ? 'Пропущено' : 'Підключено') : 'Не підключено';
+      updateStepUI('step-calendar', Boolean(s.calendar && s.calendar.done), calText);
+
+      const qhText = (s.quiet_hours && s.quiet_hours.start) ? `${s.quiet_hours.start} - ${s.quiet_hours.end}` : '22:00 - 08:00';
+      updateStepUI('step-quiet_hours', Boolean(s.quiet_hours && s.quiet_hours.done), qhText);
+    })
+    .catch(() => {});
+}
+
 let personaLoaded = false;
 let configLoaded = false;
 let pollTickCount = 0;
@@ -1225,7 +1346,8 @@ function applyState(d) {
       google_calendar_linked: d.google_calendar_linked,
       next_calendar_event: d.next_calendar_event,
       alarm: d.alarm,
-      pomodoro: d.pomodoro
+      pomodoro: d.pomodoro,
+      mood: d.mood
     }));
   } catch(_) {}
 
@@ -1287,16 +1409,33 @@ function applyState(d) {
     updateGoogleUI(Boolean(d.google_calendar_linked), d.next_calendar_event);
   }
 
+  window._currentUserRole = d.user_role;
   if (d.user_role === 'admin') {
     const ap = document.getElementById('adminPanel');
     if (ap) ap.style.display = 'block';
     const rb = document.getElementById('roleBadge');
-    if (rb) { rb.innerText = '🛡️ ADMIN'; rb.style.color = 'var(--accent-cool)'; }
+    if (rb) { rb.innerText = '🛡️ VIEWER'; rb.style.color = 'var(--accent-cool)'; }
+    const cvb = document.getElementById('calViewerBadge');
+    if (cvb) cvb.style.display = 'inline-block';
+    const car = document.getElementById('calAddEventRow');
+    if (car) car.style.display = 'none';
+    const cdb = document.getElementById('calDisconnectBtn');
+    if (cdb) cdb.style.display = 'none';
   } else {
     const ap = document.getElementById('adminPanel');
     if (ap) ap.style.display = 'none';
     const rb = document.getElementById('roleBadge');
-    if (rb) { rb.innerText = '✨ USER'; rb.style.color = 'var(--accent-pink)'; }
+    if (rb) { rb.innerText = '👑 OWNER'; rb.style.color = 'var(--accent-pink)'; }
+    const cvb = document.getElementById('calViewerBadge');
+    if (cvb) cvb.style.display = 'none';
+    const car = document.getElementById('calAddEventRow');
+    if (car) car.style.display = 'grid';
+    const cdb = document.getElementById('calDisconnectBtn');
+    if (cdb) cdb.style.display = 'inline-block';
+  }
+
+  if (d.mood) {
+    selectMoodTheme(d.mood, false);
   }
 
   const ch = d.climate_history || [];
@@ -1346,6 +1485,22 @@ let studioWs = null;
 const savedTab = localStorage.getItem('mb_active_tab') || 'music';
 switchTab(savedTab);
 
+// Restore saved mood or default to 'cozy'
+try {
+  const savedMood = localStorage.getItem('mb_mood') || 'cozy';
+  selectMoodTheme(savedMood, false);
+} catch (_) {}
+
+// Restore onboarding open/close state
+try {
+  if (localStorage.getItem('mb_onboard_open') === '0') {
+    const list = document.getElementById('onboardStepsList');
+    const btn = document.getElementById('onboardToggleBtn');
+    if (list) list.style.display = 'none';
+    if (btn) btn.innerText = 'Розгорнути ▼';
+  }
+} catch (_) {}
+
 // Telegram Mini App Auto-Auth (Zero-Click, Single-Roundtrip Auth + State)
 const isTelegramApp = Boolean(window.Telegram?.WebApp?.initData);
 let isAuthReady = !isTelegramApp;
@@ -1365,6 +1520,7 @@ if (isTelegramApp) {
         isAuthReady = true;
         if (d.state) applyState(d.state);
         loadCalendarEvents();
+        loadOnboardingState();
         initStudioWebSocket();
       }
     })
@@ -1374,8 +1530,10 @@ if (isTelegramApp) {
   // Regular browser emergency access
   pollState();
   loadCalendarEvents();
+  loadOnboardingState();
 }
 setInterval(loadCalendarEvents, 30000);
+setInterval(loadOnboardingState, 30000);
 
 function scheduleAdaptivePoll(){
   // If WebSocket is active, we don't need aggressive HTTP polling!
