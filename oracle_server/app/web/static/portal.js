@@ -239,8 +239,7 @@ function doLogout(){
 function sendCmd(cmdObj){
   if (cmdObj && cmdObj.set_mode !== undefined) {
     MODES.forEach((_, i) => {
-      const el = document.getElementById('mBtn' + i);
-      if (el) el.className = (cmdObj.set_mode === i) ? 'btn active' : 'btn';
+      setCachedClass('mBtn' + i, (cmdObj.set_mode === i) ? 'btn active' : 'btn');
     });
   }
   if (studioWs && studioWs.readyState === WebSocket.OPEN) {
@@ -279,7 +278,7 @@ function speakTts(){
 
 let volDebounce = null;
 function onVolSlider(v){
-  document.getElementById('volVal').innerText = `${v} / 21`;
+  setCachedText('volVal', `${v} / 21`);
 }
 function applyVolume(v){
   if (studioWs && studioWs.readyState === WebSocket.OPEN) {
@@ -737,7 +736,7 @@ function updateSpotifyUI(sp) {
 }
 
 function triggerSandboxReset(){
-  if(!confirm('Ви дійсно хочете виконати передподарункове скидання?\n\n• Spotify та Google Calendar буде відключено\n• Тестові події, клімат та історію буде видалено\n• Власницю буде закріплено за Настею (1294097414)')) return;
+  if(!confirm('Ви дійсно хочете виконати передподарункове скидання?\n\n• Spotify та Google Calendar буде відключено\n• Тестові події, клімат та історію буде видалено\n• Власника буде закріплено за основним користувачем')) return;
   toast('Виконую скидання...');
   fetch('/api/v5/admin/sandbox-reset', {method:'POST'})
     .then(r => r.json())
@@ -927,9 +926,9 @@ function stopPomodoro() {
 }
 
 function triggerBirthdayCelebration() {
-  if (!confirm('Запустити святкову листівку на шкатулці та привітання Насті в Telegram?')) return;
+  if (!confirm('Запустити святкову листівку на пристрої та привітання в Telegram?')) return;
   toast('Запуск привітання...');
-  fetch('/api/v5/admin/nastya/birthday-celebration', { method: 'POST' })
+  fetch('/api/v5/admin/routine/birthday-celebration', { method: 'POST' })
     .then(r => r.json())
     .then(d => {
       alert(d.message || 'Свято активовано!');
@@ -946,7 +945,7 @@ function sendSilentPush() {
     input.value = '';
     return;
   }
-  fetch('/api/v5/admin/nastya/silent-push', {
+  fetch('/api/v5/admin/routine/silent-push', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: txt })
@@ -956,11 +955,11 @@ function sendSilentPush() {
   });
 }
 
-function loadNastyaSchedule() {
+function loadSchedule() {
   const cont = document.getElementById('scheduleContainer');
   if (!cont) return;
-  cont.innerHTML = 'Завантаження розкладу Насті...';
-  fetch('/api/v5/admin/nastya/calendar-view')
+  cont.innerHTML = 'Завантаження розкладу...';
+  fetch('/api/v5/admin/routine/calendar-view')
     .then(r => r.json())
     .then(d => {
       if (!d.ok || !d.events || d.events.length === 0) {
@@ -976,6 +975,7 @@ function loadNastyaSchedule() {
     })
     .catch(() => { cont.innerHTML = 'Помилка завантаження розкладу'; });
 }
+const loadNastyaSchedule = loadSchedule;
 
 function triggerAdminBackup() {
   toast('Створення бекапу SQLite WAL...');
@@ -1428,22 +1428,36 @@ function applyTelemetryInPlace(t) {
 
 let wsReconnectDelay = 2000;
 let wsReconnectTimer = null;
+let wsConnecting = false;
 
-function initStudioWebSocket() {
+async function initStudioWebSocket() {
   if (isTelegramApp && !isAuthReady) return;
   if (document.visibilityState === 'hidden') return;
   if (studioWs && (studioWs.readyState === WebSocket.OPEN || studioWs.readyState === WebSocket.CONNECTING)) return;
+  if (wsConnecting) return;
+  wsConnecting = true;
+
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${proto}//${location.host}/ws/dashboard`;
+  let wsUrl = `${proto}//${location.host}/ws/dashboard`;
+
+  try {
+    const res = await fetch('/api/v5/auth/ws-ticket', { method: 'POST', credentials: 'include' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.ticket) {
+        wsUrl += `?ticket=${encodeURIComponent(data.ticket)}`;
+      }
+    }
+  } catch (_) {}
+
   try {
     studioWs = new WebSocket(wsUrl);
+    wsConnecting = false;
     studioWs.onopen = () => {
       wsReconnectDelay = 2000;
       clearTimeout(wsReconnectTimer);
-      const oDot = document.getElementById('onlineDot');
-      if (oDot) oDot.className = 'pulse on';
-      const oTxt = document.getElementById('onlineTxt');
-      if (oTxt) oTxt.innerText = 'MAGICBOX ⚡️ REALTIME';
+      setCachedClass('onlineDot', 'pulse on');
+      setCachedText('onlineTxt', 'MAGICBOX ⚡️ REALTIME');
     };
     studioWs.onmessage = (evt) => {
       try {
@@ -1459,17 +1473,15 @@ function initStudioWebSocket() {
         } else if (d.type === 'pomo_ack') {
           if (d.pomodoro) updatePomodoroUI(d.pomodoro);
         } else if (d.type === 'command_queued') {
-          const qEl = document.getElementById('queueTxt');
-          if (qEl && d.pending_commands !== undefined) qEl.innerText = d.pending_commands;
+          if (d.pending_commands !== undefined) setCachedText('queueTxt', d.pending_commands);
         }
       } catch(_) {}
     };
     studioWs.onclose = (evt) => {
       studioWs = null;
-      const oDot = document.getElementById('onlineDot');
-      if (oDot) oDot.className = 'pulse';
-      const oTxt = document.getElementById('onlineTxt');
-      if (oTxt) oTxt.innerText = 'MAGICBOX · СИНХРОНІЗАЦІЯ';
+      wsConnecting = false;
+      setCachedClass('onlineDot', 'pulse');
+      setCachedText('onlineTxt', 'MAGICBOX · СИНХРОНІЗАЦІЯ');
       if (evt && evt.code === 1008) {
         isAuthReady = false;
         setCachedClass('onlineDot', 'pulse');
@@ -1496,6 +1508,7 @@ function initStudioWebSocket() {
       try { studioWs.close(); } catch(_) {}
     };
   } catch(_) {
+    wsConnecting = false;
     if (document.visibilityState !== 'hidden') {
       clearTimeout(wsReconnectTimer);
       wsReconnectTimer = setTimeout(initStudioWebSocket, wsReconnectDelay);

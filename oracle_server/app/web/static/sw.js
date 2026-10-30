@@ -1,10 +1,10 @@
 // SmartLamp Sovereign Studio - Progressive Web App Service Worker
-const CACHE_NAME = 'smartlamp-v5.6-shell';
+const CACHE_NAME = 'smartlamp-v5.6.0-shell';
 const ASSETS_TO_CACHE = [
   '/',
-  '/static/portal.css',
-  '/static/portal.js',
-  '/static/manifest.json',
+  '/static/portal.css?v=5.6.0',
+  '/static/portal.js?v=5.6.0',
+  '/manifest.json',
   '/static/icon-192.svg',
   '/static/icon-512.svg'
 ];
@@ -40,7 +40,7 @@ self.addEventListener('fetch', (evt) => {
   }
 
   // 2. Для статичних файлів — Stale-While-Revalidate (швидкий запуск + фонове оновлення)
-  if (url.pathname.startsWith('/static/')) {
+  if (url.pathname.startsWith('/static/') || url.pathname === '/manifest.json') {
     evt.respondWith(
       caches.match(evt.request).then((cachedResp) => {
         const fetchPromise = fetch(evt.request).then((networkResp) => {

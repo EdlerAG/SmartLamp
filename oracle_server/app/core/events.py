@@ -159,12 +159,14 @@ class RealtimeHub:
             return
         try:
             loop = asyncio.get_running_loop()
+            box_sp = dict(spotify_state)
+            box_sp.pop("lyrics", None)
             loop.create_task(self.push_to_box({
                 "bot_managed": True,
                 "has_cmd": False,
                 "has_more": False,
                 "sp_linked": True,
-                "spotify": spotify_state,
+                "spotify": box_sp,
             }))
         except RuntimeError:
             pass

@@ -412,6 +412,9 @@ class SpotifyService:
                 track_changed = bool(track_id and track_id != self._last_track_id)
                 if track_changed:
                     self._last_track_id = track_id
+                    # Миттєве скидання лірики попередньої пісні
+                    self._current_lyrics = []
+                    self._cached_state["lyric"] = ""
                     if track_id in self._vinyl_cache:
                         vinyl_bytes, ambi = self._vinyl_cache[track_id]
                         self._last_ambi_rgb = ambi
@@ -484,7 +487,13 @@ class SpotifyService:
 
     async def _fetch_lyrics(self, track_id: str, title: str, artist: str, duration_sec: int) -> None:
         if track_id in self._lyrics_cache:
-            self._current_lyrics = self._lyrics_cache[track_id]
+            if self._last_track_id == track_id:
+                self._current_lyrics = self._lyrics_cache[track_id]
+                try:
+                    from app.core.events import realtime_hub
+                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": self.get_cached_state()})
+                except Exception:
+                    pass
             return
         clean_title = re.sub(r"\s*\(.*?\)|\s*\[.*?\]", "", title).strip()
         first_artist = artist.split(",")[0].strip()
@@ -510,12 +519,20 @@ class SpotifyService:
                 if len(self._lyrics_cache) > 20:
                     self._lyrics_cache.pop(next(iter(self._lyrics_cache)))
                 self._lyrics_cache[track_id] = parsed
-                self._current_lyrics = parsed
+                if self._last_track_id == track_id:
+                    self._current_lyrics = parsed
+                    try:
+                        from app.core.events import realtime_hub
+                        realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": self.get_cached_state()})
+                    except Exception:
+                        pass
             else:
-                self._current_lyrics = []
+                if self._last_track_id == track_id:
+                    self._current_lyrics = []
         except Exception as lrc_err:
             logger.debug("Lyrics fetch error from lrclib: %s", lrc_err)
-            self._current_lyrics = []
+            if self._last_track_id == track_id:
+                self._current_lyrics = []
 
     def _get_active_lyric(self, progress_ms: int) -> str:
         if not self._current_lyrics:
@@ -529,7 +546,7 @@ class SpotifyService:
                 break
         return active
 
-    def get_cached_state(self) -> Dict[str, Any]:
+    def get_cached_state(self, include_lyrics: bool = True) -> Dict[str, Any]:
         st = dict(self._cached_state)
         st["linked"] = self.is_linked()
         if st.get("playing") and self._last_poll_time > 0:
@@ -544,7 +561,8 @@ class SpotifyService:
         active_l = self._get_active_lyric(cur_prog)
         if active_l:
             st["lyric"] = active_l
-        st["lyrics"] = self._current_lyrics
+        if include_lyrics:
+            st["lyrics"] = self._current_lyrics
         return st
 
 

@@ -165,6 +165,7 @@ class StateService:
             if not any(k in data for k in ("msg", "media_url", "play_url", "ota_url", "stop_media")):
                 if not any(k in last for k in ("msg", "media_url", "play_url", "ota_url", "stop_media")):
                     last.update(data)
+                    db_service.sync_pending_commands(list(self.command_queue))
                     realtime_hub.notify_new_command()
                     realtime_hub.emit_to_box_immediate()
                     return len(self.command_queue)
@@ -187,11 +188,8 @@ class StateService:
 
         while self.command_queue:
             cmd = dict(self.command_queue.popleft())
-            # Синхронізація збереженої черги в базі даних
-            db_service.clear_pending_commands()
-            if self.command_queue:
-                for rem in self.command_queue:
-                    db_service.save_pending_command(rem)
+            # Синхронізація збереженої черги в базі даних (атомарна транзакція)
+            db_service.sync_pending_commands(list(self.command_queue))
 
             created = cmd.get("created_at", now)
             ttl = cmd.get("ttl_sec", 86400.0)

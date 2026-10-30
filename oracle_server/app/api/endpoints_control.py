@@ -829,13 +829,24 @@ async def get_quiet_hours(_: str = Depends(verify_access)):
 @router.post("/api/v5/routine/quiet-hours")
 @router.post("/api/v5/nastya/quiet-hours", include_in_schema=False)
 async def update_quiet_hours(
-    enabled: bool = Query(...),
-    start: str = Query("23:00"),
-    end: str = Query("08:00"),
+    request: Request,
+    enabled: Optional[bool] = Query(None),
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
     _: str = Depends(verify_access),
 ):
-    routine_service.set_quiet_hours(enabled, start, end)
-    return {"ok": True, "enabled": enabled, "start": start, "end": end}
+    """Оновлення налаштувань тихих годин (підтримує як JSON body, так і query-параметри)."""
+    body_data = {}
+    try:
+        body_data = await request.json()
+    except Exception:
+        pass
+
+    en = body_data.get("enabled", enabled if enabled is not None else True)
+    st = body_data.get("start", start or "23:00")
+    ed = body_data.get("end", end or "08:00")
+    routine_service.set_quiet_hours(en, st, ed)
+    return {"ok": True, "enabled": en, "start": st, "end": ed}
 
 
 @router.get("/api/v5/routine/alarm")
@@ -847,15 +858,31 @@ async def get_alarm(_: str = Depends(verify_access)):
 @router.post("/api/v5/routine/alarm")
 @router.post("/api/v5/nastya/alarm", include_in_schema=False)
 async def update_alarm(
-    enabled: bool = Query(...),
-    time_str: str = Query("07:30"),
-    days: str = Query("0,1,2,3,4"),
-    snooze_min: int = Query(9),
+    request: Request,
+    enabled: Optional[bool] = Query(None),
+    time_str: Optional[str] = Query(None),
+    days: Optional[str] = Query(None),
+    snooze_min: Optional[int] = Query(None),
     _: str = Depends(verify_access),
 ):
-    day_list = [int(d.strip()) for d in days.split(",") if d.strip().isdigit()]
-    routine_service.set_alarm_config(enabled, time_str, day_list, snooze_min)
-    return {"ok": True, "enabled": enabled, "time": time_str, "days": day_list}
+    """Оновлення будильника (підтримує як JSON body, так і query-параметри)."""
+    body_data = {}
+    try:
+        body_data = await request.json()
+    except Exception:
+        pass
+
+    en = body_data.get("enabled", enabled if enabled is not None else True)
+    t_val = body_data.get("time", body_data.get("time_str", time_str or "07:30"))
+    d_raw = body_data.get("days", days or "0,1,2,3,4")
+    sn = body_data.get("snooze_min", snooze_min or 9)
+    if isinstance(d_raw, list):
+        day_list = [int(x) for x in d_raw]
+    else:
+        day_list = [int(d.strip()) for d in str(d_raw).split(",") if d.strip().isdigit()]
+
+    routine_service.set_alarm_config(en, t_val, day_list, sn)
+    return {"ok": True, "enabled": en, "time": t_val, "days": day_list}
 
 
 @router.post("/api/v5/routine/alarm/dismiss")
@@ -873,8 +900,20 @@ async def dismiss_alarm(_: str = Depends(verify_access)):
 
 @router.post("/api/v5/routine/pomodoro/start")
 @router.post("/api/v5/nastya/pomodoro/start", include_in_schema=False)
-async def start_pomodoro(work_min: int = Query(25, ge=5, le=120), _: str = Depends(verify_access)):
-    st = routine_service.start_pomodoro(work_min)
+async def start_pomodoro(
+    request: Request,
+    work_min: Optional[int] = Query(None),
+    _: str = Depends(verify_access),
+):
+    """Запуск сесії фокусу Pomodoro (підтримує як JSON body, так і query-параметри)."""
+    body_data = {}
+    try:
+        body_data = await request.json()
+    except Exception:
+        pass
+    dur = body_data.get("duration_min", body_data.get("work_min", work_min or 25))
+    dur = max(5, min(120, int(dur)))
+    st = routine_service.start_pomodoro(dur)
     return {"ok": True, **st}
 
 
@@ -892,6 +931,7 @@ async def get_pomodoro(_: str = Depends(verify_access)):
 
 
 @router.post("/api/v5/admin/routine/birthday-celebration")
+@router.post("/api/v5/admin/nastya/birthday-celebration", include_in_schema=False)
 @router.post("/api/v5/admin/birthday-trigger", include_in_schema=False)
 async def trigger_birthday_celebration(_: str = Depends(verify_admin_access)):
     """Адміністративне святкове привітання з Днем Народження."""
@@ -917,7 +957,8 @@ async def trigger_birthday_celebration(_: str = Depends(verify_admin_access)):
     return {"ok": True, "message": "Привітання з Днем Народження успішно активовано!"}
 
 
-@router.post("/api/v5/routine/morning-brief/trigger")
+@router.post("/api/v5/routine/morning-brief")
+@router.post("/api/v5/routine/morning-brief/trigger", include_in_schema=False)
 @router.post("/api/v5/nastya/morning-brief/trigger", include_in_schema=False)
 async def trigger_morning_brief(_: str = Depends(verify_access)):
     brief = await routine_service.generate_morning_brief()
@@ -934,7 +975,7 @@ async def trigger_morning_brief(_: str = Depends(verify_access)):
 
 
 # ====================================================================
-# ФАЗА 6: АДМІНІСТРАТИВНЕ ОБСЛУГОВУВАННЯ ТА ЗДОРОВ'Я
+# ФАЗА 5: ОБСЛУГОВУВАННЯ, СИСТЕМНИЙ АУДИТ ТА ЗДОРОВ'Я СЕРВЕРА
 # ====================================================================
 
 @router.get("/api/v5/admin/health-report")
@@ -984,21 +1025,46 @@ async def get_system_metrics(_: str = Depends(verify_access)):
 
 
 @router.post("/api/v5/admin/backup")
+@router.post("/api/v5/admin/backup-telegram", include_in_schema=False)
 async def trigger_backup_now(_: str = Depends(verify_admin_access)):
     ok = await maintenance_service.send_weekly_backup_to_admin()
     return {"ok": ok, "message": "Бекап надіслано в Telegram" if ok else "Бекап збережено локально"}
 
 
-@router.get("/api/v5/admin/routine/schedule")
+@router.get("/api/v5/admin/routine/calendar-view")
+@router.get("/api/v5/admin/routine/schedule", include_in_schema=False)
 @router.get("/api/v5/admin/nastya-schedule", include_in_schema=False)
+@router.get("/api/v5/admin/nastya/calendar-view", include_in_schema=False)
 async def get_routine_schedule(_: str = Depends(verify_admin_access)):
     """Перегляд розкладу Google Календаря."""
     events = await google_calendar_service.get_upcoming_events(max_results=15)
     return {
         "ok": True,
-        "is_linked": google_calendar_service.is_linked(),
         "events": events,
+        "count": len(events),
+        "synced_at": time.time(),
     }
+
+
+@router.post("/api/v5/admin/routine/silent-push")
+@router.post("/api/v5/admin/nastya/silent-push", include_in_schema=False)
+async def trigger_silent_push(request: Request, _: str = Depends(verify_admin_access)):
+    body = await request.json()
+    msg = body.get("message", "").strip()
+    if not msg:
+        raise HTTPException(status_code=400, detail="Повідомлення не може бути порожнім")
+    cmd = CommandPayload(sender="Studio", msg=msg)
+    state_service.enqueue_command(cmd)
+    target_user_id = state_service.girl_id or settings.TG_GIRL_ID
+    if settings.TG_BOT_TOKEN and target_user_id:
+        from app.services.bot_service import bot_service
+        await bot_service._api("sendMessage", {
+            "chat_id": target_user_id,
+            "text": f"💌 <b>Нове повідомлення на шкатулці:</b>\n<i>«{msg}»</i>",
+            "parse_mode": "HTML",
+            "disable_notification": True,
+        })
+    return {"ok": True, "message": "Тихе повідомлення надіслано"}
 
 
 @router.post("/api/v5/admin/sandbox-reset")
@@ -1063,6 +1129,7 @@ async def get_server_update_status(_: str = Depends(verify_admin_access)):
 
 
 @router.post("/api/v5/admin/server-update")
+@router.post("/api/v5/admin/server-update/apply", include_in_schema=False)
 async def trigger_server_update(_: str = Depends(verify_admin_access)):
     """Запускає процес самооновлення сервера з GitHub та перезапуск служби."""
     return await server_updater.perform_server_update()
@@ -1110,62 +1177,3 @@ async def send_system_command(payload: Dict[str, str], _: str = Depends(verify_a
     state_service.enqueue_command(cmd)
     logger.info("Enqueued sys_cmd: %s", action)
     return {"ok": True, "action": action}
-
-
-# --- Route Aliases for Backward Compatibility ---
-@router.post("/api/v5/routine/quiet-hours")
-async def alias_quiet_hours(request: Request, _: str = Depends(verify_access)):
-    body = await request.json()
-    enabled = body.get("enabled", True)
-    start = body.get("start", "23:00")
-    end = body.get("end", "08:00")
-    routine_service.set_quiet_hours(enabled, start, end)
-    return {"ok": True, "enabled": enabled, "start": start, "end": end}
-
-@router.post("/api/v5/routine/morning-brief")
-async def alias_morning_brief(_: str = Depends(verify_access)):
-    return await trigger_morning_brief(_)
-
-@router.post("/api/v5/routine/alarm")
-async def alias_update_alarm(request: Request, _: str = Depends(verify_access)):
-    body = await request.json()
-    enabled = body.get("enabled", True)
-    time_str = body.get("time", "07:30")
-    return await update_alarm(enabled=enabled, time_str=time_str, _=_)
-
-@router.post("/api/v5/routine/pomodoro/start")
-async def alias_pomo_start(request: Request, _: str = Depends(verify_access)):
-    body = await request.json()
-    dur = body.get("duration_min", 25)
-    return await start_pomodoro(work_min=dur, _=_)
-
-@router.post("/api/v5/routine/pomodoro/stop")
-async def alias_pomo_stop(_: str = Depends(verify_access)):
-    return await stop_pomodoro(_=_)
-
-@router.post("/api/v5/admin/routine/birthday-celebration")
-@router.post("/api/v5/admin/nastya/birthday-celebration", include_in_schema=False)
-async def alias_birthday(_: str = Depends(verify_admin_access)):
-    return await trigger_birthday_celebration(_)
-
-@router.post("/api/v5/admin/backup-telegram")
-async def alias_backup(_: str = Depends(verify_admin_access)):
-    return await trigger_backup_now(_)
-
-@router.get("/api/v5/admin/routine/calendar-view")
-@router.get("/api/v5/admin/nastya/calendar-view", include_in_schema=False)
-async def alias_calendar_view(_: str = Depends(verify_admin_access)):
-    return await get_routine_schedule(_)
-
-@router.post("/api/v5/admin/server-update/apply")
-async def alias_server_update(_: str = Depends(verify_admin_access)):
-    return await trigger_server_update(_)
-
-@router.post("/api/v5/admin/routine/silent-push")
-@router.post("/api/v5/admin/nastya/silent-push", include_in_schema=False)
-async def alias_silent_push(request: Request, _: str = Depends(verify_admin_access)):
-    body = await request.json()
-    msg = body.get("message", "").strip()
-    if msg:
-        state_service.enqueue_raw({"msg": msg, "sender": "Studio", "silent": True})
-    return {"ok": True}

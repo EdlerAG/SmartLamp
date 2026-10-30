@@ -80,11 +80,13 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
 
     resp = state_service.pop_next_sync_response()
     resp["sp_linked"] = spotify_service.is_linked()
-    # Always include cached spotify state if playing or linked so screen switch is instant
+    # Always include cached spotify state if playing or linked so screen switch is instant (strip lyrics to keep ESP32 buffer lightweight)
     if sp_data:
-        resp["spotify"] = sp_data
+        box_sp = dict(sp_data)
+        box_sp.pop("lyrics", None)
+        resp["spotify"] = box_sp
     elif spotify_service.is_linked():
-        resp["spotify"] = spotify_service.get_cached_state()
+        resp["spotify"] = spotify_service.get_cached_state(include_lyrics=False)
 
     # 5. Перевірка світанкового будильника
     alarm_st = routine_service.check_alarm_state()
@@ -140,26 +142,33 @@ async def box_websocket_endpoint(ws: WebSocket):
         return
 
     await realtime_hub.register_box_ws(ws)
-    await ws.send_text(orjson.dumps({"type": "hello", "v": 1, "ts": time.time()}).decode("utf-8"))
+    await ws.send_text(orjson.dumps({
+        "type": "hello",
+        "bot_managed": settings.SERVER_MANAGES_BOT,
+        "has_cmd": False,
+        "has_more": False,
+        "v": 1,
+        "ts": time.time(),
+    }).decode("utf-8"))
     try:
         while True:
             try:
-                raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=40.0)
+                raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=60.0)
             except asyncio.TimeoutError:
-                # Активний Heartbeat Ping перед розривом зв'язку
-                try:
-                    await ws.send_text(orjson.dumps({"type": "ping", "v": 1, "ts": time.time()}).decode("utf-8"))
-                    raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=8.0)
-                except Exception:
-                    logger.debug("Box WebSocket heartbeat timeout - closing inactive socket")
-                    break
+                logger.debug("Box WebSocket heartbeat timeout (60s) - closing inactive socket")
+                break
 
             data = orjson.loads(raw_msg)
             msg_type = data.get("type")
-            if msg_type == "pong":
-                continue
-            if msg_type == "ping":
-                await ws.send_text(orjson.dumps({"type": "pong", "v": 1, "ts": time.time()}).decode("utf-8"))
+            if msg_type in ("pong", "ping"):
+                if msg_type == "ping":
+                    await ws.send_text(orjson.dumps({
+                        "type": "pong",
+                        "bot_managed": settings.SERVER_MANAGES_BOT,
+                        "has_cmd": False,
+                        "v": 1,
+                        "ts": time.time(),
+                    }).decode("utf-8"))
                 continue
 
             if data.get("type") == "get_vinyl":

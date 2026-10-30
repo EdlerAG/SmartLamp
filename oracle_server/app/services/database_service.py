@@ -672,6 +672,20 @@ class DatabaseService:
             logger.warning("load_pending_commands error: %s", e)
             return []
 
+    def sync_pending_commands(self, cmds: List[Dict[str, Any]]) -> None:
+        try:
+            conn = self._get_conn()
+            with conn:
+                conn.execute("DELETE FROM pending_commands")
+                if cmds:
+                    now = time.time()
+                    conn.executemany(
+                        "INSERT INTO pending_commands (cmd_json, created_at) VALUES (?, ?)",
+                        [(orjson.dumps(cmd).decode("utf-8"), cmd.get("created_at", now)) for cmd in cmds],
+                    )
+        except Exception as e:
+            logger.warning("sync_pending_commands error: %s", e)
+
     def clear_pending_commands(self) -> None:
         try:
             conn = self._get_conn()

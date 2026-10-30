@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<title>MagicBox Sovereign Studio • v5.2.0</title>
-<!-- Hallmark & Sovereign Protocol v5.0 -->
+<title>MagicBox Sovereign Studio • v5.6.0</title>
+<!-- Hallmark & Sovereign Protocol v5.6.0 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -18,7 +18,7 @@
     }
   } catch(_) {}
 </script>
-<link rel="stylesheet" href="/static/portal.css">
+<link rel="stylesheet" href="/static/portal.css?v=5.6.0">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#08090C">
   <meta name="mobile-web-app-capable" content="yes">
@@ -31,7 +31,7 @@
 <div id="loginModal">
   <div class="login-box">
     <div style="font-size:32px;margin-bottom:8px">🪄</div>
-    <h2 style="font-size:16px;margin-bottom:6px">MagicBox Studio • Sovereign v5.0</h2>
+    <h2 style="font-size:16px;margin-bottom:6px">MagicBox Studio • Sovereign v5.6.0</h2>
     <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">Аварійний вхід: введіть пароль доступу</p>
     <input type="password" id="pwdInput" placeholder="Пароль доступу..." onkeydown="if(event.key==='Enter')doLogin()">
     <button class="btn btn-cool" style="width:100%;margin-top:10px" onclick="doLogin()">Увійти</button>
@@ -42,7 +42,7 @@
   <div style="background:var(--bg-elevated);border:1px solid #e63946;box-shadow:0 0 35px rgba(230,57,70,0.25);border-radius:16px;max-width:420px;width:100%;padding:24px;text-align:center;position:relative">
     <button onclick="closeHellcatModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:var(--text-secondary);font-size:22px;cursor:pointer;line-height:1">&times;</button>
     <div style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;background:rgba(230,57,70,0.15);border:1px solid #e63946;color:#ff6b6b;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px">
-      ⚡️ HELLCAT PROTOCOL • V5.0
+      ⚡️ SOVEREIGN PROTOCOL • V5.6.0
     </div>
     <h2 style="font-size:18px;font-weight:800;color:var(--text-primary);margin-bottom:6px">
       SmartLamp Sovereign Gateway
@@ -76,7 +76,7 @@
         <div style="display:flex;align-items:center;gap:6px">
           <span id="onlineDot" class="pulse on"></span>
           <b id="onlineTxt" style="font-size:13px;letter-spacing:0.4px">MAGICBOX SOVEREIGN</b>
-          <span class="mono" style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8" id="verBadge">v5.2.0 ⚡ Live</span>
+          <span class="mono" style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8" id="verBadge">v5.6.0 ⚡ Live</span>
         </div>
         <div class="mono" style="font-size:10px;color:var(--text-secondary);margin-top:2px">
           FW: <span id="fwBadge">--</span> | RAM: <b id="ramTxt" style="color:var(--accent-success)">-- MB</b> | Диск: <b id="diskTxt">-- MB</b> | Черга: <b id="queueTxt">0</b>
@@ -84,7 +84,7 @@
       </div>
     </div>
     <div style="display:flex;gap:6px;align-items:center">
-      <span id="roleBadge" class="mono" style="font-size:11px;padding:4px 8px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-hairline);color:var(--accent-warm)">🌸 НАСТЯ</span>
+      <span id="roleBadge" class="mono" style="font-size:11px;padding:4px 8px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-hairline);color:var(--accent-warm)">✨ USER</span>
       <button id="dndTopBtn" class="btn" style="padding:5px 10px;font-size:11px" onclick="toggleDnd()">🌙 DND: ВИКЛ</button>
       <button onclick="location.reload(true)" class="btn" style="padding:5px 8px;font-size:11px" title="Оновити сторінку">🔄</button>
       <button onclick="openHellcatModal()" class="btn" style="border-color:#e63946;color:#ff6b6b;padding:5px 8px;font-size:11px" title="QR Код">⚡️ QR</button>
@@ -317,7 +317,7 @@
 
       <!-- Тихі Години & Розумний Світанок -->
       <div class="card">
-        <h3><span>🌸 Затишок і Сон (Настя)</span></h3>
+        <h3><span>🌸 Затишок і Сон</span></h3>
         
         <!-- Тихі години -->
         <div style="background:var(--bg-surface);padding:10px;border-radius:8px;border:1px solid var(--border-hairline);margin-bottom:10px">
@@ -345,7 +345,7 @@
         </div>
 
         <!-- Ранкова порада -->
-        <button class="btn btn-emerald" style="width:100%;padding:8px" onclick="triggerMorningBrief()">🌤 Отримати ранкову пораду Насті</button>
+        <button class="btn btn-emerald" style="width:100%;padding:8px" onclick="triggerMorningBrief()">🌤 Отримати ранкову пораду</button>
         <div id="morningBriefBox" style="margin-top:8px;font-size:11px;color:var(--text-primary);background:var(--bg-surface);border:1px solid var(--border-hairline);padding:8px;border-radius:6px;display:none"></div>
       </div>
     </div>
@@ -430,9 +430,9 @@
       <div id="aiResponseBox" style="margin-top:8px;font-size:11px;color:var(--text-secondary);background:var(--bg-surface);border:1px solid var(--border-hairline);padding:8px;border-radius:6px;display:none"></div>
     </div>
 
-    <!-- 🛡️ Панель Архітектора (Ярослав) -->
+    <!-- 🛡️ Панель Архітектора -->
     <div id="adminPanel" style="display:none" class="card">
-      <h3><span>🛡️ Панель Архітектора (Ярослав)</span></h3>
+      <h3><span>🛡️ Панель Архітектора</span></h3>
       <div class="grid-2" style="margin-bottom:10px">
         <div style="background:var(--bg-surface);padding:10px;border-radius:8px;border:1px solid var(--border-hairline)">
           <div style="font-size:11px;font-weight:600;color:var(--accent-warm);margin-bottom:4px">🎂 ПРИВІТАННЯ:</div>
@@ -449,8 +449,8 @@
 
       <div style="background:var(--bg-surface);padding:10px;border-radius:8px;border:1px solid var(--border-hairline);margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span style="font-size:11px;font-weight:600;color:var(--text-secondary)">📅 РОЗКЛАД НАСТІ:</span>
-          <button class="btn" style="padding:3px 8px;font-size:10px" onclick="loadNastyaSchedule()">🔄 Оновити</button>
+          <span style="font-size:11px;font-weight:600;color:var(--text-secondary)">📅 РОЗКЛАД:</span>
+          <button class="btn" style="padding:3px 8px;font-size:10px" onclick="loadSchedule()">🔄 Оновити</button>
         </div>
         <div id="scheduleContainer" class="mono" style="font-size:11px;color:var(--text-secondary);max-height:120px;overflow-y:auto">
           Натисніть «Оновити» для перегляду...
@@ -473,7 +473,7 @@
         <button class="btn" style="font-size:11px;padding:6px 10px" onclick="triggerAdminBackup()">📦 Бекап БД в Telegram</button>
         <button class="btn" style="font-size:11px;padding:6px 10px" onclick="loadHealthReport()">🩺 Звіт здоров'я</button>
         <button class="btn btn-cool" style="font-size:11px;padding:6px 10px" onclick="triggerServerUpdate()">🔄 Оновити з GitHub</button>
-        <button class="btn btn-danger" style="font-size:11px;padding:6px 10px" onclick="triggerSandboxReset()">🎁 Скинути тестові дані -> Настя</button>
+        <button class="btn btn-danger" style="font-size:11px;padding:6px 10px" onclick="triggerSandboxReset()">🎁 Скинути тестові дані</button>
       </div>
       <div id="healthReportBox" style="margin-top:8px;font-size:10px;font-family:var(--font-mono);background:var(--bg-primary);border:1px solid var(--border-hairline);padding:8px;border-radius:6px;display:none;white-space:pre-wrap"></div>
     </div>
@@ -506,6 +506,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite">Виконано</div>
 
-<script src="/static/portal.js" defer></script>
+<script src="/static/portal.js?v=5.6.0" defer></script>
 </body>
 </html>

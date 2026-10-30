@@ -131,6 +131,51 @@ class TestV56Core(unittest.TestCase):
         self.assertIn("ws_reconnects", m_data["box"])
         self.assertIn("ota_in_progress", m_data["box"])
 
+    def test_sync_pending_commands(self):
+        # Save initial queue
+        cmds = [{"action": "light", "m": 1}, {"action": "light", "m": 2}]
+        db_service.sync_pending_commands(cmds)
+        loaded = db_service.load_pending_commands()
+        self.assertEqual(len(loaded), 2)
+        self.assertEqual(loaded[0]["m"], 1)
+        self.assertEqual(loaded[1]["m"], 2)
+
+        # Sync updated queue
+        cmds_updated = [{"action": "light", "m": 5}]
+        db_service.sync_pending_commands(cmds_updated)
+        loaded_updated = db_service.load_pending_commands()
+        self.assertEqual(len(loaded_updated), 1)
+        self.assertEqual(loaded_updated[0]["m"], 5)
+
+        # Clear queue
+        db_service.sync_pending_commands([])
+        self.assertEqual(len(db_service.load_pending_commands()), 0)
+
+    def test_spotify_lyrics_stripping(self):
+        st_with = spotify_service.get_cached_state(include_lyrics=True)
+        self.assertIn("lyrics", st_with)
+
+        st_without = spotify_service.get_cached_state(include_lyrics=False)
+        self.assertNotIn("lyrics", st_without)
+
+    def test_unified_routine_endpoints_json_and_query(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        from app.core.config import settings
+
+        client = TestClient(app)
+        headers = {"X-Device-Key": settings.API_KEY}
+
+        # JSON body
+        r1 = client.post("/api/v5/routine/quiet-hours", json={"enabled": True, "start": "22:00", "end": "07:00"}, headers=headers)
+        self.assertEqual(r1.status_code, 200)
+        self.assertTrue(r1.json().get("ok"))
+
+        # Query params
+        r2 = client.post("/api/v5/routine/quiet-hours?enabled=false&start=23:00&end=08:00", headers=headers)
+        self.assertEqual(r2.status_code, 200)
+        self.assertTrue(r2.json().get("ok"))
+
 
 if __name__ == "__main__":
     unittest.main()
