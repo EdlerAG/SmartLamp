@@ -74,7 +74,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "app" / "web" / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    @app.get("/manifest.json", include_in_schema=False)
+    @app.api_route("/manifest.json", methods=["GET", "HEAD"], include_in_schema=False)
     async def get_manifest():
         return FileResponse(
             STATIC_DIR / "manifest.json",
@@ -82,7 +82,7 @@ if STATIC_DIR.exists():
             headers={"Cache-Control": "public, max-age=86400"},
         )
 
-    @app.get("/sw.js", include_in_schema=False)
+    @app.api_route("/sw.js", methods=["GET", "HEAD"], include_in_schema=False)
     async def get_sw():
         return FileResponse(
             STATIC_DIR / "sw.js",
@@ -93,7 +93,7 @@ if STATIC_DIR.exists():
             },
         )
 
-    @app.get("/favicon.ico", include_in_schema=False)
+    @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
     async def get_favicon():
         return FileResponse(
             STATIC_DIR / "icon-192.svg",
