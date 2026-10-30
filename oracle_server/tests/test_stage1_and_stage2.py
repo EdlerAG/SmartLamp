@@ -110,21 +110,16 @@ class TestStage1AndStage2(unittest.TestCase):
         self.assertEqual(r_resp.status_code, 200)
         self.assertTrue(r_resp.json().get("ok"))
 
-    def test_08_sse_stream(self):
-        """Перевірка SSE потокового каналу /api/v5/stream (Етап 3)."""
-        with self.client.stream("GET", "/api/v5/stream", headers=self.headers) as response:
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.headers.get("content-type"), "text/event-stream; charset=utf-8")
-            # Читаємо першу подію (init)
-            lines = []
-            for line in response.iter_lines():
-                if line:
-                    lines.append(line)
-                if len(lines) >= 2:
-                    break
-            content = "\n".join(lines)
-            self.assertIn("event: init", content)
-            self.assertIn("data:", content)
+    def test_08_websocket_dashboard(self):
+        """Перевірка WebSocket каналу /ws/dashboard (Етап 3, v5.6 Realtime)."""
+        token = "test_ws_token_stage_123"
+        db_service.create_session(token, role="admin", duration_sec=3600)
+        self.client.cookies.set("session_token", token)
+        with self.client.websocket_connect("/ws/dashboard") as ws:
+            data = ws.receive_json()
+            self.assertEqual(data.get("type"), "fast_init")
+            self.assertIn("state", data)
+            self.assertIn("telemetry", data["state"])
 
     def test_09_server_updater_status(self):
         """Перевірка статусу самооновлення сервера /api/v5/admin/server-update/status (Етап 4)."""
