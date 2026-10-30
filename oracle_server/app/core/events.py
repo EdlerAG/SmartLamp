@@ -87,16 +87,40 @@ class RealtimeHub:
     async def _demand_spotify_worker(self) -> None:
         """
         Demand-driven воркер: активний ВИКЛЮЧНО коли є відкриті клієнти Студії / Telegram.
-        Опитує Spotify та транслює свіжий трек у відкриті вкладки.
+        Опитує Spotify та транслює свіжий трек у відкриті вкладки при зміні або кожні 15с.
         Коли клієнтів 0 — завершується (0.00% CPU).
         """
+        import time
         from app.services.spotify_service import spotify_service
+
+        last_track_id = ""
+        last_playing = None
+        last_lyric = ""
+        last_push_time = 0.0
+
         try:
             while self._dashboard_clients:
                 if spotify_service.is_linked():
                     try:
                         cur_st = await spotify_service.fetch_current_playback()
-                        await self.broadcast_to_dashboards({"type": "spotify", "spotify": cur_st})
+                        now = time.time()
+                        cur_track = cur_st.get("track_id", "")
+                        cur_playing = cur_st.get("playing", False)
+                        cur_lyric = cur_st.get("lyric", "")
+
+                        needs_push = (
+                            cur_track != last_track_id
+                            or cur_playing != last_playing
+                            or cur_lyric != last_lyric
+                            or (now - last_push_time > 15.0)
+                        )
+
+                        if needs_push:
+                            last_track_id = cur_track
+                            last_playing = cur_playing
+                            last_lyric = cur_lyric
+                            last_push_time = now
+                            await self.broadcast_to_dashboards({"type": "spotify", "spotify": cur_st})
                     except Exception:
                         pass
                 await asyncio.sleep(2.5)

@@ -8,18 +8,18 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.domain.schemas import CommandPayload, BoxTelemetryPayload
 from app.services.state_service import state_service
-from app.services.nastya_routine_service import nastya_routine_service
+from app.services.routine_service import routine_service
 
 
 class TestRoutineAndSync(unittest.TestCase):
     def setUp(self):
         state_service.command_queue.clear()
-        nastya_routine_service.stop_pomodoro()
+        routine_service.stop_pomodoro()
         state_service.command_queue.clear()
 
     def test_pomodoro_start_lifecycle(self):
         """Перевірка старту Pomodoro та відсутності сміття в черзі."""
-        status = nastya_routine_service.start_pomodoro(work_min=25)
+        status = routine_service.start_pomodoro(work_min=25)
         self.assertTrue(status["active"])
         self.assertEqual(status["mode"], "work")
         self.assertGreater(status["remaining_sec"], 1400)
@@ -36,12 +36,12 @@ class TestRoutineAndSync(unittest.TestCase):
 
     def test_pomodoro_transition_to_break(self):
         """Перевірка автоматичного переходу фокусу на 5-хвилинну перерву зі статусом pomo_break."""
-        nastya_routine_service.start_pomodoro(work_min=25)
+        routine_service.start_pomodoro(work_min=25)
         state_service.command_queue.clear()
 
         # Симулюємо завершення робочого інтервалу фокусу
-        nastya_routine_service._pomodoro_end_time = time.time() - 1
-        status = nastya_routine_service.get_pomodoro_status()
+        routine_service._pomodoro_end_time = time.time() - 1
+        status = routine_service.get_pomodoro_status()
 
         self.assertTrue(status["active"])
         self.assertEqual(status["mode"], "break")
@@ -57,10 +57,10 @@ class TestRoutineAndSync(unittest.TestCase):
 
     def test_pomodoro_stop_clean(self):
         """Перевірка зупинки Pomodoro без примусового скидання режиму світла на 0."""
-        nastya_routine_service.start_pomodoro(work_min=25)
+        routine_service.start_pomodoro(work_min=25)
         state_service.command_queue.clear()
 
-        status = nastya_routine_service.stop_pomodoro()
+        status = routine_service.stop_pomodoro()
         self.assertFalse(status["active"])
         self.assertEqual(status["mode"], "idle")
 
@@ -73,24 +73,24 @@ class TestRoutineAndSync(unittest.TestCase):
 
     def test_pomodoro_sync_from_box(self):
         """Перевірка синхронізації стану Pomodoro, запущеного кнопками на шкатулці."""
-        nastya_routine_service.sync_pomodoro_from_box(
+        routine_service.sync_pomodoro_from_box(
             active=True,
             remaining_sec=1200,
             is_break=False,
             duration_min=25
         )
-        status = nastya_routine_service.get_pomodoro_status()
+        status = routine_service.get_pomodoro_status()
         self.assertTrue(status["active"])
         self.assertEqual(status["mode"], "work")
         self.assertGreaterEqual(status["remaining_sec"], 1195)
 
         # Синхронізація вимкнення з лампи
-        nastya_routine_service.sync_pomodoro_from_box(
+        routine_service.sync_pomodoro_from_box(
             active=False,
             remaining_sec=0,
             is_break=False
         )
-        status = nastya_routine_service.get_pomodoro_status()
+        status = routine_service.get_pomodoro_status()
         self.assertFalse(status["active"])
 
     def test_sunrise_alarm_brightness_preset_mapping(self):

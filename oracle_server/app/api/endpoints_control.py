@@ -37,7 +37,7 @@ from app.services.weather_ai_service import weather_ai_service
 from app.services.audio_service import audio_service
 from app.services.spotify_service import spotify_service
 from app.services.infographic_service import infographic_service
-from app.services.nastya_routine_service import nastya_routine_service
+from app.services.routine_service import routine_service
 from app.services.google_calendar_service import google_calendar_service
 from app.services.maintenance_service import maintenance_service
 from app.services.server_updater import server_updater
@@ -175,9 +175,9 @@ async def login_telegram_webapp(request: Request, response: Response):
             "is_online": state_service.is_online(),
             "telemetry": state_service.latest_telemetry,
             "spotify": spotify_service.get_cached_state(),
-            "quiet_hours": nastya_routine_service.get_quiet_hours(),
-            "alarm": nastya_routine_service.get_alarm_config(),
-            "pomodoro": nastya_routine_service.get_pomodoro_status(),
+            "quiet_hours": routine_service.get_quiet_hours(),
+            "alarm": routine_service.get_alarm_config(),
+            "pomodoro": routine_service.get_pomodoro_status(),
             "google_calendar_linked": google_calendar_service.is_linked(),
             "next_calendar_event": google_calendar_service._cached_event,
             "custom_media": db_service.list_custom_media(),
@@ -229,9 +229,9 @@ async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = 
         "telemetry": state_service.latest_telemetry,
         "blackout": blackout_service.get_status(),
         "spotify": spotify_service.get_cached_state(),
-        "quiet_hours": nastya_routine_service.get_quiet_hours(),
-        "alarm": nastya_routine_service.get_alarm_config(),
-        "pomodoro": nastya_routine_service.get_pomodoro_status(),
+        "quiet_hours": routine_service.get_quiet_hours(),
+        "alarm": routine_service.get_alarm_config(),
+        "pomodoro": routine_service.get_pomodoro_status(),
         "google_calendar_linked": google_calendar_service.is_linked(),
         "next_calendar_event": cal_event,
         "resources": memory_guard.get_telemetry(),
@@ -285,9 +285,9 @@ async def dashboard_websocket(ws: WebSocket):
                 "is_online": state_service.is_online(),
                 "telemetry": state_service.latest_telemetry,
                 "spotify": spotify_service.get_cached_state(),
-                "quiet_hours": nastya_routine_service.get_quiet_hours(),
-                "alarm": nastya_routine_service.get_alarm_config(),
-                "pomodoro": nastya_routine_service.get_pomodoro_status(),
+                "quiet_hours": routine_service.get_quiet_hours(),
+                "alarm": routine_service.get_alarm_config(),
+                "pomodoro": routine_service.get_pomodoro_status(),
                 "google_calendar_linked": google_calendar_service.is_linked(),
                 "next_calendar_event": cal_ev,
                 "pending_commands": len(state_service.command_queue),
@@ -310,82 +310,93 @@ async def dashboard_websocket(ws: WebSocket):
 
         while True:
             raw_text = await ws.receive_text()
-            data = orjson.loads(raw_text)
+            try:
+                data = orjson.loads(raw_text)
+            except Exception:
+                await ws.send_text(orjson.dumps({"type": "error", "error": "Invalid JSON"}).decode("utf-8"))
+                continue
+
             act = data.get("action")
+            try:
+                if act == "cmd":
+                    payload = data.get("payload", {})
+                    if payload and isinstance(payload, dict):
+                        state_service.enqueue_raw(payload)
+                    await ws.send_text(orjson.dumps({"type": "cmd_ack", "ok": True}).decode("utf-8"))
 
-            if act == "cmd":
-                payload = data.get("payload", {})
-                if payload:
-                    state_service.enqueue_raw(payload)
-                await ws.send_text(orjson.dumps({"type": "cmd_ack", "ok": True}).decode("utf-8"))
+                elif act == "spotify":
+                    sp_act = str(data.get("action_name", ""))
+                    if sp_act:
+                        await spotify_service.player_action(sp_act)
+                        cur_sp = spotify_service.get_cached_state()
+                        await realtime_hub.broadcast_to_dashboards({"type": "spotify", "spotify": cur_sp})
 
-            elif act == "spotify":
-                sp_act = data.get("action_name", "")
-                if sp_act:
-                    await spotify_service.player_action(sp_act)
-                    cur_sp = spotify_service.get_cached_state()
-                    await realtime_hub.broadcast_to_dashboards({"type": "spotify", "spotify": cur_sp})
+                elif act == "volume":
+                    vol = data.get("volume")
+                    muted = data.get("muted")
+                    touch_beep = data.get("touch_beep")
+                    cmd = {}
+                    if vol is not None:
+                        cmd["volume"] = max(0, min(21, int(vol)))
+                    if muted is not None:
+                        cmd["muted"] = bool(muted)
+                    if touch_beep is not None:
+                        cmd["touch_beep"] = bool(touch_beep)
+                    if cmd:
+                        state_service.enqueue_raw(cmd)
+                    await ws.send_text(orjson.dumps({"type": "volume_ack", "ok": True}).decode("utf-8"))
 
-            elif act == "volume":
-                vol = data.get("volume")
-                muted = data.get("muted")
-                touch_beep = data.get("touch_beep")
-                cmd = {}
-                if vol is not None:
-                    cmd["volume"] = int(vol)
-                if muted is not None:
-                    cmd["muted"] = bool(muted)
-                if touch_beep is not None:
-                    cmd["touch_beep"] = bool(touch_beep)
-                if cmd:
-                    state_service.enqueue_raw(cmd)
-                await ws.send_text(orjson.dumps({"type": "volume_ack", "ok": True}).decode("utf-8"))
+                elif act == "pomo":
+                    pomo_sub = str(data.get("sub_action", ""))
+                    try:
+                        dur = int(data.get("duration_min", 25))
+                    except (ValueError, TypeError):
+                        dur = 25
+                    if pomo_sub == "start":
+                        res = routine_service.start_pomodoro(dur)
+                    else:
+                        res = routine_service.stop_pomodoro()
+                    await ws.send_text(orjson.dumps({"type": "pomo_ack", "pomodoro": res}).decode("utf-8"))
 
-            elif act == "pomo":
-                pomo_sub = data.get("sub_action", "")
-                dur = int(data.get("duration_min", 25))
-                if pomo_sub == "start":
-                    res = nastya_routine_service.start_pomodoro(dur)
-                else:
-                    res = nastya_routine_service.stop_pomodoro()
-                await ws.send_text(orjson.dumps({"type": "pomo_ack", "pomodoro": res}).decode("utf-8"))
+                elif act == "dnd":
+                    cur_dnd = state_service.latest_telemetry.get("dnd", False)
+                    new_dnd = not cur_dnd if "enabled" not in data else bool(data["enabled"])
+                    state_service.enqueue_raw({
+                        "dnd": new_dnd,
+                        "muted": new_dnd,
+                        "set_brt": "0" if new_dnd else "auto",
+                    })
+                    await ws.send_text(orjson.dumps({"type": "dnd_ack", "ok": True, "dnd": new_dnd}).decode("utf-8"))
 
-            elif act == "dnd":
-                cur_dnd = state_service.latest_telemetry.get("dnd", False)
-                new_dnd = not cur_dnd if "enabled" not in data else bool(data["enabled"])
-                state_service.enqueue_raw({
-                    "dnd": new_dnd,
-                    "muted": new_dnd,
-                    "set_brt": "0" if new_dnd else "auto",
-                })
-                await ws.send_text(orjson.dumps({"type": "dnd_ack", "ok": True, "dnd": new_dnd}).decode("utf-8"))
+                elif act == "silent_push":
+                    msg = str(data.get("message", "")).strip()
+                    if msg:
+                        state_service.enqueue_raw({"msg": msg, "sender": "Studio", "silent": True})
+                    await ws.send_text(orjson.dumps({"type": "silent_push_ack", "ok": True}).decode("utf-8"))
 
-            elif act == "silent_push":
-                msg = data.get("message", "").strip()
-                if msg:
-                    state_service.enqueue_raw({"msg": msg, "sender": "Studio", "silent": True})
-                await ws.send_text(orjson.dumps({"type": "silent_push_ack", "ok": True}).decode("utf-8"))
+                elif act == "ping":
+                    await ws.send_text(orjson.dumps({"type": "pong"}).decode("utf-8"))
 
-            elif act == "ping":
-                await ws.send_text(orjson.dumps({"type": "pong"}).decode("utf-8"))
-
-            elif act == "get_state":
-                cal_ev = await google_calendar_service.get_next_event()
-                st = {
-                    "type": "state",
-                    "user_role": role,
-                    "is_online": state_service.is_online(),
-                    "telemetry": state_service.latest_telemetry,
-                    "spotify": spotify_service.get_cached_state(),
-                    "quiet_hours": nastya_routine_service.get_quiet_hours(),
-                    "alarm": nastya_routine_service.get_alarm_config(),
-                    "pomodoro": nastya_routine_service.get_pomodoro_status(),
-                    "google_calendar_linked": google_calendar_service.is_linked(),
-                    "next_calendar_event": cal_ev,
-                    "pending_commands": len(state_service.command_queue),
-                    "resources": memory_guard.get_telemetry(),
-                }
-                await ws.send_text(orjson.dumps(st).decode("utf-8"))
+                elif act == "get_state":
+                    cal_ev = await google_calendar_service.get_next_event()
+                    st = {
+                        "type": "state",
+                        "user_role": role,
+                        "is_online": state_service.is_online(),
+                        "telemetry": state_service.latest_telemetry,
+                        "spotify": spotify_service.get_cached_state(),
+                        "quiet_hours": routine_service.get_quiet_hours(),
+                        "alarm": routine_service.get_alarm_config(),
+                        "pomodoro": routine_service.get_pomodoro_status(),
+                        "google_calendar_linked": google_calendar_service.is_linked(),
+                        "next_calendar_event": cal_ev,
+                        "pending_commands": len(state_service.command_queue),
+                        "resources": memory_guard.get_telemetry(),
+                    }
+                    await ws.send_text(orjson.dumps(st).decode("utf-8"))
+            except Exception as act_err:
+                logger.warning("Error processing dashboard WS action %s: %s", act, act_err)
+                await ws.send_text(orjson.dumps({"type": "error", "action": act, "error": str(act_err)}).decode("utf-8"))
 
     except WebSocketDisconnect:
         pass
@@ -729,7 +740,7 @@ async def create_calendar_event(req: CreateCalendarEventRequest, _: str = Depend
     - Миттєво виводить на Smart Hub екран лампи, якщо подія найближча.
     """
     import datetime
-    now_dt = nastya_routine_service.get_kyiv_now()
+    now_dt = routine_service.get_kyiv_now()
 
     # Парсинг дати та часу
     target_date = req.date_str or now_dt.strftime("%Y-%m-%d")
@@ -795,7 +806,7 @@ async def toggle_dnd(enabled: Optional[bool] = None, _: str = Depends(verify_acc
 
 @router.get("/api/v5/nastya/quiet-hours")
 async def get_quiet_hours(_: str = Depends(verify_access)):
-    return {"ok": True, **nastya_routine_service.get_quiet_hours()}
+    return {"ok": True, **routine_service.get_quiet_hours()}
 
 
 @router.post("/api/v5/nastya/quiet-hours")
@@ -805,13 +816,13 @@ async def update_quiet_hours(
     end: str = Query("08:00"),
     _: str = Depends(verify_access),
 ):
-    nastya_routine_service.set_quiet_hours(enabled, start, end)
+    routine_service.set_quiet_hours(enabled, start, end)
     return {"ok": True, "enabled": enabled, "start": start, "end": end}
 
 
 @router.get("/api/v5/nastya/alarm")
 async def get_alarm(_: str = Depends(verify_access)):
-    return {"ok": True, **nastya_routine_service.get_alarm_config()}
+    return {"ok": True, **routine_service.get_alarm_config()}
 
 
 @router.post("/api/v5/nastya/alarm")
@@ -823,14 +834,14 @@ async def update_alarm(
     _: str = Depends(verify_access),
 ):
     day_list = [int(d.strip()) for d in days.split(",") if d.strip().isdigit()]
-    nastya_routine_service.set_alarm_config(enabled, time_str, day_list, snooze_min)
+    routine_service.set_alarm_config(enabled, time_str, day_list, snooze_min)
     return {"ok": True, "enabled": enabled, "time": time_str, "days": day_list}
 
 
 @router.post("/api/v5/nastya/alarm/dismiss")
 async def dismiss_alarm(_: str = Depends(verify_access)):
     """Вимкнути ранковий будильник/схід сонця на сьогодні."""
-    nastya_routine_service.dismiss_alarm()
+    routine_service.dismiss_alarm()
     state_service.enqueue_raw({
         "stop_media": True,
         "set_mode": 0,
@@ -841,19 +852,19 @@ async def dismiss_alarm(_: str = Depends(verify_access)):
 
 @router.post("/api/v5/nastya/pomodoro/start")
 async def start_pomodoro(work_min: int = Query(25, ge=5, le=120), _: str = Depends(verify_access)):
-    st = nastya_routine_service.start_pomodoro(work_min)
+    st = routine_service.start_pomodoro(work_min)
     return {"ok": True, **st}
 
 
 @router.post("/api/v5/nastya/pomodoro/stop")
 async def stop_pomodoro(_: str = Depends(verify_access)):
-    st = nastya_routine_service.stop_pomodoro()
+    st = routine_service.stop_pomodoro()
     return {"ok": True, **st}
 
 
 @router.get("/api/v5/nastya/pomodoro/status")
 async def get_pomodoro(_: str = Depends(verify_access)):
-    return {"ok": True, **nastya_routine_service.get_pomodoro_status()}
+    return {"ok": True, **routine_service.get_pomodoro_status()}
 
 
 @router.post("/api/v5/admin/birthday-trigger")
@@ -882,7 +893,7 @@ async def trigger_birthday_celebration(_: str = Depends(verify_admin_access)):
 
 @router.post("/api/v5/nastya/morning-brief/trigger")
 async def trigger_morning_brief(_: str = Depends(verify_access)):
-    brief = await nastya_routine_service.generate_morning_brief_for_nastya()
+    brief = await routine_service.generate_morning_brief_for_nastya()
     if settings.TG_BOT_TOKEN and state_service.girl_id:
         from app.services.bot_service import bot_service, GIRL_KB
         await bot_service._api("sendMessage", {
@@ -1036,7 +1047,7 @@ async def alias_quiet_hours(request: Request, _: str = Depends(verify_access)):
     enabled = body.get("enabled", True)
     start = body.get("start", "23:00")
     end = body.get("end", "08:00")
-    nastya_routine_service.set_quiet_hours(enabled, start, end)
+    routine_service.set_quiet_hours(enabled, start, end)
     return {"ok": True, "enabled": enabled, "start": start, "end": end}
 
 @router.post("/api/v5/routine/morning-brief")

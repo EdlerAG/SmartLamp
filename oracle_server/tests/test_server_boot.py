@@ -10,7 +10,7 @@ from main import app
 from app.core.config import settings
 from app.api.endpoints_control import router as control_router
 from app.api.endpoints_box import router as box_router
-from app.services.nastya_routine_service import nastya_routine_service
+from app.services.routine_service import routine_service
 from app.services.state_service import state_service
 from app.services.infographic_service import infographic_service
 from app.domain.schemas import VolumeControlRequest, VoiceConfigRequest, BoxTelemetryPayload
@@ -111,28 +111,28 @@ class TestServerBootAndContracts(unittest.TestCase):
 
     def test_alarm_dismiss(self):
         """Перевірка скидання будильника на день."""
-        today = nastya_routine_service.get_kyiv_now().strftime("%Y-%m-%d")
-        nastya_routine_service.dismiss_alarm()
-        self.assertEqual(nastya_routine_service._alarm_dismissed_date, today)
+        today = routine_service.get_kyiv_now().strftime("%Y-%m-%d")
+        routine_service.dismiss_alarm()
+        self.assertEqual(routine_service._alarm_dismissed_date, today)
 
         # check_alarm_state повинен повертати active: False
-        st = nastya_routine_service.check_alarm_state()
+        st = routine_service.check_alarm_state()
         self.assertFalse(st.get("active", False))
 
     def test_pomodoro_work_duration_preservation(self):
         """Перевірка збереження тривалості роботи після перерви."""
-        nastya_routine_service.start_pomodoro(work_min=45)
-        self.assertEqual(nastya_routine_service._pomodoro_work_duration_min, 45)
-        self.assertEqual(nastya_routine_service._pomodoro_duration_min, 45)
+        routine_service.start_pomodoro(work_min=45)
+        self.assertEqual(routine_service._pomodoro_work_duration_min, 45)
+        self.assertEqual(routine_service._pomodoro_duration_min, 45)
 
         # Імітація переходу на перерву
-        nastya_routine_service._pomodoro_mode = "break"
-        nastya_routine_service._pomodoro_duration_min = 5
-        self.assertEqual(nastya_routine_service._pomodoro_work_duration_min, 45)
+        routine_service._pomodoro_mode = "break"
+        routine_service._pomodoro_duration_min = 5
+        self.assertEqual(routine_service._pomodoro_work_duration_min, 45)
 
         # Зупинка
-        nastya_routine_service.stop_pomodoro()
-        self.assertEqual(nastya_routine_service._pomodoro_duration_min, 45)
+        routine_service.stop_pomodoro()
+        self.assertEqual(routine_service._pomodoro_duration_min, 45)
 
     def test_box_telemetry_alarm_off(self):
         """Перевірка парсингу поля alarm_off у телеметрії."""

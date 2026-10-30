@@ -17,7 +17,7 @@ from app.services.blackout_service import blackout_service
 from app.services.media_service import media_service
 from app.services.ota_service import ota_service
 from app.services.spotify_service import spotify_service
-from app.services.nastya_routine_service import nastya_routine_service
+from app.services.routine_service import routine_service
 from app.services.google_calendar_service import google_calendar_service
 
 router = APIRouter(tags=["ESP32-S3 Box Gateway v5.0"])
@@ -50,21 +50,21 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
 
     # 2. Якщо лампа повідомила про скидання будильника фізичною кнопкою
     if payload.alarm_off:
-        nastya_routine_service.dismiss_alarm()
+        routine_service.dismiss_alarm()
 
     # 3. Двостороння синхронізація режиму Pomodoro
     has_pomo_cmd = any("pomo_action" in cmd for cmd in state_service.command_queue)
     if not has_pomo_cmd:
-        cur_pomo = nastya_routine_service.get_pomodoro_status()
+        cur_pomo = routine_service.get_pomodoro_status()
         if payload.pomo:
-            nastya_routine_service.sync_pomodoro_from_box(
+            routine_service.sync_pomodoro_from_box(
                 active=True,
                 remaining_sec=payload.pomo_rem,
                 is_break=payload.pomo_brk,
                 duration_min=payload.pomo_dur,
             )
         elif cur_pomo.get("active", False):
-            nastya_routine_service.sync_pomodoro_from_box(
+            routine_service.sync_pomodoro_from_box(
                 active=False,
                 remaining_sec=0,
                 is_break=False,
@@ -86,8 +86,8 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
     elif spotify_service.is_linked():
         resp["spotify"] = spotify_service.get_cached_state()
 
-    # 5. Перевірка світанкового будильника для Насті
-    alarm_st = nastya_routine_service.check_alarm_state()
+    # 5. Перевірка світанкового будильника
+    alarm_st = routine_service.check_alarm_state()
     if alarm_st.get("active"):
         resp["has_cmd"] = True
         resp["alarm_active"] = True
@@ -99,11 +99,11 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
         elif alarm_st.get("phase") == "alarm_ring":
             resp["set_mode"] = 0  # Теплий затишок 100%
             resp["set_brt"] = "3"
-            resp["msg"] = "ДОБРОГО РАНКУ, НАСТЮ!"
+            resp["msg"] = "ДОБРОГО РАНКУ!"
             resp["play_url"] = f"{settings.PUBLIC_SERVER_URL}/api/v1/media/sound/alarm.mp3"
 
     # 6. Перевірка тихих годин
-    resp["quiet_hours"] = nastya_routine_service.is_quiet_hours_now()
+    resp["quiet_hours"] = routine_service.is_quiet_hours_now()
 
     # 7. Перевірка найближчої події календаря Насті для Smart Hub (з швидким RAM TTL-кешем 30с)
     cal_ev = await _get_cached_calendar_event()
@@ -142,7 +142,11 @@ async def box_websocket_endpoint(ws: WebSocket):
     await realtime_hub.register_box_ws(ws)
     try:
         while True:
-            raw_msg = await ws.receive_text()
+            try:
+                raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=45.0)
+            except asyncio.TimeoutError:
+                logger.debug("Box WebSocket heartbeat timeout (45s) - closing inactive socket")
+                break
             data = orjson.loads(raw_msg)
 
             if data.get("type") == "get_vinyl":

@@ -15,7 +15,7 @@ from app.services.audio_service import audio_service
 from app.services.media_service import media_service
 from app.services.spotify_service import spotify_service
 from app.services.infographic_service import infographic_service
-from app.services.nastya_routine_service import nastya_routine_service
+from app.services.routine_service import routine_service
 from app.services.maintenance_service import maintenance_service
 from app.services.google_calendar_service import google_calendar_service
 from app.services.server_updater import server_updater
@@ -279,7 +279,7 @@ class TelegramBotService:
 
     @staticmethod
     def _pomodoro_inline_kb() -> Dict[str, Any]:
-        st = nastya_routine_service.get_pomodoro_status()
+        st = routine_service.get_pomodoro_status()
         active = st.get("active", False)
         mode = st.get("mode", "idle")
         rem_min = st.get("remaining_min", 0)
@@ -306,7 +306,7 @@ class TelegramBotService:
     def _dnd_inline_kb() -> Dict[str, Any]:
         d = state_service.latest_telemetry
         dnd = d.get("dnd", False)
-        qh = nastya_routine_service.get_quiet_hours()
+        qh = routine_service.get_quiet_hours()
         toggle_txt = "☀️ Вимкнути режим DND" if dnd else "🌙 Увімкнути режим DND (Тиша + нічник)"
         qh_txt = f"Тихі години: {qh['start']} - {qh['end']} ({'ВКЛ' if qh['enabled'] else 'ВИКЛ'})"
         return {
@@ -401,7 +401,7 @@ class TelegramBotService:
         rssi = d.get("rssi", -60)
         dnd = d.get("dnd", False)
 
-        pomo_st = nastya_routine_service.get_pomodoro_status()
+        pomo_st = routine_service.get_pomodoro_status()
         pomo_line = f"⏱ Фокус Pomodoro: <b>{pomo_st['remaining_min']} хв ({pomo_st['mode'].upper()})</b>" if pomo_st["active"] else "⏱ Фокус Pomodoro: <b>Вимкнено</b>"
 
         vol_str = "🔇 MUTE" if muted or vol == 0 else f"{int(vol * 100 / 21)}% ({vol}/21)"
@@ -614,7 +614,7 @@ class TelegramBotService:
         elif data.startswith("pomo:"):
             act = data.split(":", 1)[1]
             if act == "stop":
-                nastya_routine_service.stop_pomodoro()
+                routine_service.stop_pomodoro()
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🛑 Pomodoro зупинено"})
                 await self._api("editMessageText", {
                     "chat_id": chat_id,
@@ -637,7 +637,7 @@ class TelegramBotService:
                     dur = int(act)
                 except ValueError:
                     dur = 25
-                nastya_routine_service.start_pomodoro(dur)
+                routine_service.start_pomodoro(dur)
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"⏳ Фокус {dur} хв запущено!"})
                 await self._api("editMessageText", {
                     "chat_id": chat_id,
@@ -666,7 +666,7 @@ class TelegramBotService:
             await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._dnd_inline_kb()})
 
         elif data == "dnd:quiet_info":
-            qh = nastya_routine_service.get_quiet_hours()
+            qh = routine_service.get_quiet_hours()
             await self._api("answerCallbackQuery", {
                 "callback_query_id": cb_id,
                 "text": f"Тихі години: щодня з {qh['start']} до {qh['end']}. Звук вимикається автоматично.",
@@ -1595,7 +1595,7 @@ class TelegramBotService:
         if cal_match:
             t_str = cal_match.group(1)
             summary_txt = cal_match.group(2).strip()
-            now_dt = nastya_routine_service.get_kyiv_now()
+            now_dt = routine_service.get_kyiv_now()
 
             # Перевіряємо чи є слово 'завтра'
             is_tomorrow = "завтра" in text.lower()

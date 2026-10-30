@@ -546,6 +546,7 @@ input::placeholder, textarea::placeholder {
           <div style="width:100%;height:5px;background:var(--border-hairline);border-radius:3px;margin-top:8px;overflow:hidden">
             <div id="spProgressBar" style="width:0%;height:100%;background:var(--accent-spotify);transition:width 0.4s linear;border-radius:3px"></div>
           </div>
+          <div id="spLyric" style="display:none;margin-top:8px;font-size:11px;font-style:italic;color:var(--accent-spotify);background:rgba(30,215,96,0.08);padding:4px 8px;border-radius:6px;border-left:2px solid var(--accent-spotify);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:all 0.3s ease"></div>
         </div>
       </div>
 
@@ -1093,9 +1094,15 @@ function doLogout(){
 }
 
 function sendCmd(cmdObj){
+  if (cmdObj && cmdObj.set_mode !== undefined) {
+    MODES.forEach((_, i) => {
+      const el = document.getElementById('mBtn' + i);
+      if (el) el.className = (cmdObj.set_mode === i) ? 'btn active' : 'btn';
+    });
+  }
   if (studioWs && studioWs.readyState === WebSocket.OPEN) {
     studioWs.send(JSON.stringify({action: 'cmd', payload: cmdObj}));
-    toast('Команду передано ⚡️ (WebSocket)');
+    toast('Команду передано ⚡️');
     return;
   }
   fetch('/api/v5/command',{
@@ -1104,6 +1111,9 @@ function sendCmd(cmdObj){
     body: JSON.stringify(cmdObj)
   }).then(r => r.json()).then(d => {
     toast('Команду передано в чергу');
+  }).catch(() => {
+    toast('Помилка відправки команди');
+    pollState();
   });
 }
 
@@ -2275,13 +2285,19 @@ function applyTelemetryInPlace(t) {
   }
 }
 
+let wsReconnectDelay = 2000;
+let wsReconnectTimer = null;
+
 function initStudioWebSocket() {
+  if (document.visibilityState === 'hidden') return;
   if (studioWs && (studioWs.readyState === WebSocket.OPEN || studioWs.readyState === WebSocket.CONNECTING)) return;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${proto}//${location.host}/ws/dashboard`;
   try {
     studioWs = new WebSocket(wsUrl);
     studioWs.onopen = () => {
+      wsReconnectDelay = 2000;
+      clearTimeout(wsReconnectTimer);
       const oDot = document.getElementById('onlineDot');
       if (oDot) oDot.className = 'pulse on';
       const oTxt = document.getElementById('onlineTxt');
@@ -2308,19 +2324,52 @@ function initStudioWebSocket() {
     };
     studioWs.onclose = () => {
       studioWs = null;
-      setTimeout(initStudioWebSocket, 2500);
+      const oDot = document.getElementById('onlineDot');
+      if (oDot) oDot.className = 'pulse';
+      const oTxt = document.getElementById('onlineTxt');
+      if (oTxt) oTxt.innerText = 'MAGICBOX · СИНХРОНІЗАЦІЯ';
+      if (document.visibilityState !== 'hidden') {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = setTimeout(initStudioWebSocket, wsReconnectDelay);
+        wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, 30000);
+      }
     };
     studioWs.onerror = () => {
       try { studioWs.close(); } catch(_) {}
     };
   } catch(_) {
-    setTimeout(initStudioWebSocket, 4000);
+    if (document.visibilityState !== 'hidden') {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = setTimeout(initStudioWebSocket, wsReconnectDelay);
+      wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, 30000);
+    }
   }
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (!studioWs || studioWs.readyState !== WebSocket.OPEN) {
+      wsReconnectDelay = 2000;
+      initStudioWebSocket();
+      pollState();
+    }
+  } else {
+    clearTimeout(wsReconnectTimer);
+    if (studioWs) {
+      try { studioWs.close(); } catch(_) {}
+      studioWs = null;
+    }
+  }
+});
+
 window.addEventListener('resize', () => {
   if (window._lastClimateData) renderNativeClimateChart(window._lastClimateData);
 });
-initStudioWebSocket();
+
+// У Telegram Mini App сокет запускається ПІСЛЯ завершення авторизації /api/v5/auth/tg-webapp
+if (!isTelegramApp) {
+  initStudioWebSocket();
+}
 
 // WebSocket Realtime Architecture Active
 </script>

@@ -42,6 +42,7 @@ private:
             self->state.oracle_online = true;
             self->ws_connected = true;
             self->rx_binary_in_progress = false;
+            self->state.ws_reconnect_cnt++;
         } else if (event_id == WEBSOCKET_EVENT_DISCONNECTED || event_id == WEBSOCKET_EVENT_CLOSED) {
             self->ws_connected = false;
             self->rx_binary_in_progress = false;
@@ -726,7 +727,7 @@ public:
             return 20;
         }
         if (state.has_more_cloud_cmds) return 150;
-        if (ws_connected) return 3000;
+        if (ws_connected) return 5000;
         return Config::ORACLE_SYNC_MS;
     }
 
@@ -785,9 +786,9 @@ public:
         }
 
         // ⚡️ Захист від зайвої важкої телеметрії: якщо щойно виконали швидкий pull (вініл/медіа/OTA)
-        // і немає реальних дій користувача (кнопки, алярм) — не надсилаємо статус раніше ніж за 2800 мс
+        // і немає реальних дій користувача (кнопки, алярм) — не надсилаємо статус раніше ніж за 4500 мс
         bool has_urgent_events = (state.cmd_spotify_action != 0 || state.cmd_send_tg_ack || state.cmd_send_meme_ping != 0 || state.alarm_dismissed || state.has_more_cloud_cmds);
-        if (ws_connected && !has_urgent_events && (millis() - last_ws_send_ms < 2800)) {
+        if (ws_connected && !has_urgent_events && (millis() - last_ws_send_ms < 4500)) {
             return;
         }
 

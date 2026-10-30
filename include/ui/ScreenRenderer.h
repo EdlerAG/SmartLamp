@@ -408,9 +408,9 @@ namespace ScreenRenderer {
         canvas.drawString(net_line, 120, 160);
 
         char mem_line[64];
-        snprintf(mem_line, sizeof(mem_line), "Vol: %u%% %s · PSRAM: %lu MB",
-                 (state.audio_volume * 100) / 21,
-                 state.audio_muted ? "[MUTED]" : "",
+        snprintf(mem_line, sizeof(mem_line), "WS:%s (rec:%u) · PSRAM: %lu MB",
+                 state.oracle_online ? "ON" : "OFF",
+                 (unsigned int)state.ws_reconnect_cnt,
                  (unsigned long)(ESP.getFreePsram() / (1024 * 1024)));
         canvas.drawString(mem_line, 120, 178);
 

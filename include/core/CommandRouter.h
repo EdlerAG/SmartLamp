@@ -189,7 +189,8 @@ public:
                  "\"heap\":%lu,\"psram_free\":%lu,"
                  "\"rst\":\"%s\","
                  "\"alarm_off\":%s,"
-                 "\"ack\":%s,\"ping\":%u}",
+                 "\"ack\":%s,\"ping\":%u,"
+                 "\"ota\":%u,\"ws_rec\":%u}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
                  state.light_mode, getModeNameUa(state.light_mode),
@@ -205,7 +206,8 @@ public:
                  (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
                  state.reset_reason,
                  alarm_off_flag ? "true" : "false",
-                 ack_flag ? "true" : "false", ping_val);
+                 ack_flag ? "true" : "false", ping_val,
+                 state.ota_in_progress ? 1 : 0, (unsigned int)state.ws_reconnect_cnt);
     }
 
     static void buildInboxJson(AppState& state, char* out, size_t max_len) {
