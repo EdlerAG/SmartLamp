@@ -54,16 +54,17 @@ namespace ScreenRenderer {
 
     inline void drawPerimeterTicks(LGFX_Sprite& canvas, int highlight_sec = -1) {
         for (int i = 0; i < 60; ++i) {
-            float rad = (float)i * (6.0f * 0.0174532925f);
+            float rad = (float)i * (6.0f * 0.0174532925f) - 1.5707963f; // 0 index at 12 o'clock!
             float cos_v = cosf(rad);
             float sin_v = sinf(rad);
-            int r_in = (i % 5 == 0) ? 112 : 115;
-            uint16_t col = (i == highlight_sec) ? HallmarkTheme::ACCENT_WARM :
-                           ((i % 5 == 0) ? HallmarkTheme::TEXT_SECONDARY : HallmarkTheme::BORDER_HAIRLINE);
+            bool is_major = (i % 5 == 0);
+            int r_in = is_major ? 112 : 115;
+            uint16_t col = (i == highlight_sec) ? HallmarkTheme::ACCENT_AMBER :
+                           (is_major ? HallmarkTheme::TICK_MAJOR : HallmarkTheme::TICK_NORMAL);
             canvas.drawLine(120 + (int)(cos_v * r_in), 120 + (int)(sin_v * r_in),
                             120 + (int)(cos_v * 118),  120 + (int)(sin_v * 118), col);
             if (i == highlight_sec) {
-                canvas.fillCircle(120 + (int)(cos_v * 113), 120 + (int)(sin_v * 113), 2, HallmarkTheme::ACCENT_WARM);
+                canvas.fillSmoothCircle(120 + (int)(cos_v * 114), 120 + (int)(sin_v * 114), 3, HallmarkTheme::ACCENT_AMBER);
             }
         }
     }
@@ -414,9 +415,19 @@ namespace ScreenRenderer {
     // РІВЕНЬ Б: ОСНОВНІ 4 ВІКНА-ЗАСТАВКИ (SCREEN_COUNT = 4)
     // ========================================================================
 
-    // ВІКНО 1: SCREEN_CLIMATE (Hallmark Horology & Climate Desk Clock — 10 FPS)
-    inline void drawClimate(LGFX_Sprite& canvas, AppState& state, float& smooth_hum_angle) {
-        // Підсвічуємо поточну секунду на 60 засічках
+    // ВІКНО 1: SCREEN_CLIMATE (Luxury Swiss Horology & Climate Desk Clock — 10 FPS)
+    inline void drawClimate(LGFX_Sprite& canvas, AppState& state) {
+        // 1. Делікатне радіальне світіння у колір поточної теми
+        uint8_t aur_r = state.ambi_r / 20;
+        uint8_t aur_g = state.ambi_g / 20;
+        uint8_t aur_b = state.ambi_b / 20;
+        if (aur_r == 0 && aur_g == 0 && aur_b == 0) {
+            aur_r = 14; aur_g = 10; aur_b = 6; // Теплий бурштиновий відблиск
+        }
+        canvas.fillSmoothCircle(120, 112, 64, canvas.color565(aur_r, aur_g, aur_b));
+        canvas.fillSmoothCircle(120, 112, 44, canvas.color565(aur_r * 2, aur_g * 2, aur_b * 2));
+
+        // 2. Зовнішнє кільце (Радіус 112..118 px): 60 засічок з бурштиновою секундною точкою
         int sec = 0;
         if (state.time_synced) {
             time_t now_t = time(nullptr);
@@ -425,96 +436,120 @@ namespace ScreenRenderer {
         }
         drawPerimeterTicks(canvas, sec);
 
-        // Тонка плавна дуга вологості (180..360 deg)
-        float target_hum = 180.0f + constrain(state.humidity, 0.0f, 100.0f) * 1.8f;
-        smooth_hum_angle += (target_hum - smooth_hum_angle) * 0.25f;
-        canvas.drawArc(120, 120, 107, 105, 180, 360, HallmarkTheme::BORDER_HAIRLINE);
-        canvas.drawArc(120, 120, 107, 105, 180, (int)smooth_hum_angle, HallmarkTheme::ACCENT_COOL);
-
-        // Верхня капсула статусу
-        canvas.fillRoundRect(30, 18, 180, 22, 11, HallmarkTheme::BG_SURFACE);
-        canvas.drawRoundRect(30, 18, 180, 22, 11, HallmarkTheme::BORDER_HAIRLINE);
-
-        uint16_t dot_col = (state.wifi_connected && state.oracle_online) ? HallmarkTheme::ACCENT_SUCCESS :
-                          (state.wifi_connected ? HallmarkTheme::ACCENT_COOL :
-                          (state.ap_mode_active ? HallmarkTheme::ACCENT_AMBER : HallmarkTheme::ACCENT_DANGER));
-        canvas.fillCircle(42, 29, 3, dot_col);
-
-        const char* m_name = CommandRouter::getModeNameShortUa(state.light_mode);
-        canvas.setFont(&UkrainianFont12Bold);
-        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-
-        uint16_t sleep_min = state.getSleepTimerRemainingMin();
-        char top_buf[64];
-        if (sleep_min > 0) {
-            snprintf(top_buf, sizeof(top_buf), "Сон %uхв | %s", sleep_min, m_name);
-        } else if (state.time_synced) {
-            char t_local[10];
-            state.getTimeString(t_local, sizeof(t_local));
-            snprintf(top_buf, sizeof(top_buf), "%s | %s", t_local, m_name);
+        // 3. Верхній блок (Y = 38..46): Крупний ідеально центрований час, нуль слів поруч
+        char t_buf[16];
+        if (state.time_synced) {
+            state.getTimeString(t_buf, sizeof(t_buf));
         } else {
-            snprintf(top_buf, sizeof(top_buf), "%s", m_name);
+            strncpy(t_buf, "--:--", sizeof(t_buf));
         }
-        canvas.drawString(top_buf, 124, 29);
+        canvas.setFont(&fonts::FreeSansBold18pt7b);
+        canvas.setTextSize(1.0f);
+        canvas.setTextDatum(textdatum_t::middle_center);
+        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+        canvas.drawString(t_buf, 120, 42);
 
-        // Центральна температура (Hero)
-        int t_int = (int)state.temperature;
-        int t_dec = abs((int)(state.temperature * 10.0f) - t_int * 10);
+        // 4. Центральний блок (Y = 105..115): Монолітна температура з хірургічним кернінгом
+        float temp_val = state.temperature;
+        int t_int = (int)temp_val;
+        int t_dec = abs((int)(temp_val * 10.0f) - t_int * 10);
+
+        char int_buf[12];
+        snprintf(int_buf, sizeof(int_buf), "%d", t_int);
+        char dec_buf[8];
+        snprintf(dec_buf, sizeof(dec_buf), ".%d", t_dec);
 
         canvas.setFont(&fonts::FreeSansBold24pt7b);
-        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-        char t_main[12];
-        snprintf(t_main, sizeof(t_main), "%d", t_int);
-        canvas.drawString(t_main, 96, 78);
+        canvas.setTextSize(1.35f);
+        int w_int = canvas.textWidth(int_buf);
+
+        canvas.setFont(&fonts::FreeSansBold18pt7b);
+        canvas.setTextSize(1.0f);
+        int w_dec = canvas.textWidth(dec_buf);
 
         canvas.setFont(&fonts::FreeSansBold12pt7b);
+        int w_c = canvas.textWidth("C");
+        int w_deg = 6;
+        int w_unit = w_deg + 3 + w_c;
+
+        int gap_dec = 1;  // Впритул між цілою і десятковою частиною (нуль дірок!)
+        int gap_unit = 5; // Відступ до одиниці виміру
+        int total_w = w_int + gap_dec + w_dec + gap_unit + w_unit;
+        int start_x = (240 - total_w) / 2;
+
+        int base_y = 112;
+
+        // 4.1. Ціла частина (Hero, монолітна)
+        canvas.setFont(&fonts::FreeSansBold24pt7b);
+        canvas.setTextSize(1.35f);
+        canvas.setTextDatum(textdatum_t::middle_left);
+        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+        canvas.drawString(int_buf, start_x, base_y);
+
+        // 4.2. Десяткова частина (.6)
+        int cur_x = start_x + w_int + gap_dec;
+        canvas.setFont(&fonts::FreeSansBold18pt7b);
+        canvas.setTextSize(1.0f);
         canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
-        char t_frac[8];
-        snprintf(t_frac, sizeof(t_frac), ".%d", t_dec);
-        canvas.drawString(t_frac, 146, 86);
-        canvas.drawCircle(164, 66, 3, HallmarkTheme::TEXT_SECONDARY);
-        canvas.drawString("C", 176, 76);
+        canvas.drawString(dec_buf, cur_x, base_y + 4);
 
-        // Нижні дві колонки (Вологість та Тиск)
-        canvas.fillRoundRect(24, 110, 192, 46, 8, HallmarkTheme::BG_SURFACE);
-        canvas.drawRoundRect(24, 110, 192, 46, 8, HallmarkTheme::BORDER_HAIRLINE);
-        canvas.drawFastVLine(120, 116, 34, HallmarkTheme::BORDER_HAIRLINE);
-
-        canvas.setFont(&UkrainianFont12Bold);
+        // 4.3. Символ градуса та 'C'
+        cur_x += w_dec + gap_unit;
+        canvas.drawCircle(cur_x + 3, base_y - 12, 3, HallmarkTheme::TEXT_SECONDARY);
+        canvas.drawCircle(cur_x + 3, base_y - 12, 2, HallmarkTheme::TEXT_SECONDARY);
+        canvas.setFont(&fonts::FreeSansBold12pt7b);
+        canvas.setTextSize(1.0f);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-        canvas.drawString("ВОЛОГІСТЬ", 72, 122);
-        canvas.drawString("ТИСК", 168, 122);
+        canvas.drawString("C", cur_x + w_deg + 3, base_y);
 
-        canvas.setFont(&fonts::FreeSansBold9pt7b);
+        // 5. Нижній блок (Y = 162..196): Два заокруглених бейджі-капсули (#12141A, r=12)
+        // Ліва капсула: Вологість
+        canvas.fillSmoothRoundRect(28, 162, 88, 34, 12, HallmarkTheme::BG_SURFACE);
+        canvas.drawRoundRect(28, 162, 88, 34, 12, HallmarkTheme::BORDER_HAIRLINE);
+
+        int cx = 46, cy = 179;
+        canvas.fillCircle(cx, cy + 2, 3, HallmarkTheme::ACCENT_COOL);
+        canvas.fillTriangle(cx - 3, cy + 2, cx + 3, cy + 2, cx, cy - 4, HallmarkTheme::ACCENT_COOL);
+
+        char h_buf[12];
+        snprintf(h_buf, sizeof(h_buf), "%.0f%%", state.humidity);
+        canvas.setFont(&UkrainianFont16Bold);
+        canvas.setTextDatum(textdatum_t::middle_center);
         canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-        char h_str[16];
-        snprintf(h_str, sizeof(h_str), "%.0f %%", state.humidity);
-        canvas.drawString(h_str, 72, 142);
+        canvas.drawString(h_buf, 79, 179);
 
-        canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
-        char p_str[16];
-        snprintf(p_str, sizeof(p_str), "%.0f mm", state.pressure);
-        canvas.drawString(p_str, 168, 142);
+        // Права капсула: Барометр + тренд
+        canvas.fillSmoothRoundRect(124, 162, 88, 34, 12, HallmarkTheme::BG_SURFACE);
+        canvas.drawRoundRect(124, 162, 88, 34, 12, HallmarkTheme::BORDER_HAIRLINE);
 
-        // Індикатор яскравості та гучності
-        uint8_t brt_pct = state.getLedBrightnessPercent();
+        int ax = 138, ay = 179;
+        if (state.pressure_diff > 0.35f) {
+            canvas.drawLine(ax, ay + 4, ax, ay - 4, HallmarkTheme::ACCENT_AMBER);
+            canvas.drawLine(ax - 2, ay - 2, ax, ay - 4, HallmarkTheme::ACCENT_AMBER);
+            canvas.drawLine(ax + 2, ay - 2, ax, ay - 4, HallmarkTheme::ACCENT_AMBER);
+        } else if (state.pressure_diff < -0.35f) {
+            canvas.drawLine(ax, ay - 4, ax, ay + 4, HallmarkTheme::ACCENT_AMBER);
+            canvas.drawLine(ax - 2, ay + 2, ax, ay + 4, HallmarkTheme::ACCENT_AMBER);
+            canvas.drawLine(ax + 2, ay + 2, ax, ay + 4, HallmarkTheme::ACCENT_AMBER);
+        } else {
+            canvas.drawLine(ax - 3, ay, ax + 3, ay, HallmarkTheme::ACCENT_AMBER);
+            canvas.drawLine(ax + 1, ay - 2, ax + 3, ay, HallmarkTheme::ACCENT_AMBER);
+            canvas.drawLine(ax + 1, ay + 2, ax + 3, ay, HallmarkTheme::ACCENT_AMBER);
+        }
+
+        char p_buf[10];
+        snprintf(p_buf, sizeof(p_buf), "%.0f", state.pressure);
+        canvas.setFont(&fonts::FreeSansBold12pt7b);
+        canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
+        canvas.setTextDatum(textdatum_t::middle_left);
+        canvas.drawString(p_buf, 148, 179);
+        int w_p = canvas.textWidth(p_buf);
         canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-        char brt_info[64];
-        snprintf(brt_info, sizeof(brt_info), "%s | Світ %d%% | Звук %s%d%%",
-                 state.auto_brt ? "АВТО" : "РУЧН",
-                 brt_pct,
-                 state.dnd_mode ? "DND " : (state.audio_muted ? "MUTE " : ""),
-                 state.audio_muted ? 0 : (state.audio_volume * 100) / 21);
-        canvas.drawString(brt_info, 120, 168);
-
-        canvas.drawFastHLine(48, 180, 144, HallmarkTheme::BORDER_HAIRLINE);
-        int bar_w = constrain((brt_pct * 144) / 100, 2, 144);
-        canvas.drawFastHLine(48, 180, bar_w, HallmarkTheme::ACCENT_WARM);
-        canvas.drawFastHLine(48, 181, bar_w, HallmarkTheme::ACCENT_WARM);
+        canvas.drawString("мм", 148 + w_p + 2, 180);
     }
 
-    // ВІКНО 2: SCREEN_LIVING_GIF (Постійна GIF-Заставка LittleFS + Процедурний маятник Hallmark)
+    // ВІКНО 2: SCREEN_LIVING_GIF    // ВІКНО 2: SCREEN_LIVING_GIF (Постійна GIF-Заставка LittleFS + Процедурний маятник Hallmark)
     inline void drawLivingGif(LGFX_Sprite& canvas, AppState& state, uint32_t now) {
         if (!state.saver_loaded || state.saver_num_frames == 0) {
             // Процедурна заставка в стилі швейцарського орбітального маятника Braun
@@ -657,33 +692,45 @@ namespace ScreenRenderer {
                 canvas.fillCircle(192, 72, 3, HallmarkTheme::TEXT_SECONDARY);
             }
 
-            // 3. Інтерпольована дуга прогресу треку по периметру (R = 116)
+            // 2. Плавна кругова дуга прогресу треку навколо вінілової платівки (R = 73..71)
+            // Синхронізована за кольором з передньою зоною нижнього Ambilight
             uint32_t cur_prog = state.getLocalSpotifyProgressMs();
             float prog_frac = (state.spotify.duration_ms > 0) ? ((float)cur_prog / (float)state.spotify.duration_ms) : 0.0f;
-            int arc_deg = 180 + (int)(prog_frac * 360.0f);
-            canvas.drawArc(120, 120, 108, 106, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
-            canvas.drawArc(120, 120, 108, 106, 180, arc_deg, HallmarkTheme::ACCENT_WARM);
+            prog_frac = constrain(prog_frac, 0.0f, 1.0f);
 
-            // 4. Назва треку (з горизонтальним скролінгом якщо довжина перевищує ширину)
-            canvas.setFont(&UkrainianFont14);
-            canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-
-            int title_w = canvas.textWidth(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify Track");
-            if (title_w > 180) {
-                int scroll_range = title_w + 60;
-                int scroll_offset = (now / 35) % scroll_range;
-                int base_x = 120 + 90 - scroll_offset;
-                canvas.setClipRect(24, 160, 192, 22);
-                canvas.drawString(state.spotify.title, base_x, 171);
-                canvas.clearClipRect();
-            } else {
-                canvas.drawString(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify Track", 120, 171);
+            uint16_t prog_col = canvas.color565(state.ambi_r, state.ambi_g, state.ambi_b);
+            if (state.ambi_r == 0 && state.ambi_g == 0 && state.ambi_b == 0) {
+                prog_col = HallmarkTheme::ACCENT_WARM;
+            }
+            canvas.drawArc(120, 94, 73, 71, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
+            int prog_deg = (int)(prog_frac * 360.0f);
+            if (prog_deg > 0) {
+                canvas.drawArc(120, 94, 73, 71, 270, 270 + prog_deg, prog_col);
             }
 
-            // 5. Виконавець та час треку
-            canvas.setFont(&UkrainianFont12Bold);
+            // 3. Назва треку (шрифт UkrainianFont16Bold з високим контрастом і плавним скролінгом)
+            canvas.setFont(&UkrainianFont16Bold);
+            canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+
+            int title_w = canvas.textWidth(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify");
+            if (title_w > 192) {
+                int scroll_range = title_w + 50;
+                int scroll_offset = (now / 35) % scroll_range;
+                int base_x = 120 + 96 - scroll_offset;
+                canvas.setClipRect(20, 158, 200, 22);
+                canvas.setTextDatum(textdatum_t::middle_left);
+                canvas.drawString(state.spotify.title, base_x, 169);
+                canvas.clearClipRect();
+            } else {
+                canvas.setTextDatum(textdatum_t::middle_center);
+                canvas.drawString(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify", 120, 169);
+            }
+
+            // 4. Виконавець та час треку (великий згладжений шрифт, нуль дрібного тексту)
+            canvas.setFont(&UkrainianFont14);
             canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-            canvas.drawString(state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist", 120, 184);
+            canvas.setTextDatum(textdatum_t::middle_center);
+            canvas.drawString(state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist", 120, 189);
 
             char time_prog[32];
             uint32_t c_sec = cur_prog / 1000;
@@ -692,7 +739,7 @@ namespace ScreenRenderer {
                      c_sec / 60, c_sec % 60, d_sec / 60, d_sec % 60);
             canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-            canvas.drawString(time_prog, 120, 196);
+            canvas.drawString(time_prog, 120, 204);
             return;
         }
 
@@ -958,74 +1005,52 @@ namespace ScreenRenderer {
         canvas.drawString("ДЯКУЮ", 120, 180);
     }
 
-    // НАВІГАЦІЙНИЙ ПІДВАЛ (FOOTER NAV ДЛЯ 5 ВІКОН)
-    inline void drawFooterNav(LGFX_Sprite& canvas, AppState& state) {
-        for (int i = 0; i < SCREEN_COUNT; i++) {
-            int x = 96 + i * 12;
-            uint16_t c = (state.screen_mode == i) ? HallmarkTheme::ACCENT_WARM : HallmarkTheme::BORDER_HAIRLINE;
-            canvas.fillCircle(x, 202, (state.screen_mode == i) ? 3 : 2, c);
+    // ІНДИКАТОР СТОРІНОК (Y = 222): 3 акуратні крапки (активна: pill 12x4 px бурштин)
+    inline void drawPageIndicator(LGFX_Sprite& canvas, AppState& state) {
+        if (state.screen_mode >= MAIN_SCREEN_COUNT) return;
+        const int dot_xs[3] = {100, 120, 140};
+        for (int i = 0; i < 3; ++i) {
+            if (state.screen_mode == i) {
+                canvas.fillSmoothRoundRect(dot_xs[i] - 6, 220, 12, 4, 2, HallmarkTheme::ACCENT_AMBER);
+            } else {
+                canvas.fillSmoothCircle(dot_xs[i], 222, 2, HallmarkTheme::TICK_NORMAL);
+            }
         }
-
-        canvas.fillRoundRect(68,  212, 28, 14, 7, state.btn_l_pressed ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::BG_SURFACE);
-        canvas.drawRoundRect(68,  212, 28, 14, 7, HallmarkTheme::BORDER_HAIRLINE);
-
-        canvas.fillRoundRect(106, 212, 28, 14, 7, state.btn_t_pressed ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::BG_SURFACE);
-        canvas.drawRoundRect(106, 212, 28, 14, 7, HallmarkTheme::BORDER_HAIRLINE);
-
-        canvas.fillRoundRect(144, 212, 28, 14, 7, state.btn_r_pressed ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::BG_SURFACE);
-        canvas.drawRoundRect(144, 212, 28, 14, 7, HallmarkTheme::BORDER_HAIRLINE);
-
-        canvas.setFont(&UkrainianFont12Bold);
-        canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-        const char* l_btn = (state.screen_mode == SCREEN_POMODORO) ? (state.pomo_active ? "-1М" : "-5М") : "ЕКР";
-        canvas.drawString(l_btn, 82, 219);
-
-        const char* m_btn = (state.screen_mode == SCREEN_POMODORO) ? (!state.pomo_active ? "ПУСК" : "ПАУЗ") :
-                            (state.dnd_mode ? "DND" : (state.audio_muted ? "ТИША" : "СВІТ"));
-        canvas.drawString(m_btn, 120, 219);
-
-        const char* r_lbl = "ЯСК";
-        if (state.screen_mode == SCREEN_LIVING_GIF) r_lbl = "ГОД";
-        else if (state.screen_mode == SCREEN_SMART_HUB) r_lbl = state.spotify.playing ? "ТРЕК" : "ДАЛІ";
-        else if (state.screen_mode == SCREEN_POMODORO) r_lbl = state.pomo_active ? "+1М" : "+5М";
-        else if (state.auto_brt) r_lbl = "АВТ";
-
-        canvas.drawString(r_lbl, 158, 219);
     }
 
-    // HUD TOAST (Horological HUD Overlay - 1.8s non-blocking pill with smooth ease-out)
+    // HUD TOAST (Luxury OSD Overlay - 1.5s non-blocking Swiss capsule)
     inline void drawHudToast(LGFX_Sprite& canvas, AppState& state, uint32_t now) {
         if (!state.isHudActive(now)) return;
 
         int32_t rem = (int32_t)(state.hud_until_ms - now);
         int offset_y = 0;
-        if (rem < 250) {
-            offset_y = (250 - rem) / 8; // Плавне опускання вниз при зникненні
+        if (rem < 200) {
+            offset_y = (200 - rem) / 6; // Плавне опускання вниз при зникненні
         }
 
-        int x = 28;
-        int y = 158 + offset_y;
-        int w = 184;
-        int h = 42;
+        int x = 22;
+        int y = 146 + offset_y;
+        int w = 196;
+        int h = 46;
         int r = 16;
 
-        canvas.fillRoundRect(x, y, w, h, r, HallmarkTheme::BG_SURFACE);
+        canvas.fillSmoothRoundRect(x, y, w, h, r, HallmarkTheme::BG_SURFACE);
         canvas.drawRoundRect(x, y, w, h, r, HallmarkTheme::BORDER_ACTIVE);
 
         canvas.setTextDatum(textdatum_t::middle_center);
-        canvas.setFont(&UkrainianFont12Bold);
+        canvas.setFont(&UkrainianFont14);
         canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
-        canvas.drawString(state.hud_title, 120, y + 13);
+        canvas.drawString(state.hud_title, 120, y + 15);
 
         if (state.hud_subtitle[0] != '\0') {
             canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-            canvas.drawString(state.hud_subtitle, 120, y + 28);
+            canvas.drawString(state.hud_subtitle, 120, y + 32);
         } else {
             int bar_w = 120;
             int bar_h = 4;
             int bar_x = 120 - bar_w / 2;
-            int bar_y = y + 28;
+            int bar_y = y + 31;
             canvas.fillRoundRect(bar_x, bar_y, bar_w, bar_h, 2, HallmarkTheme::BORDER_HAIRLINE);
             int fill_w = (bar_w * state.manual_brt_pct) / 100;
             if (fill_w > bar_w) fill_w = bar_w;

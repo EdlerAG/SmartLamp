@@ -161,10 +161,20 @@ public:
 
     static void setVolume(AppState& state, uint8_t vol) {
         state.setVolume(vol);
+        char sub[32];
+        snprintf(sub, sizeof(sub), "Рівень: %u%%", (vol * 100) / 21);
+        state.showHudToast("🔊 Гучність", sub);
     }
 
     static void setMute(AppState& state, bool muted) {
         state.setMute(muted);
+        if (muted) {
+            state.showHudToast("🔇 Звук", "Вимкнено");
+        } else {
+            char sub[32];
+            snprintf(sub, sizeof(sub), "Рівень: %u%%", (state.audio_volume * 100) / 21);
+            state.showHudToast("🔊 Звук", sub);
+        }
     }
 
     static void setTouchBeep(AppState& state, bool beep) {

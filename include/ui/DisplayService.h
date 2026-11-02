@@ -347,8 +347,6 @@ public:
             if (state.tg_unread) target_fps = 15;
             else if (state.spotify.playing) target_fps = 30; // 30 FPS для плавного обертання вінілу
             else target_fps = 4;
-        } else if (state.screen_mode == SCREEN_BAROMETER) {
-            target_fps = 4;
         }
 
         uint32_t frame_interval = 1000 / target_fps;
@@ -360,7 +358,7 @@ public:
 
         switch (state.screen_mode) {
             case SCREEN_CLIMATE:
-                ScreenRenderer::drawClimate(canvas, state, smooth_hum_angle);
+                ScreenRenderer::drawClimate(canvas, state);
                 break;
 
             case SCREEN_POMODORO:
@@ -384,16 +382,12 @@ public:
                 ScreenRenderer::drawSmartHub(canvas, vinylSprite, state, vinyl_angle, now);
                 break;
 
-            case SCREEN_BAROMETER:
-                ScreenRenderer::drawBarometer(canvas, state, smooth_pres_angle);
-                break;
-
             default:
-                ScreenRenderer::drawClimate(canvas, state, smooth_hum_angle);
+                ScreenRenderer::drawClimate(canvas, state);
                 break;
         }
 
-        ScreenRenderer::drawFooterNav(canvas, state);
+        ScreenRenderer::drawPageIndicator(canvas, state);
         ScreenRenderer::drawHudToast(canvas, state, now);
         pushCanvas();
     }

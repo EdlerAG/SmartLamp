@@ -204,10 +204,13 @@ void processEvents() {
                 if (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG) {
                     appState.sys_ui_state = SystemUiState::SYS_NORMAL;
                 } else if (appState.screen_mode == SCREEN_POMODORO) {
-                    // На екрані Pomodoro ліва кнопка зменшує час (-5 хв у режимі налаштування, -1 хв під час бігу)
-                    appState.pomoAdjustMinutes(appState.pomo_active ? -1 : -5);
+                    if (appState.pomo_active) {
+                        appState.pomoAdjustMinutes(-1);
+                    } else {
+                        appState.screen_mode = SCREEN_CLIMATE;
+                    }
                 } else {
-                    appState.screen_mode = (appState.screen_mode + 1) % SCREEN_COUNT;
+                    appState.screen_mode = (appState.screen_mode + 1) % MAIN_SCREEN_COUNT;
                 }
                 appState.registerActivity();
                 break;

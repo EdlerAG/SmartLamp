@@ -35,15 +35,15 @@ enum class OnboardingStep : uint8_t {
     WIZ_STEP_DONE              = 5  // 5: Завершення налаштування («Готово ✨»)
 };
 
-// Рівень Б: Основні 5 вікон-заставок (перемикаються лівою кнопкою)
+// Рівень Б: Основні 3 вікна-заставки + спеціальний екран фокусу Pomodoro
 enum ScreenMode : uint8_t {
-    SCREEN_CLIMATE    = 0,  // Вікно 1: Hallmark Horology & Climate Desk Clock (10 FPS)
-    SCREEN_LIVING_GIF = 1,  // Вікно 2: Постійна Жива GIF-Заставка з кешем у LittleFS
-    SCREEN_SMART_HUB  = 2,  // Вікно 3: Інтелектуальний Хаб (Telegram Inbox ⇄ Spotify Vinyl Player)
-    SCREEN_BAROMETER  = 3,  // Вікно 4: Барограф Braun & Метео-тренд (4 FPS)
-    SCREEN_POMODORO   = 4,  // Вікно 5: Hallmark Focus Dial & Pomodoro Timer (регулювання ◄/►)
-    SCREEN_COUNT      = 5
+    SCREEN_CLIMATE    = 0,  // Вікно 1: Luxury Horology: Час + Клімат + Барометр (10 FPS)
+    SCREEN_LIVING_GIF = 1,  // Вікно 2: Повноекранна жива заставка LittleFS / орбітальний маятник
+    SCREEN_SMART_HUB  = 2,  // Вікно 3: Інтелектуальний Хаб (Spotify Vinyl + Telegram Inbox)
+    SCREEN_POMODORO   = 3,  // Режим фокусу Pomodoro (активується утриманням лівої кнопки або з сервера)
+    SCREEN_COUNT      = 4
 };
+constexpr uint8_t MAIN_SCREEN_COUNT = 3; // Основне кільце: 0 (Climate) -> 1 (Gif) -> 2 (Hub)
 
 enum LightModeId : uint8_t {
     MODE_WARM_COZY    = 0,

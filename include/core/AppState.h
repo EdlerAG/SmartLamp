@@ -112,7 +112,7 @@ struct AppState {
     char              hud_title[24]   = "";
     char              hud_subtitle[32] = "";
 
-    void showHudToast(const char* title, const char* subtitle, uint32_t duration_ms = 1800) {
+    void showHudToast(const char* title, const char* subtitle, uint32_t duration_ms = 1500) {
         portENTER_CRITICAL(&mux);
         if (title) {
             strncpy(hud_title, title, sizeof(hud_title) - 1);
