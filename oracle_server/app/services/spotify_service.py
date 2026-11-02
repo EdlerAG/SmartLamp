@@ -228,15 +228,43 @@ class SpotifyService:
         return None
 
     async def _fast_track_switch_poll(self, prev_track_id: str) -> None:
-        """Fast Track Switch: перевірки через 0.15 с, 0.4 с та 0.8 с."""
-        await asyncio.sleep(0.15)
-        st = await self.fetch_current_playback(force=True)
-        if st.get("track_id") == prev_track_id:
-            await asyncio.sleep(0.25)
+        """Fast Track Switch: адаптивне опитування протягом 2.5с доки не перемкнеться track_id."""
+        delays = [0.15, 0.25, 0.35, 0.45, 0.60, 0.80, 1.10, 1.50]
+        for delay in delays:
+            await asyncio.sleep(delay)
             st = await self.fetch_current_playback(force=True)
-            if st.get("track_id") == prev_track_id:
-                await asyncio.sleep(0.40)
-                await self.fetch_current_playback(force=True)
+            if st.get("track_id") and st.get("track_id") != prev_track_id:
+                logger.info("Fast track switch detected new track '%s' in %.2fs", st.get("title"), delay)
+                break
+
+    async def _prefetch_next_queue_track(self) -> None:
+        """Pre-fetch next track in queue and pre-generate vinyl RGB565 into cache."""
+        try:
+            token = await self._ensure_access_token()
+            if not token:
+                return
+            headers = {"Authorization": f"Bearer {token}"}
+            client = http_pool.get()
+            resp = await client.get("https://api.spotify.com/v1/me/player/queue", headers=headers, timeout=4.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                queue = data.get("queue", [])
+                if queue:
+                    next_item = queue[0]
+                    next_tid = next_item.get("id")
+                    if next_tid and next_tid not in self._vinyl_cache:
+                        images = (next_item.get("album") or {}).get("images", [])
+                        art_url = images[1].get("url") if len(images) > 1 else (images[0].get("url") if images else "")
+                        if art_url:
+                            art_resp = await client.get(art_url, timeout=5.0)
+                            if art_resp.status_code == 200:
+                                v_bytes, a1, a2, a3, mono = self._create_vinyl_art_bytes(art_resp.content)
+                                if len(self._vinyl_cache) > 30:
+                                    self._vinyl_cache.pop(next(iter(self._vinyl_cache)))
+                                self._vinyl_cache[next_tid] = (v_bytes, a1, a2, a3, mono)
+                                logger.info("Pre-cached vinyl for next queue track: %s (%s)", next_item.get("name"), next_tid)
+        except Exception as q_err:
+            logger.debug("Spotify queue prefetch error: %s", q_err)
 
     async def player_action(self, action: str) -> bool:
         token = await self._ensure_access_token()
@@ -703,6 +731,7 @@ class SpotifyService:
                                 pass
 
                     asyncio.create_task(_bg_enrich_and_update(track_id, title, artist, duration_ms // 1000))
+                    asyncio.create_task(self._prefetch_next_queue_track())
 
                 # Швидкий розрахунок енергії з кешу або дефолту 120 (0 ms блокування)
                 bpm = self._bpm_cache.get(track_id, 120)

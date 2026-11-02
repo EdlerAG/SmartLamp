@@ -929,10 +929,18 @@ public:
             return;
         }
 
-        // ⚡️ Захист від зайвої важкої телеметрії: якщо щойно виконали швидкий pull (вініл/медіа/OTA)
-        // і немає реальних дій користувача (кнопки, алярм) — не надсилаємо статус раніше ніж за 4500 мс
-        bool has_urgent_events = (state.cmd_spotify_action != 0 || state.cmd_send_tg_ack || state.cmd_send_meme_ping != 0 || state.alarm_dismissed || state.has_more_cloud_cmds);
-        if (ws_connected && !has_urgent_events && (millis() - last_ws_send_ms < 4500)) {
+        // ⚡️ Динамічний тротлінг телеметрії:
+        // У режимі Smart Hub під час відтворення опитуємо частіше (1500 мс замість 4500 мс),
+        // а під час перемикання треку (isSwitchingOptimistic) — надсилаємо кожні 250 мс для суб-секундного перемикання!
+        bool has_urgent_events = (state.cmd_spotify_action != 0 || state.cmd_send_tg_ack || state.cmd_send_meme_ping != 0 || state.alarm_dismissed || state.has_more_cloud_cmds || state.spotify.isSwitchingOptimistic(millis()));
+        uint32_t min_interval_ms = 4500;
+        if (state.screen_mode == SCREEN_SMART_HUB && state.spotify.playing) {
+            min_interval_ms = 1500;
+        }
+        if (state.spotify.isSwitchingOptimistic(millis())) {
+            min_interval_ms = 250;
+        }
+        if (ws_connected && !has_urgent_events && (millis() - last_ws_send_ms < min_interval_ms)) {
             return;
         }
 

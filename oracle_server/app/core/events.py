@@ -44,6 +44,8 @@ class RealtimeHub:
     async def register_box_ws(self, ws: WebSocket) -> None:
         await ws.accept()
         self._box_ws = ws
+        if self._spotify_poll_task is None or self._spotify_poll_task.done():
+            self._spotify_poll_task = asyncio.create_task(self._demand_spotify_worker())
 
     def unregister_box_ws(self, ws: WebSocket) -> None:
         if self._box_ws is ws:
@@ -102,7 +104,7 @@ class RealtimeHub:
         last_push_time = 0.0
 
         try:
-            while self._dashboard_clients:
+            while self._dashboard_clients or self._box_ws is not None:
                 if spotify_service.is_linked():
                     try:
                         cur_st = await spotify_service.fetch_current_playback()
@@ -123,11 +125,14 @@ class RealtimeHub:
                             last_playing = cur_playing
                             last_lyric = cur_lyric
                             last_push_time = now
-                            await self.broadcast_to_dashboards({"type": "spotify", "spotify": cur_st})
+                            if self._dashboard_clients:
+                                await self.broadcast_to_dashboards({"type": "spotify", "spotify": cur_st})
+                            if self._box_ws is not None:
+                                self.emit_spotify_to_box(cur_st)
                     except Exception as poll_err:
                         logger.debug("Spotify poll error in realtime worker: %s", poll_err)
-                # Адаптивний сон: 2.5с під час відтворення, 8.0с на паузі (економія CPU та лімітів Spotify API)
-                poll_delay = 2.5 if last_playing else 8.0
+                # Швидкий адаптивний інтервал: 1.0с під час відтворення, 4.0с на паузі
+                poll_delay = 1.0 if last_playing else 4.0
                 await asyncio.sleep(poll_delay)
         except asyncio.CancelledError:
             pass
