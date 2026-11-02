@@ -39,6 +39,7 @@ class StateService:
         "ai_system_prompt",
         "ai_temperature",
         "boot_time",
+        "_last_saved_pres",
     )
 
     DEFAULT_AI_PROMPT = (
@@ -54,6 +55,7 @@ class StateService:
         self.last_history_sample: float = 0.0
         self.last_health_sample: float = 0.0
         self.last_known_rst: str = ""
+        self._last_saved_pres: Optional[float] = None
         # Відновлення персистентної черги команд після перезавантаження сервера
         loaded_cmds = db_service.load_pending_commands()
         self.command_queue: Deque[Dict[str, Any]] = deque(loaded_cmds, maxlen=32)
