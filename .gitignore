@@ -15,9 +15,15 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.*
+!.env.example
 storage/
+*/storage/
+oracle_server/storage/
 oracle_server/*.bin
 *.db
+*.db-shm
+*.db-wal
 *.db-journal
 *.sqlite
 *.sqlite3
@@ -29,9 +35,8 @@ oracle_server/smartlamp.db
 Thumbs.db
 
 # Secrets / credentials (NEVER commit!)
-secrets.h
-Secrets.h
 [sS]ecrets.h
-include/Secrets.h
+include/[sS]ecrets.h
 credentials.h
 wifi_credentials.*
+!include/Secrets.example.h

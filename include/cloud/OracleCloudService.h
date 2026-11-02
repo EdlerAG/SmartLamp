@@ -373,20 +373,23 @@ private:
     }
 
     void flushOfflineTelemetry() {
-        if (state.offline_buf_count == 0 || !state.wifi_connected) return;
+        if (!state.wifi_connected) return;
+
+        AppState::OfflineSample samples[24];
+        uint8_t to_send = state.copyOfflineSamples(samples, 24);
+        if (to_send == 0) return;
 
         uint32_t now_ms = millis();
-        uint8_t to_send = min((uint8_t)state.offline_buf_count, (uint8_t)24);
         String json = "{\"type\":\"batch_telemetry\",\"points\":[";
         for (int i = 0; i < to_send; i++) {
-            uint32_t age_sec = (now_ms >= state.offline_buf[i].sample_millis)
-                               ? (now_ms - state.offline_buf[i].sample_millis) / 1000UL
+            uint32_t age_sec = (now_ms >= samples[i].sample_millis)
+                               ? (now_ms - samples[i].sample_millis) / 1000UL
                                : 0;
             if (i > 0) json += ",";
             char pt[72];
             snprintf(pt, sizeof(pt), "{\"age_sec\":%u,\"t\":%.1f,\"h\":%.0f,\"p\":%.1f,\"l\":%u,\"m\":%u}",
-                     (unsigned)age_sec, state.offline_buf[i].temp, state.offline_buf[i].hum,
-                     state.offline_buf[i].pres, (unsigned)state.offline_buf[i].light, (unsigned)state.offline_buf[i].mode);
+                     (unsigned)age_sec, samples[i].temp, samples[i].hum,
+                     samples[i].pres, (unsigned)samples[i].light, (unsigned)samples[i].mode);
             json += pt;
         }
         json += "]}";
@@ -395,14 +398,7 @@ private:
         if (ws_connected && ws_client && esp_websocket_client_is_connected(ws_client)) {
             int sent = esp_websocket_client_send_text(ws_client, json.c_str(), json.length(), pdMS_TO_TICKS(400));
             if (sent > 0) {
-                if (to_send >= state.offline_buf_count) {
-                    state.clearOfflineSamples();
-                } else {
-                    for (int i = to_send; i < state.offline_buf_count; i++) {
-                        state.offline_buf[i - to_send] = state.offline_buf[i];
-                    }
-                    state.offline_buf_count -= to_send;
-                }
+                state.dropOfflineSamples(to_send);
                 return;
             }
         }
@@ -427,14 +423,7 @@ private:
 
         int code = b_http.POST((uint8_t*)json.c_str(), json.length());
         if (code == 200) {
-            if (to_send >= state.offline_buf_count) {
-                state.clearOfflineSamples();
-            } else {
-                for (int i = to_send; i < state.offline_buf_count; i++) {
-                    state.offline_buf[i - to_send] = state.offline_buf[i];
-                }
-                state.offline_buf_count -= to_send;
-            }
+            state.dropOfflineSamples(to_send);
         }
         b_http.end();
     }
@@ -494,6 +483,7 @@ private:
         // Обробка Spotify стану від сервера (Zero Heap Allocation)
         if (doc["spotify"].is<JsonObject>()) {
             JsonObject sp = doc["spotify"];
+            portENTER_CRITICAL(&state.mux);
             bool new_playing = sp["playing"] | false;
             if (new_playing != state.spotify.playing) {
                 state.spotify.playing = new_playing;
@@ -523,7 +513,8 @@ private:
 
             if (sp["progress_ms"].is<uint32_t>()) {
                 uint32_t srv_prog = sp["progress_ms"].as<uint32_t>();
-                uint32_t local_prog = state.getLocalSpotifyProgressMs();
+                uint32_t elapsed = (state.spotify.last_sync_millis > 0) ? (uint32_t)(millis() - state.spotify.last_sync_millis) : 0;
+                uint32_t local_prog = state.spotify.playing ? (state.spotify.last_server_progress_ms + elapsed) : state.spotify.last_server_progress_ms;
                 int32_t diff = (int32_t)srv_prog - (int32_t)local_prog;
                 if (abs(diff) < 350 && state.spotify.playing && state.spotify.last_sync_millis > 0) {
                     state.spotify.progress_ms = (uint32_t)((int32_t)local_prog + (diff / 4));
@@ -556,6 +547,7 @@ private:
                 }
             }
             state.spotify.last_sync_ms = millis();
+            portEXIT_CRITICAL(&state.mux);
         }
 
         if (!doc["has_cmd"].as<bool>()) return;

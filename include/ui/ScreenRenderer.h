@@ -643,14 +643,7 @@ namespace ScreenRenderer {
             }
 
             // 3. Інтерпольована дуга прогресу треку по периметру (R = 116)
-            uint32_t cur_prog = state.spotify.progress_ms;
-            if (state.spotify.playing && state.spotify.last_sync_ms > 0) {
-                cur_prog += (now - state.spotify.last_sync_ms);
-            }
-            if (state.spotify.duration_ms > 0 && cur_prog > state.spotify.duration_ms) {
-                cur_prog = state.spotify.duration_ms;
-            }
-
+            uint32_t cur_prog = state.getLocalSpotifyProgressMs();
             float prog_frac = (state.spotify.duration_ms > 0) ? ((float)cur_prog / (float)state.spotify.duration_ms) : 0.0f;
             int arc_deg = 180 + (int)(prog_frac * 360.0f);
             canvas.drawArc(120, 120, 108, 106, 0, 360, HallmarkTheme::BORDER_HAIRLINE);

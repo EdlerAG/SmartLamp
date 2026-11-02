@@ -386,17 +386,42 @@ void loop() {
 
     storageService.checkDelayedSave(appState);
 
-    // Рівень 2: Динамічний CPU Frequency Scaling (80 МГц у спокої, 240 МГц при навантаженні)
-    static uint32_t current_cpu_mhz = 240;
-    bool high_freq_needed = appState.ota_in_progress || appState.ap_mode_active ||
-                            appState.tls_in_flight || appState.spotify_vinyl_needed ||
-                            audioService.isPlaying() || ledService.isAnimating() ||
+    // Рівень 2: Архітектурний частотний регулятор CPU (Governor з гістерезисом)
+    static uint32_t last_freq_change_ms = 0;
+    static uint32_t high_demand_last_seen_ms = 0;
+    uint32_t loop_now = millis();
+
+    bool high_freq_needed = appState.ota_in_progress || 
+                            appState.ap_mode_active ||
+                            appState.tls_in_flight || 
+                            appState.spotify_vinyl_needed ||
+                            appState.spotify.playing ||
+                            audioService.isPlaying() || 
+                            ledService.isAnimating() ||
                             displayService.isHighFpsNeeded() ||
-                            (millis() - appState.last_user_activity_ms < 15000);
-    uint32_t target_cpu_mhz = high_freq_needed ? 240 : 80;
-    if (target_cpu_mhz != current_cpu_mhz) {
-        setCpuFrequencyMhz(target_cpu_mhz);
-        current_cpu_mhz = target_cpu_mhz;
+                            (loop_now - appState.last_user_activity_ms < 15000UL) ||
+                            (loop_now - appState.last_net_activity_ms < 3000UL);
+
+    if (high_freq_needed) {
+        high_demand_last_seen_ms = loop_now;
+    }
+
+    uint32_t current_hw_mhz = getCpuFrequencyMhz();
+
+    if (high_freq_needed) {
+        // Миттєвий підйом до 240 МГц без затримок для плавності UI та звуку
+        if (current_hw_mhz < 240 && (loop_now - last_freq_change_ms >= 500UL)) {
+            setCpuFrequencyMhz(240);
+            last_freq_change_ms = loop_now;
+        }
+    } else {
+        // Зниження до 80 МГц лише при стійкому спокої (>= 15 с безперервного спокої)
+        if (current_hw_mhz > 80 && 
+            (loop_now - high_demand_last_seen_ms >= 15000UL) && 
+            (loop_now - last_freq_change_ms >= 3000UL)) {
+            setCpuFrequencyMhz(80);
+            last_freq_change_ms = loop_now;
+        }
     }
 
     bool active = ledService.isAnimating() || displayService.isHighFpsNeeded();

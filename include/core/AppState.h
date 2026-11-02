@@ -98,6 +98,7 @@ struct AppState {
     volatile uint32_t last_offline_sample_ms = 0;
 
     void pushOfflineSample(float t, float h, float p, uint8_t l, uint8_t m) {
+        portENTER_CRITICAL(&mux);
         if (offline_buf_count < 144) {
             offline_buf[offline_buf_count] = { millis(), t, h, p, l, m };
             offline_buf_count++;
@@ -107,10 +108,37 @@ struct AppState {
             }
             offline_buf[143] = { millis(), t, h, p, l, m };
         }
+        portEXIT_CRITICAL(&mux);
     }
 
     void clearOfflineSamples() {
+        portENTER_CRITICAL(&mux);
         offline_buf_count = 0;
+        portEXIT_CRITICAL(&mux);
+    }
+
+    uint8_t copyOfflineSamples(OfflineSample* dest, uint8_t max_count) {
+        if (!dest || max_count == 0) return 0;
+        portENTER_CRITICAL(&mux);
+        uint8_t count = (offline_buf_count < max_count) ? offline_buf_count : max_count;
+        for (uint8_t i = 0; i < count; i++) {
+            dest[i] = offline_buf[i];
+        }
+        portEXIT_CRITICAL(&mux);
+        return count;
+    }
+
+    void dropOfflineSamples(uint8_t count) {
+        portENTER_CRITICAL(&mux);
+        if (count >= offline_buf_count) {
+            offline_buf_count = 0;
+        } else {
+            for (int i = count; i < offline_buf_count; i++) {
+                offline_buf[i - count] = offline_buf[i];
+            }
+            offline_buf_count -= count;
+        }
+        portEXIT_CRITICAL(&mux);
     }
 
     // --- SPOTIFY VINYL HUB (v4.5) ---
@@ -120,17 +148,30 @@ struct AppState {
     volatile bool     spotify_vinyl_loading = false;
     volatile bool     sp_linked             = false; // Офіційний Spotify акаунт прив'язано до сервера
 
+    void copySpotify(SpotifyTrackInfo& dest) const {
+        portENTER_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
+        dest = spotify;
+        portEXIT_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
+    }
+
     uint32_t getLocalSpotifyProgressMs() const {
+        portENTER_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
         if (!spotify.playing) {
-            return spotify.last_server_progress_ms > 0 ? spotify.last_server_progress_ms : spotify.progress_ms;
+            uint32_t p = spotify.last_server_progress_ms > 0 ? spotify.last_server_progress_ms : spotify.progress_ms;
+            portEXIT_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
+            return p;
         }
         if (spotify.last_sync_millis == 0) {
-            return spotify.progress_ms;
+            uint32_t p = spotify.progress_ms;
+            portEXIT_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
+            return p;
         }
         uint32_t elapsed = (uint32_t)(millis() - spotify.last_sync_millis);
         uint32_t est = spotify.last_server_progress_ms + elapsed;
-        if (spotify.duration_ms > 0 && est > spotify.duration_ms) {
-            return spotify.duration_ms;
+        uint32_t dur = spotify.duration_ms;
+        portEXIT_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
+        if (dur > 0 && est > dur) {
+            return dur;
         }
         return est;
     }
