@@ -39,13 +39,17 @@ private:
         if (!self) return;
         esp_websocket_event_data_t *data = (esp_websocket_event_data_t *)event_data;
         if (event_id == WEBSOCKET_EVENT_CONNECTED) {
+            Serial.printf("[OracleCloud] ✅ WS Connected to %s!\n", self->ws_url.c_str());
             self->state.oracle_online = true;
             self->ws_connected = true;
             self->rx_binary_in_progress = false;
             self->state.ws_reconnect_cnt++;
         } else if (event_id == WEBSOCKET_EVENT_DISCONNECTED || event_id == WEBSOCKET_EVENT_CLOSED) {
+            Serial.println("[OracleCloud] ❌ WS Disconnected");
             self->ws_connected = false;
             self->rx_binary_in_progress = false;
+        } else if (event_id == WEBSOCKET_EVENT_ERROR) {
+            Serial.println("[OracleCloud] ⚠️ WS Event Error");
         } else if (event_id == WEBSOCKET_EVENT_DATA) {
             if (data && data->data_len > 0) {
                 self->state.oracle_online = true;
@@ -95,8 +99,16 @@ private:
         esp_websocket_client_config_t ws_cfg = {};
         ws_cfg.uri = ws_url.c_str();
         ws_cfg.task_prio = 5;
-        ws_cfg.task_stack = 4096;
+        ws_cfg.task_stack = 6144;
         ws_cfg.buffer_size = 8192;
+        ws_cfg.pingpong_timeout_sec = 15;
+        ws_cfg.ping_interval_sec = 20;
+        ws_cfg.keep_alive_enable = true;
+        ws_cfg.keep_alive_idle = 5;
+        ws_cfg.keep_alive_interval = 5;
+        ws_cfg.keep_alive_count = 3;
+
+        Serial.printf("[OracleCloud] ⚡️ Connecting WS: %s\n", ws_url.c_str());
 
         ws_client = esp_websocket_client_init(&ws_cfg);
         if (ws_client) {
@@ -887,14 +899,17 @@ public:
         if (ws_client && esp_websocket_client_is_connected(ws_client)) {
             ws_connected = true;
             state.oracle_online = true;
-            int sent = esp_websocket_client_send_text(ws_client, status_json, strlen(status_json), pdMS_TO_TICKS(350));
+            int sent = esp_websocket_client_send_text(ws_client, status_json, strlen(status_json), pdMS_TO_TICKS(1500));
+            Serial.printf("[OracleCloud] 📤 WS send %d bytes -> result: %d\n", strlen(status_json), sent);
             if (sent > 0) {
                 last_ws_send_ms = millis();
                 if (state.offline_buf_count > 0 && !state.audio_playing) {
                     flushOfflineTelemetry();
                 }
-                return;
+            } else {
+                last_ws_send_ms = millis() - 3000;
             }
+            return;
         }
 
         String req_url = sync_endpoint;
@@ -915,6 +930,7 @@ public:
             http.addHeader("X-Device-Key", api_key);
 
             int code = http.POST((uint8_t*)status_json, strlen(status_json));
+            Serial.printf("[OracleCloud] 🌐 HTTP POST %s -> code: %d\n", req_url.c_str(), code);
             if (code == 200) {
                 state.oracle_online = true;
                 state.last_cloud_sync_ms = millis();

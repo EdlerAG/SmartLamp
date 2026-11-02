@@ -96,8 +96,14 @@ private:
     }
 
     void onWifiConnected() {
-        WiFi.setSleep(WIFI_PS_MIN_MODEM);
-        modem_sleep_now = true;
+        WiFi.setSleep(false);
+        modem_sleep_now = false;
+        Serial.printf("[Network] 🌐 Connected! IP: %s, GW: %s, MASK: %s, DNS: %s, RSSI: %d dBm\n",
+                      WiFi.localIP().toString().c_str(),
+                      WiFi.gatewayIP().toString().c_str(),
+                      WiFi.subnetMask().toString().c_str(),
+                      WiFi.dnsIP().toString().c_str(),
+                      WiFi.RSSI());
         state.registerNetActivity();
 
         state.wifi_connected = true;
@@ -145,16 +151,9 @@ private:
         if (state.wifi_connected) {
             state.wifi_rssi = WiFi.RSSI();
 
-            bool need_fast_radio = state.ota_in_progress ||
-                                   state.audio_playing ||
-                                   (now - state.last_net_activity_ms < 25000) ||
-                                   (now - state.last_user_activity_ms < 15000);
-            if (need_fast_radio && modem_sleep_now) {
+            if (modem_sleep_now) {
                 WiFi.setSleep(false);
                 modem_sleep_now = false;
-            } else if (!need_fast_radio && !modem_sleep_now) {
-                WiFi.setSleep(WIFI_PS_MIN_MODEM);
-                modem_sleep_now = true;
             }
         }
 
@@ -213,7 +212,7 @@ public:
                 break;
             }
             case NetMode::CONNECTING:
-                if (WiFi.status() == WL_CONNECTED) {
+                if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0) && WiFi.gatewayIP() != IPAddress(0, 0, 0, 0)) {
                     onWifiConnected();
                 } else if (millis() - state_timer_ms >= Config::WIFI_BOOT_TIMEOUT_MS) {
                     state.had_blackout_drop = true;
@@ -248,7 +247,7 @@ public:
                 }
                 break;
             case NetMode::BLACKOUT_PROBE:
-                if (WiFi.status() == WL_CONNECTED) onWifiConnected();
+                if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0) && WiFi.gatewayIP() != IPAddress(0, 0, 0, 0)) onWifiConnected();
                 else if (millis() - state_timer_ms >= 15000) enterBlackoutEcoMode();
                 break;
             default:
