@@ -1,4 +1,5 @@
 #pragma once
+#include <Arduino.h>
 #include "core/IService.h"
 #include "Config.h"
 #include "core/AppState.h"
@@ -7,14 +8,18 @@
 class LedService : public IService {
 private:
     AppState& state;
-    Adafruit_NeoPixel strip;
+    SmartLampStrip strip;
+
     uint32_t last_anim_ms       = 0;
     uint32_t last_brt_ms        = 0;
-    uint16_t anim_step          = 0;
+    uint32_t last_show_ms       = 0;
+    uint32_t last_show_us       = 0;
+    uint32_t anim_step          = 0;
     int      last_mode          = -1;
     uint16_t notify_frames      = 0;
     uint8_t  active_notify_type = NOTIFY_NONE;
 
+    // Плавний RGB lerp для зміни палітри (~350-600мс)
     float    cur_r              = 0.0f;
     float    cur_g              = 0.0f;
     float    cur_b              = 0.0f;
@@ -23,8 +28,46 @@ private:
     float    cur_s_b            = 0.0f;
     uint32_t last_lerp_ms       = 0;
 
-    const uint8_t manual_levels[4] = {20, 48, 88, Config::MAX_SAFE_BRT};
-    const uint8_t lcd_levels[4]    = {60, 130, 200, 255};
+    // Тіньовий буфер для Dirty-flag frame guard (Zero redundant bus transactions)
+    RgbwColor shadow_pixels[Config::NUM_LEDS];
+
+    // Швидкі пресети ручної яскравості
+    const uint8_t manual_pct_levels[4] = {15, 35, 65, 100};
+    const uint8_t lcd_levels[4]        = {60, 130, 200, 255};
+
+    void showWithLatchGuard(bool force = false) {
+        uint32_t now = millis();
+
+        // Перевіряємо чи змінився кадр у буфері порівняно з тіньовим
+        bool frame_dirty = false;
+        for (int i = 0; i < Config::NUM_LEDS; i++) {
+            RgbwColor cur = strip.GetPixelColor(i);
+            if (cur != shadow_pixels[i]) {
+                frame_dirty = true;
+                shadow_pixels[i] = cur;
+            }
+        }
+
+        // Пропускаємо виклик Show(), якщо кадр статичний і не минуло 2 секунди
+        if (!frame_dirty && !force && (now - last_show_ms < 2000)) {
+            return;
+        }
+
+        // Суворий контроль Reset/Latch guard: чекаємо завершення попереднього RMT кадру
+        while (!strip.CanShow()) {
+            taskYIELD();
+        }
+
+        // Гарантований час скидання лінії SK6812 >= 85 мкс між викликами
+        uint32_t elapsed_us = micros() - last_show_us;
+        if (elapsed_us < 90) {
+            delayMicroseconds(90 - elapsed_us);
+        }
+
+        strip.Show();
+        last_show_ms = now;
+        last_show_us = micros();
+    }
 
     void renderStrip(bool force) {
         uint32_t now = millis();
@@ -46,7 +89,7 @@ private:
             }
         }
 
-        // Преміальний плавний перехід кольору (RGB lerp ~350мс) замість різкого стрибка
+        // Плавний перехід кольору (RGB lerp ~350-500мс)
         if (mode_changed || force) {
             cur_r = (float)target_r;
             cur_g = (float)target_g;
@@ -57,12 +100,12 @@ private:
             last_lerp_ms = now;
         } else if (now - last_lerp_ms >= 20) {
             last_lerp_ms = now;
-            cur_r += ((float)target_r - cur_r) * 0.065f;
-            cur_g += ((float)target_g - cur_g) * 0.065f;
-            cur_b += ((float)target_b - cur_b) * 0.065f;
-            cur_s_r += ((float)target_s_r - cur_s_r) * 0.065f;
-            cur_s_g += ((float)target_s_g - cur_s_g) * 0.065f;
-            cur_s_b += ((float)target_s_b - cur_s_b) * 0.065f;
+            cur_r += ((float)target_r - cur_r) * 0.075f;
+            cur_g += ((float)target_g - cur_g) * 0.075f;
+            cur_b += ((float)target_b - cur_b) * 0.075f;
+            cur_s_r += ((float)target_s_r - cur_s_r) * 0.075f;
+            cur_s_g += ((float)target_s_g - cur_s_g) * 0.075f;
+            cur_s_b += ((float)target_s_b - cur_s_b) * 0.075f;
         }
 
         uint8_t eff_r = (uint8_t)constrain((int)(cur_r + 0.5f), 0, 255);
@@ -72,33 +115,31 @@ private:
         uint8_t eff_s_g = (uint8_t)constrain((int)(cur_s_g + 0.5f), 0, 255);
         uint8_t eff_s_b = (uint8_t)constrain((int)(cur_s_b + 0.5f), 0, 255);
 
+        float brt_factor = (float)state.manual_brt_pct / 100.0f;
+        brt_factor = constrain(brt_factor, 0.01f, 1.0f);
+
+        // 1. Сповіщення / реакція поверх усього
         if (notify_frames > 0) {
             if (now - last_anim_ms >= 20) {
                 last_anim_ms = now;
                 notify_frames--;
-                LedEffects::renderNotification(strip, active_notify_type, notify_frames, eff_r, eff_g, eff_b);
-                strip.show();
+                LedEffects::renderNotification(strip, active_notify_type, notify_frames, brt_factor, eff_r, eff_g, eff_b);
+                showWithLatchGuard(true);
                 if (notify_frames == 0) last_mode = -1;
             }
             return;
         }
 
+        // 2. Режим ВИМКНЕНО
         if (state.light_mode == MODE_LIGHT_OFF) {
-            if (mode_changed) {
-                strip.clear();
-                strip.show();
-            }
-            return;
-        }
-
-        if (state.light_mode == MODE_WARM_COZY) {
             if (mode_changed || force) {
-                strip.fill(strip.Color(0, 0, 0, 225), 0, Config::NUM_LEDS);
-                strip.show();
+                strip.ClearTo(RgbwColor(0, 0, 0, 0));
+                showWithLatchGuard(true);
             }
             return;
         }
 
+        // 3. Обмеження кадрової частоти анімацій (45 FPS max)
         if (now - last_anim_ms < 22 && !mode_changed && !force) return;
         last_anim_ms = now;
 
@@ -106,23 +147,37 @@ private:
             strip,
             state.light_mode,
             anim_step++,
+            brt_factor,
+            state.anim_speed,
             eff_r, eff_g, eff_b,
             eff_s_r, eff_s_g, eff_s_b,
-            (state.light_mode == MODE_SPOTIFY_AMBI) ? &state.spotify : nullptr
+            (state.light_mode == MODE_SPOTIFY_AMBI) ? &state.spotify : nullptr,
+            state.custom_r, state.custom_g, state.custom_b, state.custom_w
         );
-        strip.show();
+
+        showWithLatchGuard(mode_changed || force);
     }
 
 public:
     LedService(AppState& st)
-        : state(st), strip(Config::NUM_LEDS, Config::PIN_LED, NEO_GRBW + NEO_KHZ800) {}
+        : state(st), strip(Config::NUM_LEDS, Config::PIN_LED) {
+        memset(shadow_pixels, 0, sizeof(shadow_pixels));
+    }
 
     const char* getName() const override { return "LED"; }
 
     void init() override {
-        strip.begin();
-        strip.setBrightness(state.current_led_brt);
+        strip.Begin();
+        strip.ClearTo(RgbwColor(0, 0, 0, 0));
+        strip.Show();
+        last_show_ms = millis();
+        last_show_us = micros();
         renderStrip(true);
+    }
+
+    // Чи зайнятий RMT передачею даних на діоди (Zero-Glitch lock для регулятора частоти CPU)
+    bool isTransmitting() const {
+        return !strip.CanShow();
     }
 
     bool isAnimating() const {
@@ -146,29 +201,30 @@ public:
 
         if (now - last_brt_ms >= 40) {
             last_brt_ms = now;
-            uint8_t target_led = state.current_led_brt;
+            uint8_t target_pct = state.manual_brt_pct;
             uint8_t target_lcd = state.current_lcd_brt;
 
             if (state.auto_brt) {
                 float factor = constrain((state.smooth_ldr - 200.0f) / 3500.0f, 0.0f, 1.0f);
-                uint8_t desired_led = (uint8_t)(Config::MIN_SAFE_BRT + factor * (Config::MAX_SAFE_BRT - Config::MIN_SAFE_BRT));
+                uint8_t desired_pct = (uint8_t)(10 + factor * 90.0f);
                 uint8_t desired_lcd = (uint8_t)(40 + factor * 215.0f);
-                // Гістерезис: запобігає коливанням через шум сенсора
-                if (abs((int)desired_led - (int)state.current_led_brt) >= 2) {
-                    target_led = desired_led;
+
+                // Вікно гістерезису для автояскравості (запобігає джиттеру через шум фоторезистора)
+                if (abs((int)desired_pct - (int)state.manual_brt_pct) >= 3) {
+                    target_pct = desired_pct;
                 }
                 if (abs((int)desired_lcd - (int)state.current_lcd_brt) >= 4) {
                     target_lcd = desired_lcd;
                 }
             } else {
+                target_pct = state.manual_brt_pct;
                 uint8_t idx = state.manual_brt_idx % 4;
-                target_led = manual_levels[idx];
                 target_lcd = lcd_levels[idx];
             }
 
             // Якщо світло вимкнене:
-            // - під час тихих годин (Quiet Hours) після 2 хв неактивності гасимо екран повністю (глибокий сон)
-            // - вдень після 20 с м'яко приглушуємо до 18
+            // - під час тихих годин після 2 хв неактивності гасимо екран повністю
+            // - вдень після 20 с приглушуємо до 18
             if (state.light_mode == MODE_LIGHT_OFF) {
                 if (state.quiet_hours_active && (now - state.last_user_activity_ms > 120000)) {
                     target_lcd = 0;
@@ -177,15 +233,16 @@ public:
                 }
             }
 
+            // Загасання таймера сну
             if (state.sleep_timer_active && state.sleep_timer_total_ms > 0) {
                 int32_t rem = max((int32_t)0, (int32_t)(state.sleep_timer_end_ms - now));
                 float fade = constrain((float)rem / (float)state.sleep_timer_total_ms, 0.05f, 1.0f);
-                target_led = max((uint8_t)4, (uint8_t)(target_led * fade));
+                target_pct = max((uint8_t)4, (uint8_t)(target_pct * fade));
             }
 
-            if (state.current_led_brt != target_led) {
-                state.current_led_brt += (target_led > state.current_led_brt) ? 1 : -1;
-                strip.setBrightness(state.current_led_brt);
+            if (state.manual_brt_pct != target_pct) {
+                state.manual_brt_pct += (target_pct > state.manual_brt_pct) ? 1 : -1;
+                state.current_led_brt = (uint8_t)((state.manual_brt_pct * Config::MAX_SAFE_BRT) / 100);
                 brt_changed = true;
             }
 

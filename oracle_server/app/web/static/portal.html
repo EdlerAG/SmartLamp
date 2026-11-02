@@ -286,19 +286,102 @@
       </div>
     </div>
 
-    <!-- Яскравість & Пресети -->
-    <div class="card">
-      <h3><span>☀️ Швидка Яскравість Лампи</span></h3>
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px">
-        <button class="btn" onclick="sendCmd({set_brt:'auto'})">АВТО</button>
-        <button class="btn" onclick="sendCmd({set_brt:'0'})">🌙 15%</button>
-        <button class="btn" onclick="sendCmd({set_brt:'1'})">☕ 35%</button>
-        <button class="btn" onclick="sendCmd({set_brt:'2'})">✨ 65%</button>
-        <button class="btn" onclick="sendCmd({set_brt:'3'})">☀️ 100%</button>
+    <!-- 60-LED Underglow Halo & Студія Підсвітки -->
+    <div class="card led-halo-card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3><span>✨ 60-LED Underglow Halo & Підсвітка</span></h3>
+        <span class="badge" id="haloModeBadge" style="font-size:11px">60x SK6812 RGBW</span>
+      </div>
+
+      <!-- 60-LED Ring Visualizer -->
+      <div class="led-ring-wrapper">
+        <div class="led-ring-stage">
+          <svg class="led-ring-svg" id="ledRingSvg" viewBox="0 0 220 220">
+            <!-- 60 LED dots will be generated here -->
+          </svg>
+          <div class="led-ring-center" id="ledRingCenter" onclick="toggleLampPower()" title="Натисніть для перемикання живлення">
+            <div class="led-ring-pwr-icon" id="ledPwrIcon">💡</div>
+            <div class="led-ring-brt-label mono" id="ledRingBrt">--%</div>
+            <div class="led-ring-mode-label" id="ledRingMode">Лампа</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Повзунок плавної яскравості 1..100% -->
+      <div class="studio-slider-group">
+        <div class="studio-slider-header">
+          <span>☀️ Плавна яскравість (1..100%):</span>
+          <b class="mono" id="brtVal">65%</b>
+        </div>
+        <input type="range" id="brtSlider" min="1" max="100" value="65" style="width:100%;margin-bottom:10px" oninput="onBrtSlider(this.value)">
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+          <button class="btn" id="brtBtnAuto" onclick="sendCmd({set_brt:'auto'})">АВТО</button>
+          <button class="btn" id="brtBtn15" onclick="setBrtPreset(15)">🌙 15%</button>
+          <button class="btn" id="brtBtn35" onclick="setBrtPreset(35)">☕ 35%</button>
+          <button class="btn" id="brtBtn65" onclick="setBrtPreset(65)">✨ 65%</button>
+          <button class="btn" id="brtBtn100" onclick="setBrtPreset(100)">☀️ 100%</button>
+        </div>
+      </div>
+
+      <!-- Швидкість динамічних ефектів 1..100 -->
+      <div class="studio-slider-group">
+        <div class="studio-slider-header">
+          <span>⚡️ Швидкість анімації:</span>
+          <b class="mono" id="speedVal">50</b>
+        </div>
+        <input type="range" id="speedSlider" min="1" max="100" value="50" style="width:100%;margin-bottom:8px" oninput="onSpeedSlider(this.value)">
+        <div style="display:flex;gap:6px">
+          <button class="chip-btn" onclick="setSpeedPreset(20)">🐢 Повільно (20)</button>
+          <button class="chip-btn" onclick="setSpeedPreset(50)">⚖️ Стандарт (50)</button>
+          <button class="chip-btn" onclick="setSpeedPreset(85)">🚀 Швидко (85)</button>
+        </div>
+      </div>
+
+      <!-- Палітра кольорів & True RGBW (SK6812 Білий діод) -->
+      <div class="studio-slider-group">
+        <div class="studio-slider-header">
+          <span>🎨 Ручний колір (SK6812 RGBW):</span>
+          <button class="chip-btn" style="padding:2px 8px;font-size:10px" onclick="applyCustomRgbw()">Застосувати</button>
+        </div>
+
+        <div class="rgbw-swatch-card">
+          <div class="rgbw-swatch-box" id="rgbwPreview"></div>
+          <div class="rgbw-swatch-info">
+            <b id="rgbwHex">#FFAA33 + W:0</b>
+            <span style="color:var(--text-secondary)">SK6812 Phosphor White mixing</span>
+          </div>
+        </div>
+
+        <div class="rgbw-grid">
+          <div class="rgbw-slider-col">
+            <label><span>Червоний (R)</span> <b class="mono" id="valR">255</b></label>
+            <input type="range" id="sliderR" min="0" max="255" value="255" oninput="onRgbwInput()">
+          </div>
+          <div class="rgbw-slider-col">
+            <label><span>Зелений (G)</span> <b class="mono" id="valG">180</b></label>
+            <input type="range" id="sliderG" min="0" max="255" value="180" oninput="onRgbwInput()">
+          </div>
+          <div class="rgbw-slider-col">
+            <label><span>Синій (B)</span> <b class="mono" id="valB">60</b></label>
+            <input type="range" id="sliderB" min="0" max="255" value="60" oninput="onRgbwInput()">
+          </div>
+          <div class="rgbw-slider-col">
+            <label><span style="color:var(--accent-warm)">Чистий W (White)</span> <b class="mono" id="valW">0</b></label>
+            <input type="range" id="sliderW" min="0" max="255" value="0" oninput="onRgbwInput()">
+          </div>
+        </div>
+
+        <div class="rgbw-palette-chips">
+          <button class="chip-btn" onclick="setRgbwPreset(255, 140, 20, 40)">🔥 Бурштин</button>
+          <button class="chip-btn" onclick="setRgbwPreset(255, 70, 150, 10)">🌸 Сакура</button>
+          <button class="chip-btn" onclick="setRgbwPreset(30, 160, 255, 30)">❄️ Арктика</button>
+          <button class="chip-btn" onclick="setRgbwPreset(16, 220, 120, 15)">🌿 Смарагд</button>
+          <button class="chip-btn" onclick="setRgbwPreset(0, 0, 0, 255)">💡 Діод W (2700K)</button>
+        </div>
       </div>
 
       <!-- Режими світла -->
-      <h3 style="margin-top:10px"><span>🎨 Режими Підсвітки (LED Modes)</span></h3>
+      <h3 style="margin-top:14px"><span>🎨 12 Режимів Підсвітки (LED Modes)</span></h3>
       <div class="mode-grid" id="modeGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(135px, 1fr));gap:6px;margin-bottom:14px"></div>
 
       <!-- Інтерактивні реакції -->

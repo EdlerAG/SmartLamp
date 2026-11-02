@@ -15,6 +15,7 @@ namespace HallmarkTheme {
     constexpr uint16_t BG_PRIMARY      = rgb(8, 9, 12);      // #08090C Deep Obsidian
     constexpr uint16_t BG_SURFACE      = rgb(18, 21, 30);    // #12151E Elevated Graphite
     constexpr uint16_t BORDER_HAIRLINE = rgb(34, 40, 52);    // #222834 Delicate Wire
+    constexpr uint16_t BORDER_ACTIVE   = rgb(65, 75, 95);    // #414B5F Active / Focus border
     constexpr uint16_t TEXT_PRIMARY    = rgb(244, 243, 239); // #F4F3EF Warm Alabaster
     constexpr uint16_t TEXT_SECONDARY  = rgb(138, 148, 166); // #8A94A6 Muted Ash
     constexpr uint16_t ACCENT_WARM     = rgb(224, 122, 95);  // #E07A5F Braun Terracotta

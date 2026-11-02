@@ -523,3 +523,206 @@ body.theme-chernobyl .mood-pill.active {
 .onboard-step-item.pending {
   border-color: rgba(245, 158, 11, 0.3);
 }
+
+
+/* ============================================================================
+   60-LED RING VISUALIZER & UNDERGLOW STUDIO CONTROLS
+   ============================================================================ */
+.led-halo-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.led-ring-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 12px 0 16px;
+  position: relative;
+}
+
+.led-ring-stage {
+  position: relative;
+  width: 210px;
+  height: 210px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.led-ring-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 12px rgba(245, 158, 11, 0.25));
+  transition: filter 0.3s ease;
+}
+
+.led-ring-node {
+  transition: fill 0.15s ease, opacity 0.15s ease, r 0.15s ease;
+}
+
+.led-ring-center {
+  position: relative;
+  z-index: 2;
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, #1e2434 0%, #0d1017 100%);
+  border: 1px solid var(--border-hairline);
+  box-shadow: inset 0 2px 6px rgba(255, 255, 255, 0.05), 0 8px 24px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.led-ring-center:active {
+  transform: scale(0.96);
+}
+
+.led-ring-center.lamp-on {
+  border-color: rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.25), inset 0 2px 6px rgba(255, 255, 255, 0.1);
+}
+
+.led-ring-pwr-icon {
+  font-size: 24px;
+  line-height: 1;
+  margin-bottom: 2px;
+  transition: filter 0.2s ease;
+}
+
+.lamp-on .led-ring-pwr-icon {
+  filter: drop-shadow(0 0 8px #f59e0b);
+}
+
+.led-ring-brt-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.led-ring-mode-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  max-width: 90px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  margin-top: 1px;
+}
+
+.studio-slider-group {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.studio-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.studio-slider-header span {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.studio-slider-header b {
+  font-size: 13px;
+  color: var(--accent-warm);
+}
+
+.rgbw-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.rgbw-slider-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rgbw-slider-col label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.rgbw-swatch-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.rgbw-swatch-box {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, box-shadow 0.2s ease;
+}
+
+.rgbw-swatch-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.rgbw-swatch-info b {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.rgbw-palette-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chip-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-hairline);
+  border-radius: 16px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chip-btn:hover {
+  border-color: var(--accent-warm);
+  background: var(--bg-surface-active);
+}

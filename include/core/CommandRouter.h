@@ -61,19 +61,29 @@ public:
             state.sleep_timer_active = false;
         }
         state.markSettingsDirty();
+        char sub[32];
+        snprintf(sub, sizeof(sub), "%s • %u%%", getLightModeName(state.light_mode), state.getLedBrightnessPercent());
+        state.showHudToast("💡 Режим світла", sub);
     }
 
     static void nextLightMode(AppState& state) {
         state.light_mode = (state.light_mode + 1) % TOTAL_LIGHT_MODES;
         state.markSettingsDirty();
+        char sub[32];
+        snprintf(sub, sizeof(sub), "%s • %u%%", getLightModeName(state.light_mode), state.getLedBrightnessPercent());
+        state.showHudToast("💡 Режим світла", sub);
     }
 
     static void togglePower(AppState& state) {
         if (state.light_mode == MODE_LIGHT_OFF) {
             state.light_mode = MODE_WARM_COZY;
+            char sub[32];
+            snprintf(sub, sizeof(sub), "%s • %u%%", getLightModeName(state.light_mode), state.getLedBrightnessPercent());
+            state.showHudToast("💡 Світло увімкнено", sub);
         } else {
             state.light_mode = MODE_LIGHT_OFF;
             state.sleep_timer_active = false;
+            state.showHudToast("🌑 Світло вимкнено", "0%");
         }
         state.markSettingsDirty();
     }
@@ -82,28 +92,71 @@ public:
         state.screen_angle = (angle % 360 + 360) % 360;
         state.ui_force_dirty = true;
         state.markSettingsDirty();
+        char sub[32];
+        snprintf(sub, sizeof(sub), "Орієнтація: %d°", state.screen_angle);
+        state.showHudToast("🧭 Поворот екрана", sub);
+    }
+
+    static void setBrightnessPercent(AppState& state, uint8_t pct) {
+        state.setBrightnessPercent(pct);
+        char sub[32];
+        snprintf(sub, sizeof(sub), "Рівень: %u%%", pct);
+        state.showHudToast("🔆 Яскравість", sub);
     }
 
     static void setBrightnessPreset(AppState& state, bool auto_mode, uint8_t preset_idx = 2) {
         state.auto_brt = auto_mode;
         if (!auto_mode) {
             state.manual_brt_idx = preset_idx % 4;
+            static const uint8_t pct_map[4] = {15, 35, 65, 100};
+            state.manual_brt_pct = pct_map[state.manual_brt_idx];
         }
         state.markSettingsDirty();
+        char sub[32];
+        if (auto_mode) {
+            snprintf(sub, sizeof(sub), "Авто (LDR) • %u%%", state.getLedBrightnessPercent());
+        } else {
+            snprintf(sub, sizeof(sub), "%s", getBrightnessPresetName(false, state.manual_brt_idx));
+        }
+        state.showHudToast("🔆 Яскравість", sub);
     }
 
     static void cycleBrightness(AppState& state) {
         if (state.auto_brt) {
             state.auto_brt = false;
             state.manual_brt_idx = 0;
+            state.manual_brt_pct = 15;
         } else {
             state.manual_brt_idx++;
             if (state.manual_brt_idx >= 4) {
                 state.auto_brt = true;
                 state.manual_brt_idx = 2;
+                state.manual_brt_pct = 65;
+            } else {
+                static const uint8_t pct_map[4] = {15, 35, 65, 100};
+                state.manual_brt_pct = pct_map[state.manual_brt_idx];
             }
         }
         state.markSettingsDirty();
+        char sub[32];
+        if (state.auto_brt) {
+            snprintf(sub, sizeof(sub), "Авто (LDR) • %u%%", state.getLedBrightnessPercent());
+        } else {
+            snprintf(sub, sizeof(sub), "%s", getBrightnessPresetName(false, state.manual_brt_idx));
+        }
+        state.showHudToast("🔆 Яскравість", sub);
+    }
+
+    static void setAnimSpeed(AppState& state, uint8_t spd) {
+        state.setAnimSpeed(spd);
+        char sub[32];
+        snprintf(sub, sizeof(sub), "Швидкість: %u%%", spd);
+        state.showHudToast("⚡ Швидкість", sub);
+    }
+
+    static void setCustomRgbw(AppState& state, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
+        state.setCustomRgbw(r, g, b, w);
+        state.showHudToast("🎨 Колір RGBW", "Оновлено вручну");
     }
 
     static void setVolume(AppState& state, uint8_t vol) {

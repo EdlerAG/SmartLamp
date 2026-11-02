@@ -372,6 +372,7 @@ public:
         }
 
         ScreenRenderer::drawFooterNav(canvas, state);
+        ScreenRenderer::drawHudToast(canvas, state, now);
         pushCanvas();
     }
 };

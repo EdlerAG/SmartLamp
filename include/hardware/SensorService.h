@@ -156,9 +156,15 @@ public:
             last_ldr_ms = now;
             int raw = analogRead(Config::PIN_LDR);
             state.raw_ldr = raw;
-            state.smooth_ldr = (state.smooth_ldr * 0.85f) + (raw * 0.15f);
+            // Асиметричний EMA-фільтр з вікном гістерезису:
+            // плавне затемнення (alpha=0.045f) проти тіней руки, плавне освітлення (alpha=0.085f)
+            float diff = (float)raw - state.smooth_ldr;
+            if (fabsf(diff) > 45.0f) {
+                float alpha = (diff < 0.0f) ? 0.045f : 0.085f;
+                state.smooth_ldr += diff * alpha;
+            }
             int new_pct = constrain((int)((state.smooth_ldr / 4095.0f) * 100.0f), 0, 100);
-            if (abs(new_pct - state.light_percent) >= 2) {
+            if (abs(new_pct - state.light_percent) >= 3) {
                 state.light_percent = new_pct;
                 state.ui_force_dirty = true;
             }

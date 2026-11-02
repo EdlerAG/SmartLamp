@@ -182,9 +182,211 @@ if (mg) {
     b.className = 'btn';
     b.id = 'mBtn' + idx;
     b.innerText = name;
-    b.onclick = () => sendCmd({set_mode: idx});
+    b.onclick = () => {
+      currentLightMode = idx;
+      renderLedRing(currentLightMode, currentBrtPct);
+      sendCmd({set_mode: idx});
+    };
     mg.appendChild(b);
   });
+}
+
+// ============================================================================
+// 60-LED UNDERGLOW HALO & STUDIO LIGHT CONTROLS
+// ============================================================================
+let currentLightMode = 0;
+let currentBrtPct = 65;
+let currentAnimSpeed = 50;
+let customR = 255, customG = 180, customB = 60, customW = 0;
+let brtDebounceTimer = null;
+let speedDebounceTimer = null;
+let rgbwDebounceTimer = null;
+let ledRingNodes = [];
+
+function buildLedRing() {
+  const svg = document.getElementById('ledRingSvg');
+  if (!svg) return;
+  svg.innerHTML = '';
+  ledRingNodes = [];
+  const cx = 110, cy = 110, r = 88;
+  const numLeds = 60;
+  for (let i = 0; i < numLeds; i++) {
+    const angle = (i / numLeds) * 2 * Math.PI - (Math.PI / 2);
+    const x = cx + r * Math.cos(angle);
+    const y = cy + r * Math.sin(angle);
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', x.toFixed(2));
+    circle.setAttribute('cy', y.toFixed(2));
+    circle.setAttribute('r', '4');
+    circle.setAttribute('class', 'led-ring-node');
+    circle.setAttribute('fill', '#334155');
+    circle.setAttribute('opacity', '0.6');
+    svg.appendChild(circle);
+    ledRingNodes.push(circle);
+  }
+}
+
+function computeRgbwCss(r, g, b, w) {
+  const wr = Math.min(255, Math.floor(w * 1.0));
+  const wg = Math.min(255, Math.floor(w * 0.84));
+  const wb = Math.min(255, Math.floor(w * 0.67));
+  const fr = Math.min(255, r + wr);
+  const fg = Math.min(255, g + wg);
+  const fb = Math.min(255, b + wb);
+  return `rgb(${fr}, ${fg}, ${fb})`;
+}
+
+function renderLedRing(mode = currentLightMode, brt = currentBrtPct) {
+  if (!ledRingNodes.length) buildLedRing();
+  const isOff = (mode === 10 || brt === 0);
+  const center = document.getElementById('ledRingCenter');
+  const icon = document.getElementById('ledPwrIcon');
+  const brtLabel = document.getElementById('ledRingBrt');
+  const modeLabel = document.getElementById('ledRingMode');
+  const haloBadge = document.getElementById('haloModeBadge');
+
+  if (center) {
+    if (isOff) center.classList.remove('lamp-on');
+    else center.classList.add('lamp-on');
+  }
+  if (icon) icon.innerText = isOff ? '🌑' : '💡';
+  if (brtLabel) brtLabel.innerText = isOff ? '0%' : `${brt}%`;
+  if (modeLabel) modeLabel.innerText = MODES[mode] ? MODES[mode].replace(/^[^\w\sа-яіїєА-ЯІЇЄ]+/, '').trim() : 'Лампа';
+  if (haloBadge) haloBadge.innerText = isOff ? 'ВИМКНЕНО' : (MODES[mode] ? MODES[mode].split(' ')[1] || 'СВІТЛО' : '60x SK6812');
+
+  const baseOpacity = isOff ? 0.2 : Math.max(0.4, brt / 100);
+
+  ledRingNodes.forEach((node, i) => {
+    if (isOff) {
+      node.setAttribute('fill', '#1e2536');
+      node.setAttribute('opacity', '0.25');
+      node.setAttribute('r', '3');
+      return;
+    }
+
+    let color = '#f59e0b';
+    switch (mode) {
+      case 0: color = '#ff9820'; break;
+      case 1: color = (i % 2 === 0) ? '#ff6600' : '#ff9900'; break;
+      case 2: color = '#ffaa11'; break;
+      case 3: color = (i % 3 === 0) ? '#ff2200' : ((i % 3 === 1) ? '#ff5500' : '#ff9900'); break;
+      case 4: color = (i / 60 < 0.5) ? '#e11d48' : '#f59e0b'; break;
+      case 5: color = (i % 2 === 0) ? '#f43f5e' : '#ec4899'; break;
+      case 6: color = (i / 60 < 0.5) ? '#10b981' : '#06b6d4'; break;
+      case 7: color = (i % 2 === 0) ? '#0284c7' : '#38bdf8'; break;
+      case 8: color = (i >= 25 && i <= 35) ? '#e0f2fe' : '#0369a1'; break;
+      case 9: color = `hsl(${Math.floor((i / 60) * 360)}, 90%, 55%)`; break;
+      case 11:
+        if (window._spotifyCol1) {
+          color = (i >= 15 && i <= 45) ? window._spotifyCol1 : (window._spotifyCol2 || '#f59e0b');
+        } else {
+          color = '#1ed760';
+        }
+        break;
+      default:
+        color = computeRgbwCss(customR, customG, customB, customW);
+        break;
+    }
+    node.setAttribute('fill', color);
+    node.setAttribute('opacity', String(baseOpacity));
+    node.setAttribute('r', '4');
+  });
+}
+
+function onBrtSlider(val) {
+  const pct = parseInt(val, 10) || 1;
+  currentBrtPct = pct;
+  const label = document.getElementById('brtVal');
+  if (label) label.innerText = `${pct}%`;
+  renderLedRing(currentLightMode, pct);
+
+  clearTimeout(brtDebounceTimer);
+  brtDebounceTimer = setTimeout(() => {
+    sendCmd({set_brt: String(pct)});
+    toast(`Яскравість: ${pct}%`);
+  }, 60);
+}
+
+function setBrtPreset(val) {
+  const slider = document.getElementById('brtSlider');
+  if (slider) slider.value = val;
+  onBrtSlider(val);
+}
+
+function onSpeedSlider(val) {
+  const spd = parseInt(val, 10) || 50;
+  currentAnimSpeed = spd;
+  const label = document.getElementById('speedVal');
+  if (label) label.innerText = String(spd);
+
+  clearTimeout(speedDebounceTimer);
+  speedDebounceTimer = setTimeout(() => {
+    sendCmd({speed: spd});
+    toast(`Швидкість: ${spd}`);
+  }, 60);
+}
+
+function setSpeedPreset(val) {
+  const slider = document.getElementById('speedSlider');
+  if (slider) slider.value = val;
+  onSpeedSlider(val);
+}
+
+function onRgbwInput() {
+  const r = parseInt(document.getElementById('sliderR')?.value || 0, 10);
+  const g = parseInt(document.getElementById('sliderG')?.value || 0, 10);
+  const b = parseInt(document.getElementById('sliderB')?.value || 0, 10);
+  const w = parseInt(document.getElementById('sliderW')?.value || 0, 10);
+
+  customR = r; customG = g; customB = b; customW = w;
+  setCachedText('valR', r);
+  setCachedText('valG', g);
+  setCachedText('valB', b);
+  setCachedText('valW', w);
+
+  const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+  setCachedText('rgbwHex', `${hex} + W:${w}`);
+
+  const preview = document.getElementById('rgbwPreview');
+  if (preview) {
+    const cssCol = computeRgbwCss(r, g, b, w);
+    preview.style.backgroundColor = cssCol;
+    preview.style.boxShadow = `0 0 16px ${cssCol}`;
+  }
+}
+
+function applyCustomRgbw() {
+  sendCmd({
+    custom_r: customR,
+    custom_g: customG,
+    custom_b: customB,
+    custom_w: customW
+  });
+  renderLedRing(currentLightMode, currentBrtPct);
+  toast(`Колір SK6812: R${customR} G${customG} B${customB} W${customW}`);
+}
+
+function setRgbwPreset(r, g, b, w) {
+  customR = r; customG = g; customB = b; customW = w;
+  const sR = document.getElementById('sliderR'); if (sR) sR.value = r;
+  const sG = document.getElementById('sliderG'); if (sG) sG.value = g;
+  const sB = document.getElementById('sliderB'); if (sB) sB.value = b;
+  const sW = document.getElementById('sliderW'); if (sW) sW.value = w;
+  onRgbwInput();
+  applyCustomRgbw();
+}
+
+function toggleLampPower() {
+  if (currentLightMode === 10) {
+    currentLightMode = 0;
+    sendCmd({set_mode: 0});
+    toast('Підсвітка УВІМКНЕНА ☀️');
+  } else {
+    currentLightMode = 10;
+    sendCmd({set_mode: 10});
+    toast('Підсвітка ВИМКНЕНА 🌑');
+  }
+  renderLedRing(currentLightMode, currentBrtPct);
 }
 
 let currentMuted = false;
@@ -1583,9 +1785,21 @@ function applyTelemetryInPlace(t) {
   setCachedText('kPresCard', pStr);
 
   if (t.m !== undefined) {
+    currentLightMode = t.m;
     MODES.forEach((_, i) => {
       setCachedClass('mBtn' + i, (t.m === i) ? 'btn active' : 'btn');
     });
+    renderLedRing(currentLightMode, currentBrtPct);
+  }
+
+  if (t.b_pct !== undefined) {
+    currentBrtPct = t.b_pct;
+    const brtSlider = document.getElementById('brtSlider');
+    if (brtSlider && document.activeElement !== brtSlider) {
+      brtSlider.value = t.b_pct;
+      setCachedText('brtVal', `${t.b_pct}%`);
+    }
+    renderLedRing(currentLightMode, currentBrtPct);
   }
 
   if (t.vol !== undefined) {
@@ -1727,8 +1941,10 @@ async function initStudioWebSocket() {
       }
       if (document.visibilityState !== 'hidden') {
         clearTimeout(wsReconnectTimer);
-        wsReconnectTimer = setTimeout(initStudioWebSocket, wsReconnectDelay);
-        wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, 30000);
+        const jitter = Math.floor(Math.random() * 400);
+        const nextDelay = Math.min(wsReconnectDelay + jitter, 10000);
+        wsReconnectTimer = setTimeout(initStudioWebSocket, nextDelay);
+        wsReconnectDelay = Math.min(wsReconnectDelay * 2, 10000);
       }
     };
     studioWs.onerror = () => {
@@ -1847,3 +2063,10 @@ async function testWebPush() {
     toast('Помилка тестування Push');
   }
 }
+
+// Startup LED Ring and RGBW
+setTimeout(() => {
+  buildLedRing();
+  onRgbwInput();
+  renderLedRing();
+}, 200);

@@ -8,24 +8,27 @@ import json
 ENV_PATH = "/home/ubuntu/SmartLamp/oracle_server/.env"
 
 
-def get_bot_token() -> str:
+def get_env_vars() -> dict:
+    env_vars = {}
     if not os.path.exists(ENV_PATH):
-        return ""
+        return env_vars
     with open(ENV_PATH, "r", encoding="utf-8") as f:
         for line in f:
-            if line.startswith("TG_BOT_TOKEN="):
-                return line.split("=", 1)[1].strip()
-    return ""
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                env_vars[k.strip()] = v.strip().strip('"').strip("'")
+    return env_vars
 
 
-def update_telegram_menu_button(url: str) -> None:
-    token = get_bot_token()
+def update_telegram_menu_button(url: str, env_vars: dict) -> None:
+    token = env_vars.get("TG_BOT_TOKEN") or os.getenv("TG_BOT_TOKEN", "")
     if not token:
         return
     clean_url = url.rstrip("/")
     web_app_url = f"{clean_url}/?v=5.2.0"
     api_url = f"https://api.telegram.org/bot{token}/setChatMenuButton"
-    
+
     # 1. Загальна кнопка за замовчуванням
     payload = json.dumps({
         "menu_button": {
@@ -41,8 +44,27 @@ def update_telegram_menu_button(url: str) -> None:
     except Exception as e:
         print(f"[Tunnel] Failed to update Telegram Default Menu Button: {e}")
 
-    # 2. Кнопка конкретно для зареєстрованих чатів
-    for chat_id in (1047202957, 1294097414):
+    # 2. Кнопка для зареєстрованих чатів з .env
+    target_chats = set()
+    for key in ("TG_ADMIN_ID", "TG_GIRL_ID"):
+        val = env_vars.get(key) or os.getenv(key)
+        if val:
+            try:
+                target_chats.add(int(val))
+            except ValueError:
+                pass
+
+    allowed = env_vars.get("ALLOWED_CHAT_IDS") or os.getenv("ALLOWED_CHAT_IDS")
+    if allowed:
+        for cid in allowed.split(","):
+            cid = cid.strip()
+            if cid:
+                try:
+                    target_chats.add(int(cid))
+                except ValueError:
+                    pass
+
+    for chat_id in target_chats:
         user_payload = json.dumps({
             "chat_id": chat_id,
             "menu_button": {
@@ -67,6 +89,16 @@ def update_env_url(url: str) -> None:
     with open(ENV_PATH, "r", encoding="utf-8") as f:
         content = f.read()
 
+    # Check existing URL to avoid duplicate restarts
+    m = re.search(r"PUBLIC_SERVER_URL=(.*)", content)
+    current_url = m.group(1).strip().strip('"').strip("'") if m else ""
+
+    if current_url == url:
+        print(f"[Tunnel] PUBLIC_SERVER_URL is already {url}. Skipping systemd restart.")
+        env_vars = get_env_vars()
+        update_telegram_menu_button(url, env_vars)
+        return
+
     if "PUBLIC_SERVER_URL=" in content:
         content = re.sub(r"PUBLIC_SERVER_URL=.*", f"PUBLIC_SERVER_URL={url}", content)
     else:
@@ -82,7 +114,8 @@ def update_env_url(url: str) -> None:
         f.write(content)
 
     print(f"[Tunnel] Successfully updated PUBLIC_SERVER_URL to {url}")
-    update_telegram_menu_button(url)
+    env_vars = get_env_vars()
+    update_telegram_menu_button(url, env_vars)
     subprocess.run(["sudo", "systemctl", "restart", "smartlamp.service"], check=False)
     print("[Tunnel] smartlamp.service restarted with new HTTPS endpoint.")
 

@@ -569,11 +569,33 @@ private:
                 if (strcmp(b_str, "auto") == 0) {
                     CommandRouter::setBrightnessPreset(state, true);
                 } else {
-                    CommandRouter::setBrightnessPreset(state, false, (uint8_t)atoi(b_str));
+                    int val = atoi(b_str);
+                    if (val > 3) {
+                        CommandRouter::setBrightnessPercent(state, (uint8_t)constrain(val, 1, 100));
+                    } else {
+                        CommandRouter::setBrightnessPreset(state, false, (uint8_t)val);
+                    }
                 }
             } else if (doc["set_brt"].is<int>()) {
-                CommandRouter::setBrightnessPreset(state, false, doc["set_brt"].as<uint8_t>());
+                int val = doc["set_brt"].as<int>();
+                if (val > 3) {
+                    CommandRouter::setBrightnessPercent(state, (uint8_t)constrain(val, 1, 100));
+                } else {
+                    CommandRouter::setBrightnessPreset(state, false, (uint8_t)val);
+                }
             }
+        }
+
+        if (doc["speed"].is<int>()) {
+            CommandRouter::setAnimSpeed(state, (uint8_t)constrain(doc["speed"].as<int>(), 1, 100));
+        }
+
+        if (doc["custom_r"].is<int>() || doc["custom_g"].is<int>() || doc["custom_b"].is<int>() || doc["custom_w"].is<int>()) {
+            uint8_t cr = doc["custom_r"].is<int>() ? (uint8_t)doc["custom_r"].as<int>() : state.custom_r;
+            uint8_t cg = doc["custom_g"].is<int>() ? (uint8_t)doc["custom_g"].as<int>() : state.custom_g;
+            uint8_t cb = doc["custom_b"].is<int>() ? (uint8_t)doc["custom_b"].as<int>() : state.custom_b;
+            uint8_t cw = doc["custom_w"].is<int>() ? (uint8_t)doc["custom_w"].as<int>() : state.custom_w;
+            CommandRouter::setCustomRgbw(state, cr, cg, cb, cw);
         }
 
         // 2. Команди звуку: гучність, Mute, тактильні кліки

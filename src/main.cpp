@@ -408,19 +408,23 @@ void loop() {
 
     uint32_t current_hw_mhz = getCpuFrequencyMhz();
 
-    if (high_freq_needed) {
-        // Миттєвий підйом до 240 МГц без затримок для плавності UI та звуку
-        if (current_hw_mhz < 240 && (loop_now - last_freq_change_ms >= 500UL)) {
-            setCpuFrequencyMhz(240);
-            last_freq_change_ms = loop_now;
-        }
-    } else {
-        // Зниження до 80 МГц лише при стійкому спокої (>= 15 с безперервного спокої)
-        if (current_hw_mhz > 80 && 
-            (loop_now - high_demand_last_seen_ms >= 15000UL) && 
-            (loop_now - last_freq_change_ms >= 3000UL)) {
-            setCpuFrequencyMhz(80);
-            last_freq_change_ms = loop_now;
+    // Забороняємо зміну частоти ядра, якщо в LedService триває активна передача RMT-кадру,
+    // щоб уникнути збою тактування шини APB та спотворення таймінгів SK6812
+    if (!ledService.isTransmitting()) {
+        if (high_freq_needed) {
+            // Миттєвий підйом до 240 МГц без затримок для плавності UI та звуку
+            if (current_hw_mhz < 240 && (loop_now - last_freq_change_ms >= 500UL)) {
+                setCpuFrequencyMhz(240);
+                last_freq_change_ms = loop_now;
+            }
+        } else {
+            // Зниження до 80 МГц лише при стійкому спокої (>= 15 с безперервного спокою)
+            if (current_hw_mhz > 80 && 
+                (loop_now - high_demand_last_seen_ms >= 15000UL) && 
+                (loop_now - last_freq_change_ms >= 3000UL)) {
+                setCpuFrequencyMhz(80);
+                last_freq_change_ms = loop_now;
+            }
         }
     }
 

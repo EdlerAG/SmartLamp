@@ -35,8 +35,65 @@ struct AppState {
     volatile int     light_percent   = 50;
     volatile bool    auto_brt        = true;
     volatile uint8_t manual_brt_idx  = 2;
+    volatile uint8_t manual_brt_pct  = 65; // 1..100% плавне регулювання
     volatile uint8_t current_led_brt = 65;
     volatile uint8_t current_lcd_brt = 220;
+
+    // Швидкість анімацій та кастомний колір (1..100, RGBW)
+    volatile uint8_t anim_speed      = 50;  // 1..100
+    volatile uint8_t custom_r        = 255;
+    volatile uint8_t custom_g        = 180;
+    volatile uint8_t custom_b        = 80;
+    volatile uint8_t custom_w        = 120;
+
+    // Тактильний хорологічний HUD-тост на GC9A01 (1.5 с)
+    volatile uint32_t hud_until_ms    = 0;
+    char              hud_title[24]   = "";
+    char              hud_subtitle[32] = "";
+
+    void showHudToast(const char* title, const char* subtitle, uint32_t duration_ms = 1500) {
+        portENTER_CRITICAL(&mux);
+        if (title) {
+            strncpy(hud_title, title, sizeof(hud_title) - 1);
+            hud_title[sizeof(hud_title) - 1] = '\0';
+        }
+        if (subtitle) {
+            strncpy(hud_subtitle, subtitle, sizeof(hud_subtitle) - 1);
+            hud_subtitle[sizeof(hud_subtitle) - 1] = '\0';
+        }
+        hud_until_ms = millis() + duration_ms;
+        ui_force_dirty = true;
+        portEXIT_CRITICAL(&mux);
+        registerActivity();
+    }
+
+    bool isHudActive(uint32_t now) const {
+        return (hud_until_ms > 0 && (int32_t)(hud_until_ms - now) > 0);
+    }
+
+    void setBrightnessPercent(uint8_t pct) {
+        portENTER_CRITICAL(&mux);
+        auto_brt = false;
+        manual_brt_pct = constrain(pct, (uint8_t)1, (uint8_t)100);
+        manual_brt_idx = (manual_brt_pct <= 20) ? 0 : (manual_brt_pct <= 45 ? 1 : (manual_brt_pct <= 75 ? 2 : 3));
+        portEXIT_CRITICAL(&mux);
+        markSettingsDirty();
+    }
+
+    void setAnimSpeed(uint8_t spd) {
+        portENTER_CRITICAL(&mux);
+        anim_speed = constrain(spd, (uint8_t)1, (uint8_t)100);
+        portEXIT_CRITICAL(&mux);
+    }
+
+    void setCustomRgbw(uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
+        portENTER_CRITICAL(&mux);
+        custom_r = r;
+        custom_g = g;
+        custom_b = b;
+        custom_w = w;
+        portEXIT_CRITICAL(&mux);
+    }
 
     // Таймер сну
     volatile uint32_t sleep_timer_end_ms   = 0;

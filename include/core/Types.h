@@ -60,6 +60,24 @@ enum LightModeId : uint8_t {
     TOTAL_LIGHT_MODES = 12
 };
 
+inline const char* getLightModeName(uint8_t mode) {
+    static const char* const names[12] = {
+        "☀️ Теплий затишок",
+        "🕯 Жива свічка",
+        "🍯 Бурштинова свічка",
+        "🔥 Камін з іскрами",
+        "🌅 Захід сонця",
+        "🌸 Сакура Неон",
+        "🌌 Північне сяйво",
+        "🌊 Океанський бриз",
+        "⚡ Кібер-комета",
+        "🌈 Веселка",
+        "🌑 Вимкнено",
+        "🎵 Spotify Ambi"
+    };
+    return names[mode % 12];
+}
+
 enum NotifyLedType : uint8_t {
     NOTIFY_NONE      = 0,
     NOTIFY_CYAN_WAVE = 1,
