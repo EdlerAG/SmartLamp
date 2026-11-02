@@ -201,7 +201,8 @@ async def box_websocket_endpoint(ws: WebSocket):
                 is_binary_session = False
                 try:
                     data = orjson.loads(raw_text)
-                except Exception:
+                except Exception as ex:
+                    logger.warning("Box WebSocket JSON parse error: %s (raw len=%d: %.80s)", ex, len(raw_text), raw_text)
                     continue
             else:
                 continue

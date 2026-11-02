@@ -231,7 +231,7 @@ public:
                     if (drop_start_ms == 0) {
                         drop_start_ms = millis();
                         WiFi.reconnect();
-                    } else if (millis() - drop_start_ms >= 20000) {
+                    } else if (millis() - drop_start_ms >= 30000) {
                         state.had_blackout_drop = true;
                         enterBlackoutEcoMode();
                     }
@@ -249,7 +249,7 @@ public:
                 break;
             case NetMode::BLACKOUT_PROBE:
                 if (WiFi.status() == WL_CONNECTED) onWifiConnected();
-                else if (millis() - state_timer_ms >= 4500) enterBlackoutEcoMode();
+                else if (millis() - state_timer_ms >= 15000) enterBlackoutEcoMode();
                 break;
             default:
                 break;

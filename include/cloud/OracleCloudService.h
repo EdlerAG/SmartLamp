@@ -876,7 +876,7 @@ public:
             return;
         }
 
-        char status_json[576];
+        char status_json[1024];
         CommandRouter::buildStatusJson(state, status_json, sizeof(status_json));
 
         // ⚡️ Пріоритетний швидкісний WebSocket-канал (15 мс latency)

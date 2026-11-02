@@ -89,6 +89,9 @@ class StateService:
             db_service.set_setting("detected_base_url", clean)
 
     def resolve_public_url(self, preferred: str = "") -> str:
+        # Пріоритет публічного HTTPS-домену (ngrok/tunnel), щоб виключити закриті порти 8000 при OTA/медіа
+        if settings.PUBLIC_SERVER_URL and (not preferred or "8000" in preferred or "127.0.0.1" in preferred or "localhost" in preferred or "YOUR_ORACLE_IP" in preferred):
+            return settings.PUBLIC_SERVER_URL.rstrip("/")
         cand = (preferred or settings.PUBLIC_SERVER_URL).rstrip("/")
         if cand and "127.0.0.1" not in cand and "localhost" not in cand and "YOUR_ORACLE_IP" not in cand:
             return cand

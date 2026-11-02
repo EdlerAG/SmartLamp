@@ -40,8 +40,8 @@ namespace Config {
     constexpr float TEMP_OFFSET_C = 0.0f;
 
     // Таймінги для відключень світла (Blackout) та Onboarding
-    constexpr uint32_t WIFI_BOOT_TIMEOUT_MS    = 8000;
-    constexpr uint32_t AP_PORTAL_TIMEOUT_MS    = 120000;
+    constexpr uint32_t WIFI_BOOT_TIMEOUT_MS    = 30000;
+    constexpr uint32_t AP_PORTAL_TIMEOUT_MS    = 180000;
     constexpr uint32_t BLACKOUT_PROBE_EVERY_MS = 25000;
     constexpr uint32_t BOOT_SPLASH_MS          = 2800;  // Тривалість вітального екрана
 
