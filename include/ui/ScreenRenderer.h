@@ -95,7 +95,7 @@ namespace ScreenRenderer {
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
         canvas.drawString("MAGICBOX", 120, 92);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
         canvas.drawString("HALLMARK v4.5", 120, 116);
 
@@ -122,7 +122,7 @@ namespace ScreenRenderer {
         switch (step) {
             // Крок 1: Вибір профілю звуку (Тиша vs Зі звуком)
             case OnboardingStep::WIZ_STEP_WELCOME_SOUND: {
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont12Bold);
                 canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
                 canvas.drawString("WELCOME TO MAGICBOX", 120, 30);
 
@@ -135,7 +135,7 @@ namespace ScreenRenderer {
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
                 canvas.drawString("SOUND?", 120, 86);
 
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont14);
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
                 canvas.drawString("Увімкнути звук колонки?", 120, 130);
 
@@ -157,7 +157,7 @@ namespace ScreenRenderer {
 
             // Крок 1: Hellcat Telegram Bot QR з deep-link claim (@SmartLampEdlerAGBot?start=c_<claim_secret>)
             case OnboardingStep::WIZ_STEP_TG_BOT: {
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont12Bold);
                 canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
                 canvas.drawString("КРОК 1/2 | TELEGRAM-БОТ", 120, 22);
 
@@ -179,7 +179,7 @@ namespace ScreenRenderer {
                 canvas.drawRoundRect(70, 38, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
                 qr_cache.pushSprite(&canvas, 70, 38);
 
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont14);
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
                 canvas.drawString("1. Скануй QR камерою", 120, 148);
 
@@ -200,7 +200,7 @@ namespace ScreenRenderer {
 
             // Крок 2: Точка доступу лампи для підключення до домашнього Wi-Fi
             case OnboardingStep::WIZ_STEP_WIFI_AP: {
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont12Bold);
                 canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
                 canvas.drawString("КРОК 2/2 | ДОМАШНІЙ WI-FI", 120, 22);
 
@@ -216,7 +216,7 @@ namespace ScreenRenderer {
                 canvas.drawRoundRect(70, 38, 100, 100, 8, HallmarkTheme::BORDER_HAIRLINE);
                 qr_cache.pushSprite(&canvas, 70, 38);
 
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont14);
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
                 canvas.drawString("2. Обери домашній Wi-Fi", 120, 148);
 
@@ -237,7 +237,7 @@ namespace ScreenRenderer {
 
             // Крок 3: Анімація з'єднання з домашнім Wi-Fi та хмарою
             case OnboardingStep::WIZ_STEP_CONNECTING: {
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont12Bold);
                 canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
                 canvas.drawString("ПІДКЛЮЧЕННЯ ДО ХМАРИ", 120, 24);
 
@@ -250,7 +250,7 @@ namespace ScreenRenderer {
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
                 canvas.drawString("...", 120, 88);
 
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont12Bold);
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
                 canvas.drawString(state.wifi_connected ? "Wi-Fi підключено ✓" : "З'єднання з Wi-Fi...", 120, 142);
 
@@ -266,7 +266,7 @@ namespace ScreenRenderer {
 
             // Крок 4: Екран очікування налаштування в боті + живий чекліст su
             case OnboardingStep::WIZ_STEP_WAITING_CHECKLIST: {
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont12Bold);
                 canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
                 canvas.drawString("ШКАТУЛКА ОНЛАЙН ✨", 120, 20);
 
@@ -282,7 +282,7 @@ namespace ScreenRenderer {
                 bool s_cal  = (su & 0x10) || state.cal_active;
 
                 auto drawItem = [&](int y, const char* name, bool done) {
-                    canvas.setFont(&UkrainianFont12);
+                    canvas.setFont(&UkrainianFont12Bold);
                     canvas.setTextColor(done ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::TEXT_SECONDARY);
                     canvas.drawString(done ? "✓" : "○", 36, y);
                     canvas.setTextColor(done ? HallmarkTheme::TEXT_PRIMARY : HallmarkTheme::TEXT_SECONDARY);
@@ -316,7 +316,7 @@ namespace ScreenRenderer {
                 canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
                 canvas.drawString("ШКАТУЛКА ГОТОВА", 120, 106);
 
-                canvas.setFont(&UkrainianFont12);
+                canvas.setFont(&UkrainianFont12Bold);
                 canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
                 canvas.drawString("Приємного користування", 120, 134);
 
@@ -349,7 +349,7 @@ namespace ScreenRenderer {
         char qr_payload[80];
         snprintf(qr_payload, sizeof(qr_payload), "http://%s/", ip);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(state.oracle_online ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::ACCENT_COOL);
         canvas.drawString("SYSTEM DIAGNOSTICS", 120, 26);
 
@@ -365,7 +365,7 @@ namespace ScreenRenderer {
         canvas.drawRoundRect(75, 42, 90, 90, 6, HallmarkTheme::BORDER_HAIRLINE);
         qr_cache.pushSprite(&canvas, 75, 42);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
         canvas.drawString(ssid, 120, 142);
 
@@ -381,7 +381,7 @@ namespace ScreenRenderer {
                  (unsigned long)(ESP.getFreePsram() / (1024 * 1024)));
         canvas.drawString(mem_line, 120, 178);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
         canvas.drawString("Клікніть будь-яку кнопку для виходу", 120, 202);
     }
@@ -395,7 +395,7 @@ namespace ScreenRenderer {
         canvas.drawArc(120, 120, 108, 105, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
         canvas.drawArc(120, 120, 108, 105, 180, angle, HallmarkTheme::ACCENT_SUCCESS);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
         canvas.drawString("UPDATING FIRMWARE", 120, 70);
 
@@ -405,7 +405,7 @@ namespace ScreenRenderer {
         snprintf(p_txt, sizeof(p_txt), "%d%%", state.ota_progress);
         canvas.drawString(p_txt, 120, 118);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("НЕ ВИМИКАЙТЕ ЖИВЛЕННЯ", 120, 162);
     }
@@ -498,7 +498,7 @@ namespace ScreenRenderer {
 
         // Індикатор яскравості та гучності
         uint8_t brt_pct = state.getLedBrightnessPercent();
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         char brt_info[64];
         snprintf(brt_info, sizeof(brt_info), "%s | Світ %d%% | Звук %s%d%%",
@@ -532,7 +532,7 @@ namespace ScreenRenderer {
             canvas.fillCircle(px, py, 9, HallmarkTheme::ACCENT_WARM);
             canvas.drawCircle(px, py, 11, HallmarkTheme::TEXT_PRIMARY);
 
-            canvas.setFont(&UkrainianFont12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
             canvas.drawString("HALLMARK PENDULUM", 120, 164);
         }
@@ -547,7 +547,7 @@ namespace ScreenRenderer {
             state.getTimeString(t_str, sizeof(t_str));
             snprintf(clk_buf, sizeof(clk_buf), "%s | %.1f°C", t_str, state.temperature);
 
-            canvas.setFont(&UkrainianFont12);
+            canvas.setFont(&UkrainianFont14);
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
             canvas.drawString(clk_buf, 120, 29);
         }
@@ -559,7 +559,7 @@ namespace ScreenRenderer {
             canvas.drawRoundRect(80, 180, 80, 18, 9, HallmarkTheme::ACCENT_WARM);
             char med_lbl[32];
             snprintf(med_lbl, sizeof(med_lbl), "⏱ %u хв", rem_med);
-            canvas.setFont(&UkrainianFont12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextDatum(middle_center);
             canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
             canvas.drawString(med_lbl, 120, 189);
@@ -588,7 +588,7 @@ namespace ScreenRenderer {
             canvas.fillRoundRect(22, 28, 196, 148, 10, HallmarkTheme::BG_SURFACE);
             canvas.drawRoundRect(22, 28, 196, 148, 10, border_col);
 
-            canvas.setFont(&UkrainianFont12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
             char s_line[64];
             snprintf(s_line, sizeof(s_line), "@%s", sender);
@@ -610,7 +610,7 @@ namespace ScreenRenderer {
                 canvas.drawString(line2, 120, 108);
             }
 
-            canvas.setFont(&UkrainianFont12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
             canvas.drawString("Нове | Торкнись кришки", 120, 148);
             return;
@@ -650,7 +650,7 @@ namespace ScreenRenderer {
             canvas.drawArc(120, 120, 108, 106, 180, arc_deg, HallmarkTheme::ACCENT_WARM);
 
             // 4. Назва треку (з горизонтальним скролінгом якщо довжина перевищує ширину)
-            canvas.setFont(&UkrainianFont12);
+            canvas.setFont(&UkrainianFont14);
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
 
             int title_w = canvas.textWidth(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify Track");
@@ -666,6 +666,7 @@ namespace ScreenRenderer {
             }
 
             // 5. Виконавець та час треку
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
             canvas.drawString(state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist", 120, 184);
 
@@ -674,7 +675,7 @@ namespace ScreenRenderer {
             uint32_t d_sec = state.spotify.duration_ms / 1000;
             snprintf(time_prog, sizeof(time_prog), "%02u:%02u / %02u:%02u",
                      c_sec / 60, c_sec % 60, d_sec / 60, d_sec % 60);
-            canvas.setFont(&fonts::Font0);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
             canvas.drawString(time_prog, 120, 196);
             return;
@@ -687,7 +688,7 @@ namespace ScreenRenderer {
             canvas.fillRoundRect(22, 28, 196, 148, 10, HallmarkTheme::BG_SURFACE);
             canvas.drawRoundRect(22, 28, 196, 148, 10, HallmarkTheme::ACCENT_AMBER);
 
-            canvas.setFont(&UkrainianFont12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::ACCENT_AMBER);
             canvas.drawString("КАЛЕНДАР НАСТІ", 80, 46);
 
@@ -699,7 +700,7 @@ namespace ScreenRenderer {
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
             canvas.drawString(state.cal_summary, 120, 96);
 
-            canvas.setFont(&UkrainianFont12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
             canvas.drawString("Скоро початок (<= 15 хв)", 120, 148);
             return;
@@ -719,7 +720,7 @@ namespace ScreenRenderer {
         uint16_t sync_col = (sync_age < 15000) ? HallmarkTheme::ACCENT_SUCCESS : ((sync_age < 45000) ? HallmarkTheme::ACCENT_WARM : HallmarkTheme::ACCENT_DANGER);
         canvas.fillCircle(34, 46, 3, sync_col);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
         char s_line[64];
         snprintf(s_line, sizeof(s_line), "@%s", sender);
@@ -741,7 +742,7 @@ namespace ScreenRenderer {
             canvas.drawString(line2, 120, 108);
         }
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         char pg_buf[32];
         snprintf(pg_buf, sizeof(pg_buf), "%u / %u | R: Історія", state.inbox_view_idx + 1, state.inbox_count);
@@ -757,7 +758,7 @@ namespace ScreenRenderer {
         float p_diff = 0.0f;
         state.getPressureHistory(hist, h_cnt, p_diff);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("BAROMETRIC TREND", 120, 32);
 
@@ -781,7 +782,7 @@ namespace ScreenRenderer {
             trend_word = "ПАДАЄ";
         }
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(trend_col);
         char trend_str[64];
         snprintf(trend_str, sizeof(trend_str), "%s %s (%+.1f mmHg)", arrow_sym, trend_word, p_diff);
@@ -793,7 +794,7 @@ namespace ScreenRenderer {
 
         canvas.fillRoundRect(36, 110, 168, 20, 10, HallmarkTheme::BG_SURFACE);
         canvas.drawRoundRect(36, 110, 168, 20, 10, HallmarkTheme::BORDER_HAIRLINE);
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont14);
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
         canvas.drawString(wf, 120, 120);
 
@@ -814,7 +815,7 @@ namespace ScreenRenderer {
             canvas.fillRect(bx, by, 4, bar_h, b_col);
         }
 
-        canvas.setFont(&fonts::Font0);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("750", 192, baseline_y - 4);
     }
@@ -837,7 +838,7 @@ namespace ScreenRenderer {
         }
 
         // Заголовок
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("HALLMARK FOCUS DIAL", 120, 32);
 
@@ -872,7 +873,7 @@ namespace ScreenRenderer {
 
         canvas.fillRoundRect(32, 114, 176, 22, 11, HallmarkTheme::BG_SURFACE);
         canvas.drawRoundRect(32, 114, 176, 22, 11, badge_col);
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(text_col);
         canvas.drawString(st_txt, 120, 125);
 
@@ -880,7 +881,7 @@ namespace ScreenRenderer {
         const char* l_lbl = state.pomo_active ? "◄ -1м" : "◄ -5м";
         canvas.fillRoundRect(22, 148, 58, 22, 11, HallmarkTheme::BG_SURFACE);
         canvas.drawRoundRect(22, 148, 58, 22, 11, HallmarkTheme::BORDER_HAIRLINE);
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
         canvas.drawString(l_lbl, 51, 159);
 
@@ -896,7 +897,7 @@ namespace ScreenRenderer {
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
         canvas.drawString(r_lbl, 189, 159);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("Утримуй ◄ для виходу", 120, 184);
     }
@@ -916,11 +917,11 @@ namespace ScreenRenderer {
 
         canvas.fillCircle(120, 52, 16, HallmarkTheme::BG_PRIMARY);
         canvas.drawCircle(120, 52, 16, gold_col);
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(gold_col);
         canvas.drawString("B-DAY", 120, 52);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("З ДНЕМ НАРОДЖЕННЯ,", 120, 78);
 
@@ -928,10 +929,11 @@ namespace ScreenRenderer {
         canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
         canvas.drawString("НАСТЮ!", 120, 104);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont14);
         canvas.setTextColor(gold_col);
         canvas.drawString("05.11 | Твій особливий день", 120, 130);
 
+        canvas.setFont(&UkrainianFont14);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("Тепла, затишку та посмішок", 120, 150);
 
@@ -958,7 +960,7 @@ namespace ScreenRenderer {
         canvas.fillRoundRect(144, 212, 28, 14, 7, state.btn_r_pressed ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::BG_SURFACE);
         canvas.drawRoundRect(144, 212, 28, 14, 7, HallmarkTheme::BORDER_HAIRLINE);
 
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         const char* l_btn = (state.screen_mode == SCREEN_POMODORO) ? (state.pomo_active ? "-1М" : "-5М") : "ЕКР";
         canvas.drawString(l_btn, 82, 219);
@@ -996,12 +998,12 @@ namespace ScreenRenderer {
         canvas.drawRoundRect(x, y, w, h, r, HallmarkTheme::BORDER_ACTIVE);
 
         canvas.setTextDatum(textdatum_t::middle_center);
-        canvas.setFont(&UkrainianFont12);
+        canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
         canvas.drawString(state.hud_title, 120, y + 13);
 
         if (state.hud_subtitle[0] != '\0') {
-            canvas.setFont(&UkrainianFont12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
             canvas.drawString(state.hud_subtitle, 120, y + 28);
         } else {

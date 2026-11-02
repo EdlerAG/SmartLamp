@@ -115,10 +115,27 @@ public:
     void pushCanvas() {
         int16_t ang = state.screen_angle;
         ang = (ang % 360 + 360) % 360;
-        if (ang == 0) {
+
+        // Визначаємо найближчу апаратну орієнтацію (0°, 90°, 180°, 270°)
+        uint8_t hw_rot = ((ang + 45) / 90) % 4;
+        int16_t residual = ang - (hw_rot * 90);
+        if (residual < -180) residual += 360;
+        if (residual > 180)  residual -= 360;
+
+        // Апаратна фіксація на контролері GC9A01 (0..3):
+        // Якщо кут кратний 90° або відхилення в межах +/- 10°, фіксуємо апаратний поворот матриці.
+        // Це дає 100% кришталево чистий 1:1 рендеринг по SPI DMA без жодного програмного розмиття пікселів!
+        if (abs(residual) <= 10) {
+            if (lcd.getRotation() != hw_rot) {
+                lcd.setRotation(hw_rot);
+            }
             canvas.pushSprite(0, 0);
         } else {
-            canvas.pushRotated(&lcd, (float)ang);
+            // Для довільного кута використовуємо субпіксельний антиаліасинг (AA)
+            if (lcd.getRotation() != 0) {
+                lcd.setRotation(0);
+            }
+            canvas.pushRotatedWithAA(&lcd, (float)ang);
         }
     }
 
@@ -306,7 +323,7 @@ public:
                     canvas.drawRoundRect(80, 180, 80, 18, 9, HallmarkTheme::BORDER_HAIRLINE);
                     char med_lbl[32];
                     snprintf(med_lbl, sizeof(med_lbl), "⏱ %u хв", rem_med);
-                    canvas.setFont(&fonts::efontCN_10);
+                    canvas.setFont(&UkrainianFont12Bold);
                     canvas.setTextDatum(middle_center);
                     canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
                     canvas.drawString(med_lbl, 120, 189);
