@@ -133,4 +133,17 @@ struct SpotifyTrackInfo {
     uint16_t bpm = 120;
     uint8_t  energy = 65; // 0..100
     bool     vinyl_ready = false;
+    char     lyric[96] = {0};
+    uint32_t optimistic_until_ms = 0;
+
+    bool isSwitchingOptimistic(uint32_t now) const {
+        return (optimistic_until_ms > now);
+    }
+
+    void triggerOptimisticNext(uint32_t now) {
+        optimistic_until_ms = now + 4000;
+        progress_ms = 0;
+        last_server_progress_ms = 0;
+        last_sync_millis = now;
+    }
 };

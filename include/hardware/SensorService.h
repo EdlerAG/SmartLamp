@@ -54,6 +54,9 @@ struct Bmp280Wire {
         Wire.write(0x33); // Normal mode, osrs_t x1, osrs_p x8
         Wire.endTransmission();
 
+        // ⚡️ Апаратна пауза 35 мс: даємо АЦП BMP280 завершити перше перетворення тиску
+        delay(35);
+
         ready = true;
         return true;
     }
@@ -184,10 +187,14 @@ public:
 
         if (bmp280.begin(0x76) || bmp280.begin(0x77)) {
             state.bmp_connected = true;
+            delay(40);
             float p = bmp280.readPressure();
             if (!isnan(p) && p > 80000.0f && p < 115000.0f) {
-                state.pressure = p * 0.00750062f;
-                state.addPressureSample(state.pressure);
+                float mm = p * 0.00750062f;
+                if (fabs(mm - 750.0f) >= 0.05f) {
+                    state.pressure = mm;
+                    state.addPressureSample(state.pressure);
+                }
             }
         }
 
@@ -321,8 +328,11 @@ public:
         // Автономна «Чорна скринька» телеметрії при блекаутах / відсутності Wi-Fi (лише валідні дані після прогріву)
         if (!state.oracle_online && state.sensors_valid && now > 10000UL) {
             if (state.last_offline_sample_ms == 0 || (now - state.last_offline_sample_ms >= 300000UL)) {
-                state.last_offline_sample_ms = now;
-                state.pushOfflineSample(state.temperature, state.humidity, state.pressure, (uint8_t)state.light_percent, state.light_mode);
+                // Санітарний фільтр: ніколи не зберігати дефолтні заглушки 750.0 / 22.0 в офлайн-буфер
+                if (!isnan(state.pressure) && state.pressure >= 680.0f && state.pressure <= 820.0f && fabs(state.pressure - 750.0f) >= 0.1f) {
+                    state.last_offline_sample_ms = now;
+                    state.pushOfflineSample(state.temperature, state.humidity, state.pressure, (uint8_t)state.light_percent, state.light_mode);
+                }
             }
         } else if (state.oracle_online) {
             state.last_offline_sample_ms = 0;

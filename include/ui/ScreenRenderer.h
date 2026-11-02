@@ -651,25 +651,24 @@ namespace ScreenRenderer {
             return;
         }
 
-        // --- ПРІОРИТЕТ 2: Spotify (Hallmark Vinyl Deck — 30 FPS) ---
+        // --- ПРІОРИТЕТ 2: Spotify (Hallmark Luxury Vinyl Deck — 30 FPS) ---
         bool has_spotify_deck = (state.spotify.playing || (state.spotify.track_id[0] != '\0' && (now - state.spotify.last_sync_ms < 60000UL)));
         if (has_spotify_deck) {
-            drawPerimeterTicks(canvas);
+            // Без фонових рисок: чистий глибокий чорний колір циферблата
 
-            // 1. Обертання вінілової платівки 136x136 px у центрі (120, 94) з фізичною інерцією
+            // 1. Обертання вінілової платівки 136x136 px у центрі (120, 90) з субпіксельним антиаліасингом
             static float s_vinyl_speed = 0.0f;
             float target_speed = state.spotify.playing ? 1.8f : 0.0f;
-            // 33.3 RPM: розгін від 0 за ~650 мс, плавний вибіг/гальмування за ~850 мс
+            if (state.spotify.isSwitchingOptimistic(now)) target_speed = 4.5f; // Прискорене обертання під час зміни треку
             float inertia_factor = state.spotify.playing ? 0.082f : 0.045f;
             s_vinyl_speed += (target_speed - s_vinyl_speed) * inertia_factor;
             if (s_vinyl_speed > 0.005f) {
                 vinyl_angle += s_vinyl_speed;
                 if (vinyl_angle >= 360.0f) vinyl_angle -= 360.0f;
             }
-            vinylSprite.pushRotateZoom(&canvas, 120, 94, vinyl_angle, 1.0f, 1.0f);
+            vinylSprite.pushRotateZoomWithAA(&canvas, 120, 90, vinyl_angle, 1.0f, 1.0f);
 
-            // Оптичний міст (Optical Bridge): м'яке 4px градієнтне свічення вздовж нижньої кромки дисплея (дуга 45°..135° знизу)
-            // Колір синхронізовано з передніми діодами Дна для візуального «перетікання» з екрана на стіл
+            // Оптичний міст (Optical Bridge): м'яке свічення вздовж нижньої кромки дисплея (дуга 45°..135° знизу)
             uint8_t br_r = state.ambi_r;
             uint8_t br_g = state.ambi_g;
             uint8_t br_b = state.ambi_b;
@@ -678,22 +677,7 @@ namespace ScreenRenderer {
             canvas.drawArc(120, 120, 119, 117, 45, 135, bridge_col);
             canvas.drawArc(120, 120, 117, 115, 45, 135, bridge_dim);
 
-            // 2. Векторний тонарм (голка звукознімача) зверху справа
-            if (state.spotify.playing) {
-                canvas.drawLine(186, 26, 154, 76, HallmarkTheme::TEXT_SECONDARY);
-                canvas.drawLine(187, 26, 155, 76, HallmarkTheme::TEXT_SECONDARY);
-                canvas.fillCircle(186, 26, 5, HallmarkTheme::ACCENT_WARM);
-                canvas.fillCircle(154, 76, 3, HallmarkTheme::ACCENT_COOL);
-            } else {
-                // Паркова позиція тонарма коли платівка зупинена на паузі
-                canvas.drawLine(186, 26, 192, 72, HallmarkTheme::BORDER_HAIRLINE);
-                canvas.drawLine(187, 26, 193, 72, HallmarkTheme::BORDER_HAIRLINE);
-                canvas.fillCircle(186, 26, 5, HallmarkTheme::TEXT_SECONDARY);
-                canvas.fillCircle(192, 72, 3, HallmarkTheme::TEXT_SECONDARY);
-            }
-
-            // 2. Плавна кругова дуга прогресу треку навколо вінілової платівки (R = 73..71)
-            // Синхронізована за кольором з передньою зоною нижнього Ambilight
+            // 2. Елегантна кругова шкала прогресу треку навколо вінілової платівки (R = 73..71)
             uint32_t cur_prog = state.getLocalSpotifyProgressMs();
             float prog_frac = (state.spotify.duration_ms > 0) ? ((float)cur_prog / (float)state.spotify.duration_ms) : 0.0f;
             prog_frac = constrain(prog_frac, 0.0f, 1.0f);
@@ -702,44 +686,48 @@ namespace ScreenRenderer {
             if (state.ambi_r == 0 && state.ambi_g == 0 && state.ambi_b == 0) {
                 prog_col = HallmarkTheme::ACCENT_WARM;
             }
-            canvas.drawArc(120, 94, 73, 71, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
+            canvas.drawArc(120, 90, 73, 71, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
             int prog_deg = (int)(prog_frac * 360.0f);
             if (prog_deg > 0) {
-                canvas.drawArc(120, 94, 73, 71, 270, 270 + prog_deg, prog_col);
+                canvas.drawArc(120, 90, 73, 71, 270, 270 + prog_deg, prog_col);
+                // Світяща крапка-курсор на кінці дуги прогресу
+                float rad = (270.0f + (float)prog_deg) * 0.0174532925f;
+                int dot_x = 120 + (int)(cosf(rad) * 72.0f);
+                int dot_y = 90  + (int)(sinf(rad) * 72.0f);
+                canvas.fillCircle(dot_x, dot_y, 3, prog_col);
             }
 
-            // 3. Назва треку (шрифт UkrainianFont16Bold з високим контрастом і плавним скролінгом)
+            // 3. Назва треку (шрифт UkrainianFont16Bold з плавним скролінгом)
             canvas.setFont(&UkrainianFont16Bold);
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
 
-            int title_w = canvas.textWidth(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify");
+            const char* title_str = state.spotify.isSwitchingOptimistic(now) ? "⏭ Перемикання..." : (state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify");
+            int title_w = canvas.textWidth(title_str);
             if (title_w > 192) {
                 int scroll_range = title_w + 50;
                 int scroll_offset = (now / 35) % scroll_range;
                 int base_x = 120 + 96 - scroll_offset;
                 canvas.setClipRect(20, 158, 200, 22);
                 canvas.setTextDatum(textdatum_t::middle_left);
-                canvas.drawString(state.spotify.title, base_x, 169);
+                canvas.drawString(title_str, base_x, 169);
                 canvas.clearClipRect();
             } else {
                 canvas.setTextDatum(textdatum_t::middle_center);
-                canvas.drawString(state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify", 120, 169);
+                canvas.drawString(title_str, 120, 169);
             }
 
-            // 4. Виконавець та час треку (великий згладжений шрифт, нуль дрібного тексту)
-            canvas.setFont(&UkrainianFont14);
-            canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-            canvas.setTextDatum(textdatum_t::middle_center);
-            canvas.drawString(state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist", 120, 189);
-
-            char time_prog[32];
-            uint32_t c_sec = cur_prog / 1000;
-            uint32_t d_sec = state.spotify.duration_ms / 1000;
-            snprintf(time_prog, sizeof(time_prog), "%02u:%02u / %02u:%02u",
-                     c_sec / 60, c_sec % 60, d_sec / 60, d_sec % 60);
-            canvas.setFont(&UkrainianFont12Bold);
-            canvas.setTextColor(HallmarkTheme::ACCENT_COOL);
-            canvas.drawString(time_prog, 120, 204);
+            // 4. Підпис (LRCLIB текст пісні в кольорі обкладинки або ім'я виконавця)
+            if (state.spotify.lyric[0] != '\0') {
+                canvas.setFont(&UkrainianFont12);
+                canvas.setTextColor(prog_col);
+                canvas.setTextDatum(textdatum_t::middle_center);
+                canvas.drawString(state.spotify.lyric, 120, 192);
+            } else {
+                canvas.setFont(&UkrainianFont14);
+                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
+                canvas.setTextDatum(textdatum_t::middle_center);
+                canvas.drawString(state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist", 120, 192);
+            }
             return;
         }
 
@@ -1008,6 +996,10 @@ namespace ScreenRenderer {
     // ІНДИКАТОР СТОРІНОК (Y = 222): 3 акуратні крапки (активна: pill 12x4 px бурштин)
     inline void drawPageIndicator(LGFX_Sprite& canvas, AppState& state) {
         if (state.screen_mode >= MAIN_SCREEN_COUNT) return;
+        // На екрані Spotify ховаємо крапки пагінації через 2 с, щоб не захаращувати світловий міст дна
+        if (state.screen_mode == SCREEN_SMART_HUB && state.last_screen_switch_ms > 0 && (millis() - state.last_screen_switch_ms > 2000UL)) {
+            return;
+        }
         const int dot_xs[3] = {100, 120, 140};
         for (int i = 0; i < 3; ++i) {
             if (state.screen_mode == i) {

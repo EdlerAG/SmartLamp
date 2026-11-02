@@ -321,15 +321,29 @@ class DatabaseService:
             logger.warning("add_climate_batch error: %s", e)
             return 0
 
+    def purge_climate_stubs(self) -> int:
+        """Очищає артефактні дефолтні викиди (750.0 мм рт. ст. та 22.0°C) з бази даних."""
+        try:
+            conn = self._get_conn()
+            cur = conn.execute(
+                "DELETE FROM climate_history WHERE abs(pres - 750.0) < 0.5 "
+                "OR (abs(temp - 22.0) < 0.05 AND abs(hum - 50.0) < 0.1)"
+            )
+            conn.commit()
+            return cur.rowcount
+        except Exception as e:
+            logger.warning("purge_climate_stubs error: %s", e)
+            return 0
+
     def get_climate_series(self, hours: int = 24) -> List[Dict[str, Any]]:
         cutoff = int(time.time()) - (hours * 3600)
         try:
             rows = self._get_conn().execute(
                 "SELECT ts, temp AS t, hum AS h, pres AS p, light AS l "
                 "FROM climate_history WHERE ts >= ? "
-                "AND pres >= 650.0 AND pres <= 850.0 "
-                "AND NOT (abs(temp - 22.0) < 0.05 AND abs(hum - 50.0) < 0.1 AND abs(pres - 750.0) < 0.1) "
-                "AND abs(pres - 750.0) >= 0.05 "
+                "AND pres >= 680.0 AND pres <= 820.0 "
+                "AND abs(pres - 750.0) >= 0.2 "
+                "AND NOT (abs(temp - 22.0) < 0.05 AND abs(hum - 50.0) < 0.1) "
                 "ORDER BY ts ASC",
                 (cutoff,),
             ).fetchall()

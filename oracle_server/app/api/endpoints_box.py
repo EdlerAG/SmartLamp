@@ -243,8 +243,8 @@ async def box_websocket_endpoint(ws: WebSocket):
                         t = float(pt.get("t", 0.0))
                         h = float(pt.get("h", 0.0))
                         p = float(pt.get("p", 0.0))
-                        is_stub = (abs(t - 22.0) < 0.05 and abs(h - 50.0) < 0.1 and abs(p - 750.0) < 0.1)
-                        if p >= 650.0 and p <= 850.0 and not is_stub and t > -40.0 and t < 85.0:
+                        is_stub = (abs(p - 750.0) < 0.2) or (abs(t - 22.0) < 0.05 and abs(h - 50.0) < 0.1)
+                        if p >= 680.0 and p <= 820.0 and not is_stub and t > -30.0 and t < 60.0:
                             age = pt.get("age_sec", 0)
                             ts = max(0, now_sec - age)
                             samples.append({
@@ -315,15 +315,20 @@ async def receive_batch_telemetry(payload: Dict[str, Any], _=Depends(verify_acce
     now_ts = int(time.time())
     samples = []
     for p in points:
-        age_sec = max(0, int(p.get("age_sec", 0)))
-        ts = now_ts - age_sec
-        samples.append({
-            "ts": ts,
-            "temp": p.get("t", 22.0),
-            "hum": p.get("h", 50.0),
-            "pres": p.get("p", 750.0),
-            "light": p.get("l", 50),
-        })
+        t_val = float(p.get("t", 22.0))
+        h_val = float(p.get("h", 50.0))
+        p_val = float(p.get("p", 750.0))
+        is_stub = (abs(p_val - 750.0) < 0.2) or (abs(t_val - 22.0) < 0.05 and abs(h_val - 50.0) < 0.1)
+        if p_val >= 680.0 and p_val <= 820.0 and not is_stub and t_val > -30.0 and t_val < 60.0:
+            age_sec = max(0, int(p.get("age_sec", 0)))
+            ts = now_ts - age_sec
+            samples.append({
+                "ts": ts,
+                "temp": t_val,
+                "hum": h_val,
+                "pres": p_val,
+                "light": p.get("l", 50),
+            })
     count = db_service.add_climate_batch(samples)
     realtime_hub.emit_to_dashboards({"type": "batch", "count": count})
     return {"ok": True, "count": count}

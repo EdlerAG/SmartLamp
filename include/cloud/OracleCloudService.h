@@ -539,6 +539,12 @@ private:
             if (sp["duration_ms"].is<uint32_t>()) state.spotify.duration_ms = sp["duration_ms"].as<uint32_t>();
             if (sp["bpm"].is<uint16_t>()) state.spotify.bpm = sp["bpm"].as<uint16_t>();
             if (sp["energy"].is<uint8_t>()) state.spotify.energy = sp["energy"].as<uint8_t>();
+            if (sp["lyric"].is<const char*>()) {
+                const char* lyr = sp["lyric"].as<const char*>();
+                strncpy(state.spotify.lyric, lyr ? lyr : "", sizeof(state.spotify.lyric) - 1);
+                state.spotify.lyric[sizeof(state.spotify.lyric) - 1] = '\0';
+            }
+            state.spotify.optimistic_until_ms = 0;
 
             if (sp["ambi_rgb"].is<JsonArray>()) {
                 JsonArray rgb = sp["ambi_rgb"];

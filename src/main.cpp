@@ -211,6 +211,7 @@ void processEvents() {
                     }
                 } else {
                     appState.screen_mode = (appState.screen_mode + 1) % MAIN_SCREEN_COUNT;
+                    appState.last_screen_switch_ms = millis();
                 }
                 appState.registerActivity();
                 break;
@@ -301,6 +302,7 @@ void processEvents() {
                     } else if (appState.spotify.playing || appState.spotify.track_id[0] != '\0') {
                         // Наступний трек Spotify за коротким кліком правої кнопки
                         appState.cmd_spotify_action = 1;
+                        appState.spotify.triggerOptimisticNext(millis());
                     } else if (appState.inbox_count > 1) {
                         CommandRouter::nextInboxMessage(appState);
                     }

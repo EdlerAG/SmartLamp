@@ -246,6 +246,9 @@ public:
         state.alarm_dismissed = false;
         portEXIT_CRITICAL(&state.mux);
 
+        // Відсікання відправки дефолтної заглушки 750 мм до першого успішного читання BMP280
+        float send_p = (state.bmp_connected && fabs(state.pressure - 750.0f) >= 0.05f) ? state.pressure : 0.0f;
+
         snprintf(out, max_len,
                  "{\"fw\":\"%s\",\"t\":%.1f,\"h\":%.0f,\"p\":%.0f,\"p_diff\":%.1f,\"l\":%d,"
                  "\"m\":%d,\"m_name\":\"%s\","
@@ -264,7 +267,7 @@ public:
                  "\"stk_net\":%lu,\"stk_cld\":%lu,\"stk_led\":%lu,"
                  "\"led_bot\":%u,\"led_bak\":%u,\"led_cnt\":%u,\"led_off\":%u,\"led_rev\":%s,\"led_ma\":%u}",
                  Config::FW_VERSION,
-                 state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
+                 state.temperature, state.humidity, send_p, state.pressure_diff, state.light_percent,
                  state.light_mode, getModeNameUa(state.light_mode),
                  state.auto_brt ? "true" : "false", state.manual_brt_idx, state.getLedBrightnessPercent(),
                  state.audio_volume, state.audio_muted ? "true" : "false", state.touch_beep_enabled ? "true" : "false",

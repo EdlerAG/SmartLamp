@@ -7,7 +7,7 @@ import base64
 import asyncio
 import urllib.parse
 from typing import Dict, Any, Optional, Tuple, List
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter, ImageEnhance
 
 from app.core.config import settings
 from app.core.logger import logger
@@ -220,6 +220,14 @@ class SpotifyService:
             logger.warning("Spotify token refresh error: %s", refresh_err)
         return None
 
+    async def _fast_track_switch_poll(self, prev_track_id: str) -> None:
+        """Two-Phase Fast Track Push: надшвидка перевірка перемикання треку через 180 мс та 450 мс."""
+        await asyncio.sleep(0.18)
+        st = await self.fetch_current_playback(force=True)
+        if st.get("track_id") == prev_track_id:
+            await asyncio.sleep(0.27)
+            await self.fetch_current_playback(force=True)
+
     async def player_action(self, action: str) -> bool:
         token = await self._ensure_access_token()
         if not token:
@@ -263,9 +271,7 @@ class SpotifyService:
                     self._cached_state["progress_ms"] = 0
                     self._cached_state["playing"] = True
                     self._last_poll_time = now
-                    # Spotify потребує ~350мс для перемикання треку на сервері
-                    await asyncio.sleep(0.35)
-                    await self.fetch_current_playback(force=True)
+                    asyncio.create_task(self._fast_track_switch_poll(self._last_track_id))
 
                 try:
                     from app.core.events import realtime_hub
@@ -280,14 +286,13 @@ class SpotifyService:
             return False
 
     @staticmethod
-    def _create_vinyl_art_bytes(album_img_bytes: bytes) -> Tuple[bytes, List[int], List[int], bool]:
+    def _create_vinyl_art_bytes(album_img_bytes: bytes) -> Tuple[bytes, List[int], List[int], List[int], bool]:
         """
-        Вирізає круглу вінілову платівку 136x136 px:
-        - Обідок з концентричними доріжками R = 44..68.
-        - Обкладинка в центрі R = 6..44.
-        - Отвір шпинделя R < 6.
-        - Соковита AmbiLight палітра в просторі HSV з прив'язкою col1 до низу обкладинки.
-        - Застосовує Bayer 4x4 Ordered Dithering та повертає (raw_bytes, col1, col2, is_mono).
+        Генерує преміальну 136x136 px круглу вінілову платівку:
+        - Обкладинка в центрі R = 6..56 (діаметр 112 px, 82% диска) з підвищеним контрастом та UnsharpMask.
+        - Тонкий 12px вініловий обідок R = 56..68 глибокого антрацитового відтінку (#0A0B0E) з мікро-доріжками та анізотропним відблиском.
+        - Центральний шпиндель R <= 4 (#000000) з металевим обідком R 4..6 (#2A2E39).
+        - Повне відсікання колірного шуму: Bayer 4x4 Dithering застосовується ВИКЛЮЧНО до обкладинки (dist <= 56).
         """
         import numpy as np
         import colorsys
@@ -301,36 +306,38 @@ class SpotifyService:
         center = (size - 1) / 2.0
         y, x = np.ogrid[:size, :size]
         dist = np.sqrt((x - center) ** 2 + (y - center) ** 2)
+        theta = np.arctan2(y - center, x - center)
 
-        # 1. Завантажуємо обкладинку і масштабуємо центральне коло
         canvas_arr = np.zeros((size, size, 3), dtype=np.float32)
 
         ambi_rgb = [56, 189, 248]
         ambi2_rgb = [248, 113, 113]
+        ambi3_rgb = [250, 204, 21]
         is_mono = False
         try:
             with Image.open(io.BytesIO(album_img_bytes)) as raw_img:
-                rgb_img = ImageOps.fit(raw_img.convert("RGB"), (80, 80), method=Image.Resampling.BILINEAR)
+                # 1. Підвищення різкості (+30%) та контрасту (+15%) перед масштабуванням
+                enhanced = raw_img.convert("RGB")
+                enhanced = ImageEnhance.Contrast(enhanced).enhance(1.15)
+                enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=1.2, percent=130, threshold=3))
+                # 2. Масштабування до 112x112 px (R = 56 px)
+                rgb_img = ImageOps.fit(enhanced, (112, 112), method=Image.Resampling.LANCZOS)
                 art_arr = np.asarray(rgb_img, dtype=np.float32)
 
-                # Вставляємо обкладинку в центр 136x136 (відступ 28 px)
-                canvas_arr[28:108, 28:108] = art_arr
+                # Вставляємо обкладинку в центр 136x136 (відступ 12 px: 12..124)
+                canvas_arr[12:124, 12:124] = art_arr
 
-                # Конвертуємо у простір HSV (0.0 .. 1.0)
+                # Конвертуємо у простір HSV (0.0 .. 1.0) для вилучення палітри Ambilight
                 norm_rgb = art_arr / 255.0
                 max_c = np.max(norm_rgb, axis=2)
                 min_c = np.min(norm_rgb, axis=2)
                 delta = max_c - min_c
 
-                # Value (0..1)
                 v_chan = max_c
-
-                # Saturation (0..1)
                 s_chan = np.zeros_like(max_c)
                 nz = max_c > 1e-5
                 s_chan[nz] = delta[nz] / max_c[nz]
 
-                # Hue (0..1, corresponding to 0..360 deg)
                 h_chan = np.zeros_like(max_c)
                 r_c = norm_rgb[:, :, 0]
                 g_c = norm_rgb[:, :, 1]
@@ -347,20 +354,18 @@ class SpotifyService:
 
                 mean_sat = float(np.mean(s_chan))
                 if mean_sat < 0.14:
-                    # Монохромний альбом: благородна золота тріада
                     is_mono = True
                     ambi_rgb = [255, 180, 50]   # Primary: Теплий бурштин
                     ambi2_rgb = [255, 120, 80]  # Secondary: Персиковий корал
                     ambi3_rgb = [255, 220, 140] # Accent: Перлинне сяйво
                 else:
                     is_mono = False
-                    # Фільтрація темних (V < 0.18) та сірих/вибілених (S < 0.22)
                     valid_mask = (v_chan >= 0.18) & (s_chan >= 0.22)
                     if np.sum(valid_mask) < 20:
                         valid_mask = (v_chan >= 0.12) & (s_chan >= 0.12)
 
-                    weights = np.ones((80, 80), dtype=np.float32)
-                    weights[40:, :] = 2.5
+                    weights = np.ones((112, 112), dtype=np.float32)
+                    weights[56:, :] = 2.5
                     weights = weights * s_chan * v_chan
 
                     h_valid = h_chan[valid_mask]
@@ -397,7 +402,6 @@ class SpotifyService:
                     else:
                         h3 = (h1 + 0.25) % 1.0
 
-                    # Примусова соковитість та максимальна яскравість (S >= 0.75, V = 1.0)
                     rgb1 = colorsys.hsv_to_rgb(h1, 0.88, 1.0)
                     rgb2 = colorsys.hsv_to_rgb(h2, 0.82, 1.0)
                     rgb3 = colorsys.hsv_to_rgb(h3, 0.95, 1.0)
@@ -414,22 +418,28 @@ class SpotifyService:
         except Exception as color_err:
             logger.debug("Spotify album color extraction fallback: %s", color_err)
 
-        # 2. Малюємо вініловий обідок з концентричними доріжками (44 < dist <= 68)
-        vinyl_mask = (dist > 44.0) & (dist <= 68.0)
-        groove_pattern = 14.0 + 8.0 * np.sin(dist * 2.8)
-        canvas_arr[vinyl_mask, 0] = groove_pattern[vinyl_mask]
-        canvas_arr[vinyl_mask, 1] = groove_pattern[vinyl_mask] * 1.15
-        canvas_arr[vinyl_mask, 2] = groove_pattern[vinyl_mask] * 1.35
+        # 3. Преміальний антрацитовий обідок вінілу (56.0 < dist <= 68.0)
+        # База #0A0B0E + тонкі мікро-доріжки + 2 діагональні анізотропні відблиски світла
+        vinyl_mask = (dist > 56.0) & (dist <= 68.0)
+        sheen = 6.0 * (np.cos(2.0 * theta - 0.785398) ** 4)
+        groove = 2.0 * np.sin(dist * 5.0)
+        base_val = 10.0 + groove + sheen
+        canvas_arr[vinyl_mask, 0] = np.clip(base_val, 8.0, 28.0)
+        canvas_arr[vinyl_mask, 1] = np.clip(base_val * 1.05, 9.0, 30.0)
+        canvas_arr[vinyl_mask, 2] = np.clip(base_val * 1.15, 12.0, 36.0)
 
-        # 3. Темний шпиндель у центрі (dist < 6.0)
-        hole_mask = dist < 6.0
-        canvas_arr[hole_mask] = [8.0, 9.0, 12.0]
+        # 4. Центральний шпиндель: отвір dist <= 4.0 (#000000) та металева фаска 4.0 < dist <= 6.0 (#2A2E39)
+        chamfer_mask = (dist > 4.0) & (dist <= 6.0)
+        canvas_arr[chamfer_mask] = [42.0, 46.0, 57.0]
+        spindle_mask = dist <= 4.0
+        canvas_arr[spindle_mask] = [0.0, 0.0, 0.0]
 
-        # 4. Обрізаємо все за межами вінілового кола (dist > 68.0)
+        # 5. Межі кола диска (dist > 68.0) — абсолютний нуль OLED (#000000)
         outer_mask = dist > 68.0
-        canvas_arr[outer_mask] = [8.0, 9.0, 12.0]
+        canvas_arr[outer_mask] = [0.0, 0.0, 0.0]
 
-        # 5. Векторизоване Bayer 4x4 Ordered Dithering перед перетворенням у RGB565
+        # 6. Bayer 4x4 Dithering: ЗАСТОСОВУЄТЬСЯ ВИКЛЮЧНО ДО ОБКЛАДИНКИ (dist <= 56.0)
+        # Обідок і зовнішній простір залишаються 100% чистими без шуму і паразитного синього кольору
         h, w = size, size
         tile_y = (h + 3) // 4
         tile_x = (w + 3) // 4
@@ -439,13 +449,19 @@ class SpotifyService:
         dither_g = (bayer_grid / 16.0 - 0.5) * 4.0
         dither_b = (bayer_grid / 16.0 - 0.5) * 8.0
 
-        r_dith = np.clip(canvas_arr[:, :, 0] + dither_r, 0, 255).astype(np.uint16)
-        g_dith = np.clip(canvas_arr[:, :, 1] + dither_g, 0, 255).astype(np.uint16)
-        b_dith = np.clip(canvas_arr[:, :, 2] + dither_b, 0, 255).astype(np.uint16)
+        dither_mask = (dist <= 56.0) & (dist > 6.0)
+        final_canvas = canvas_arr.copy()
+        final_canvas[dither_mask, 0] = np.clip(canvas_arr[dither_mask, 0] + dither_r[dither_mask], 0, 255)
+        final_canvas[dither_mask, 1] = np.clip(canvas_arr[dither_mask, 1] + dither_g[dither_mask], 0, 255)
+        final_canvas[dither_mask, 2] = np.clip(canvas_arr[dither_mask, 2] + dither_b[dither_mask], 0, 255)
 
-        r = (r_dith & 0xF8) << 8
-        g = (g_dith & 0xFC) << 3
-        b = b_dith >> 3
+        r_final = final_canvas[:, :, 0].astype(np.uint16)
+        g_final = final_canvas[:, :, 1].astype(np.uint16)
+        b_final = final_canvas[:, :, 2].astype(np.uint16)
+
+        r = (r_final & 0xF8) << 8
+        g = (g_final & 0xFC) << 3
+        b = b_final >> 3
         rgb565 = r | g | b
         raw_bytes = rgb565.astype(">u2").tobytes()
         return raw_bytes, ambi_rgb, ambi2_rgb, ambi3_rgb, is_mono
@@ -584,13 +600,14 @@ class SpotifyService:
                 duration_ms = int(item.get("duration_ms", 0))
 
                 images = (item.get("album") or {}).get("images", [])
-                art_url = images[0].get("url") if images else ""
+                # Оптимізація 300x300 preview (images[1]) для блискавичного скачування (< 40 мс)
+                art_url = images[1].get("url") if len(images) > 1 else (images[0].get("url") if images else "")
 
-                # Якщо змінився трек — перевіряємо LRU кеш або генеруємо нове вінілове коло
+                # Якщо змінився трек — Two-Phase Fast Track Push
                 track_changed = bool(track_id and track_id != self._last_track_id)
+                new_vinyl_bytes = None
                 if track_changed:
                     self._last_track_id = track_id
-                    # Миттєве скидання лірики попередньої пісні
                     self._current_lyrics = []
                     self._cached_state["lyric"] = ""
                     if track_id in self._vinyl_cache:
@@ -599,31 +616,40 @@ class SpotifyService:
                         self._last_ambi_rgb = ambi
                         self._last_ambi2_rgb = ambi2
                         self._last_is_mono = is_mono
+                        new_vinyl_bytes = vinyl_bytes
                         with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
                             f.write(vinyl_bytes)
                     else:
-                        images = (item.get("album") or {}).get("images", [])
-                        art_url = images[0].get("url") if images else ""
                         if art_url:
-                            art_resp = await http_pool.get().get(art_url, timeout=7.0)
+                            art_resp = await http_pool.get().get(art_url, timeout=5.0)
                             if art_resp.status_code == 200:
                                 vinyl_bytes, ambi, ambi2, ambi3, is_mono = self._create_vinyl_art_bytes(art_resp.content)
                                 self._last_ambi3_rgb = ambi3
                                 self._last_ambi_rgb = ambi
                                 self._last_ambi2_rgb = ambi2
                                 self._last_is_mono = is_mono
-                                if len(self._vinyl_cache) > 20:
+                                new_vinyl_bytes = vinyl_bytes
+                                if len(self._vinyl_cache) > 30:
                                     self._vinyl_cache.pop(next(iter(self._vinyl_cache)))
                                 self._vinyl_cache[track_id] = (vinyl_bytes, ambi, ambi2, ambi3, is_mono)
                                 with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
                                     f.write(vinyl_bytes)
                                 memory_guard.trim_ram()
 
-                    # Асинхронне підвантаження синхронізованих рядків пісні (LRCLIB)
-                    asyncio.create_task(self._fetch_lyrics(track_id, title, artist, duration_ms // 1000))
+                    # Phase 1: Миттєвий Push бінарного вінілу у відкритий WebSocket лампи
+                    if new_vinyl_bytes:
+                        try:
+                            from app.core.events import realtime_hub
+                            asyncio.create_task(realtime_hub.send_bytes_to_box(new_vinyl_bytes))
+                        except Exception as p_err:
+                            logger.debug("Vinyl push to box error: %s", p_err)
 
-                # Темп та динамічна енергетика треку
-                bpm = await self._fetch_track_bpm(track_id, title, artist)
+                    # Phase 2 (Background task): Асинхронне підвантаження BPM (Deezer) та LRCLIB лірики
+                    asyncio.create_task(self._fetch_lyrics(track_id, title, artist, duration_ms // 1000))
+                    asyncio.create_task(self._fetch_track_bpm(track_id, title, artist))
+
+                # Швидкий розрахунок енергії з кешу або дефолту 120 (0 ms блокування)
+                bpm = self._bpm_cache.get(track_id, 120)
                 energy = self._calc_song_energy(bpm, progress_ms, duration_ms)
 
                 prev_playing = self._cached_state.get("playing", False)

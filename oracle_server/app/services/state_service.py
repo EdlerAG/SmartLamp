@@ -106,12 +106,20 @@ class StateService:
         dump["m_name"] = MODES_UA[payload.m % len(MODES_UA)]
         self.latest_telemetry = dump
 
-        # Записуємо зріз клімату в SQLite WAL кожні 5 хвилин (з санітарним фільтром від дефолтних заглушок)
+        # Записуємо зріз клімату в SQLite WAL кожні 5 хвилин (з багаторівневим санітарним фільтром)
         if now - self.last_history_sample >= 300.0:
-            is_stub = (abs(payload.t - 22.0) < 0.05 and abs(payload.h - 50.0) < 0.1 and abs(payload.p - 750.0) < 0.1)
-            is_valid = (payload.p >= 650.0 and payload.p <= 850.0 and not is_stub and payload.t > -40.0 and payload.t < 85.0)
+            is_stub_pres = (abs(payload.p - 750.0) < 0.2) or (payload.p < 680.0 or payload.p > 820.0)
+            is_stub_temp = (abs(payload.t - 22.0) < 0.05 and abs(payload.h - 50.0) < 0.1)
+            is_valid = (not is_stub_pres and not is_stub_temp and payload.t > -30.0 and payload.t < 60.0)
+
+            # Outlier Rejection: атмосферний тиск фізично не може стрибати більше ніж на 3 мм за 5 хв
+            if is_valid and hasattr(self, '_last_saved_pres') and self._last_saved_pres is not None:
+                if abs(payload.p - self._last_saved_pres) > 3.0:
+                    is_valid = False
+
             if is_valid:
                 self.last_history_sample = now
+                self._last_saved_pres = payload.p
                 db_service.add_climate_sample(payload.t, payload.h, payload.p, payload.l)
 
         # Фіксація апаратного здоров'я плати кожні 15 хвилин

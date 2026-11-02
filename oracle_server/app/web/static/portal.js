@@ -45,9 +45,12 @@ function setCachedValue(id, val) {
 }
 
 // ⚡️ NATIVE ZERO-DEPENDENCY CANVAS DUAL-AXIS CHART (0 KB external download, 100% offline, 0ms load)
-function renderNativeClimateChart(ch) {
+function renderNativeClimateChart(rawCh) {
   const canvas = document.getElementById('climateCanvas');
-  if (!canvas || !ch || ch.length < 2) return;
+  if (!canvas || !rawCh || rawCh.length < 2) return;
+  // Фільтрація артефактних дефолтних заглушок 750.0 мм та 22.0°C
+  const ch = rawCh.filter(pt => pt && Math.abs(pt.p - 750.0) >= 0.2 && !(Math.abs(pt.t - 22.0) < 0.05 && Math.abs(pt.h - 50.0) < 0.1));
+  if (ch.length < 2) return;
   try { localStorage.setItem('mb_climate_cache', JSON.stringify(ch)); } catch(_) {}
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -70,8 +73,8 @@ function renderNativeClimateChart(ch) {
     if (pt.p < minP) minP = pt.p;
     if (pt.p > maxP) maxP = pt.p;
   });
-  minT = Math.floor(minT - 1.5); maxT = Math.ceil(maxT + 1.5);
-  minP = Math.floor(minP - 2); maxP = Math.ceil(maxP + 2);
+  minT = Math.floor(minT - 1.0); maxT = Math.ceil(maxT + 1.0);
+  minP = Math.floor(minP - 1.5); maxP = Math.ceil(maxP + 1.5);
   if (maxT === minT) maxT = minT + 2;
   if (maxP === minP) maxP = minP + 2;
 
@@ -103,36 +106,48 @@ function renderNativeClimateChart(ch) {
     ctx.fillText(valP, w - padR + 4, y + 3);
   }
 
-  // Time labels
+  // Часова шкала X на основі реального timestamp (із захистом від нерівномірних інтервалів)
+  const minTs = ch[0].ts;
+  const maxTs = ch[ch.length - 1].ts;
+  const spanTs = Math.max(60, maxTs - minTs);
+
   ctx.fillStyle = '#94a3b8';
   ctx.textAlign = 'center';
   const timeStep = Math.max(1, Math.floor(ch.length / 5));
   for (let i = 0; i < ch.length; i += timeStep) {
-    const x = padL + (plotW / (ch.length - 1)) * i;
+    const x = padL + (plotW * (ch[i].ts - minTs)) / spanTs;
     const timeStr = new Date(ch[i].ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     ctx.fillText(timeStr, x, h - 8);
   }
 
-  // Temperature Line (Blue)
+  // Temperature Line (Blue) з розривом ліній при тривалому офлайні (> 30 хв)
   ctx.strokeStyle = '#38bdf8';
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   ch.forEach((pt, idx) => {
-    const x = padL + (plotW / (ch.length - 1)) * idx;
+    const x = padL + (plotW * (pt.ts - minTs)) / spanTs;
     const y = padT + plotH * (1 - (pt.t - minT) / (maxT - minT));
-    if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (idx === 0 || (pt.ts - ch[idx - 1].ts > 1800)) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
   });
   ctx.stroke();
 
-  // Barometer Line (Amber Dashed)
+  // Barometer Line (Amber Dashed) з розривом ліній при тривалому офлайні
   ctx.strokeStyle = '#f59e0b';
   ctx.lineWidth = 2;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
   ch.forEach((pt, idx) => {
-    const x = padL + (plotW / (ch.length - 1)) * idx;
+    const x = padL + (plotW * (pt.ts - minTs)) / spanTs;
     const y = padT + plotH * (1 - (pt.p - minP) / (maxP - minP));
-    if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (idx === 0 || (pt.ts - ch[idx - 1].ts > 1800)) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
   });
   ctx.stroke();
   ctx.setLineDash([]);
@@ -1903,6 +1918,10 @@ function applyState(d) {
 
 function pollState(forceFull = false){
   pollTickCount++;
+  if (forceFull) {
+    localStorage.removeItem('mb_climate_cache');
+    window._lastClimateData = null;
+  }
   // Never block initial render with heavy 24h SQL series; only load full series on climate tab
   const activeTab = localStorage.getItem('mb_active_tab') || 'music';
   const needFull = forceFull || (activeTab === 'climate' && pollTickCount % 5 === 1);
