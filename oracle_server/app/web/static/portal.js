@@ -1603,6 +1603,38 @@ function applyTelemetryInPlace(t) {
   if (t.dnd !== undefined) {
     updateDndUI(Boolean(t.dnd));
   }
+  if (t.scr_ang !== undefined) {
+    currentScreenAngle = t.scr_ang;
+    const slider = document.getElementById('scrAngleSlider');
+    if (slider && document.activeElement !== slider) slider.value = t.scr_ang;
+    setCachedText('scrAngleVal', `${t.scr_ang}°`);
+  }
+}
+
+let currentScreenAngle = 0;
+function onAngleSlider(val) {
+  setCachedText('scrAngleVal', `${val}°`);
+}
+function applyAngleSlider(val) {
+  const ang = parseInt(val, 10) || 0;
+  currentScreenAngle = ang;
+  sendCmd({screen_angle: ang});
+  toast(`Кут екрана: ${ang}°`);
+}
+function setScreenAngle(ang) {
+  let a = parseInt(ang, 10) || 0;
+  a = ((a % 360) + 360) % 360;
+  currentScreenAngle = a;
+  const slider = document.getElementById('scrAngleSlider');
+  if (slider) slider.value = a;
+  setCachedText('scrAngleVal', `${a}°`);
+  sendCmd({screen_angle: a});
+  toast(`Кут екрана: ${a}°`);
+}
+function adjustScreenAngle(delta) {
+  let a = (currentScreenAngle + delta) % 360;
+  if (a < 0) a += 360;
+  setScreenAngle(a);
 }
 
 let wsReconnectDelay = 2000;

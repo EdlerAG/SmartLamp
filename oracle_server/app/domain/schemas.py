@@ -39,6 +39,7 @@ class BoxTelemetryPayload(BaseModel):
     ota: int = 0 # 1: оновлення в процесі
     ws_rec: int = 0 # Лічильник реконектів WebSocket
     claim: Optional[str] = None # Секрет першого підключення (base32) від плати
+    scr_ang: Optional[int] = 0 # Поточний кут орієнтації екрана (0..359°)
 
 
 class CommandPayload(BaseModel):
@@ -47,6 +48,7 @@ class CommandPayload(BaseModel):
     ttl_sec: float = Field(default=86400.0, description="Час життя команди в секундах")
     set_mode: Optional[int] = Field(None, ge=0, le=11)
     set_brt: Optional[str] = Field(None, description="'auto' або '0'..'3'")
+    screen_angle: Optional[int] = Field(None, ge=0, le=359, description="Кут повороту екрана 0..359°")
     sleep: Optional[int] = Field(None, ge=0, le=180)
     volume: Optional[int] = Field(None, ge=0, le=21)
     muted: Optional[bool] = None

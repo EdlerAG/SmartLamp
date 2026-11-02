@@ -32,9 +32,12 @@ class SpotifyService:
         "_last_track_id",
         "_cached_state",
         "_last_ambi_rgb",
+        "_last_ambi2_rgb",
+        "_last_is_mono",
         "_vinyl_cache",
         "_lyrics_cache",
         "_current_lyrics",
+        "_bpm_cache",
     )
 
     SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state"
@@ -67,11 +70,18 @@ class SpotifyService:
             "progress_ms": 0,
             "duration_ms": 0,
             "ambi_rgb": [56, 189, 248],
+            "ambi2_rgb": [248, 113, 113],
+            "is_mono": False,
+            "bpm": 120,
+            "energy": 65,
         }
         self._last_ambi_rgb: List[int] = [56, 189, 248]
-        self._vinyl_cache: Dict[str, Tuple[bytes, List[int]]] = {}
+        self._last_ambi2_rgb: List[int] = [248, 113, 113]
+        self._last_is_mono: bool = False
+        self._vinyl_cache: Dict[str, Tuple[bytes, List[int], List[int], bool]] = {}
         self._lyrics_cache: Dict[str, List[Dict[str, Any]]] = {}
         self._current_lyrics: List[Dict[str, Any]] = []
+        self._bpm_cache: Dict[str, int] = {}
 
     def _get_redirect_uri(self, base_url: str = "") -> str:
         if settings.SPOTIFY_REDIRECT_URI:
@@ -110,6 +120,10 @@ class SpotifyService:
             "progress_ms": 0,
             "duration_ms": 0,
             "ambi_rgb": [56, 189, 248],
+            "ambi2_rgb": [248, 113, 113],
+            "is_mono": False,
+            "bpm": 120,
+            "energy": 65,
         }
         if os.path.exists(settings.SPOTIFY_VINYL_PATH):
             try:
@@ -263,15 +277,17 @@ class SpotifyService:
             return False
 
     @staticmethod
-    def _create_vinyl_art_bytes(album_img_bytes: bytes) -> Tuple[bytes, List[int]]:
+    def _create_vinyl_art_bytes(album_img_bytes: bytes) -> Tuple[bytes, List[int], List[int], bool]:
         """
         Вирізає круглу вінілову платівку 136x136 px:
         - Обідок з концентричними доріжками R = 44..68.
         - Обкладинка в центрі R = 6..44.
         - Отвір шпинделя R < 6.
-        - Застосовує Bayer 4x4 Ordered Dithering та повертає 36992 байти RGB565 Big-Endian.
+        - Соковита AmbiLight палітра в просторі HSV з прив'язкою col1 до низу обкладинки.
+        - Застосовує Bayer 4x4 Ordered Dithering та повертає (raw_bytes, col1, col2, is_mono).
         """
         import numpy as np
+        import colorsys
         bayer_matrix = np.array([
             [ 0,  8,  2, 10],
             [12,  4, 14,  6],
@@ -287,6 +303,8 @@ class SpotifyService:
         canvas_arr = np.zeros((size, size, 3), dtype=np.float32)
 
         ambi_rgb = [56, 189, 248]
+        ambi2_rgb = [248, 113, 113]
+        is_mono = False
         try:
             with Image.open(io.BytesIO(album_img_bytes)) as raw_img:
                 rgb_img = ImageOps.fit(raw_img.convert("RGB"), (80, 80), method=Image.Resampling.BILINEAR)
@@ -295,18 +313,117 @@ class SpotifyService:
                 # Вставляємо обкладинку в центр 136x136 (відступ 28 px)
                 canvas_arr[28:108, 28:108] = art_arr
 
-                # Визначаємо соковитий AmbiLight колір
-                flat = art_arr.reshape(-1, 3)
-                bright = np.max(flat, axis=1)
-                sat = bright - np.min(flat, axis=1)
-                mask = (bright > 40.0) & (sat > 20.0)
-                vivid = flat[mask]
-                if len(vivid) > 20:
-                    mean_c = np.mean(vivid, axis=0)
-                    peak = float(np.max(mean_c))
-                    if peak > 0:
-                        mean_c = np.clip(mean_c * (235.0 / peak), 0, 255)
-                    ambi_rgb = [int(mean_c[0]), int(mean_c[1]), int(mean_c[2])]
+                # Конвертуємо у простір HSV (0.0 .. 1.0)
+                norm_rgb = art_arr / 255.0
+                max_c = np.max(norm_rgb, axis=2)
+                min_c = np.min(norm_rgb, axis=2)
+                delta = max_c - min_c
+
+                # Value (0..1)
+                v_chan = max_c
+
+                # Saturation (0..1)
+                s_chan = np.zeros_like(max_c)
+                nz = max_c > 1e-5
+                s_chan[nz] = delta[nz] / max_c[nz]
+
+                # Hue (0..1, corresponding to 0..360 deg)
+                h_chan = np.zeros_like(max_c)
+                r_c = norm_rgb[:, :, 0]
+                g_c = norm_rgb[:, :, 1]
+                b_c = norm_rgb[:, :, 2]
+
+                mask_r = nz & (delta > 1e-5) & (max_c == r_c)
+                mask_g = nz & (delta > 1e-5) & (max_c == g_c)
+                mask_b = nz & (delta > 1e-5) & (max_c == b_c)
+
+                h_chan[mask_r] = ((g_c[mask_r] - b_c[mask_r]) / delta[mask_r]) % 6.0
+                h_chan[mask_g] = ((b_c[mask_g] - r_c[mask_g]) / delta[mask_g]) + 2.0
+                h_chan[mask_b] = ((r_c[mask_b] - g_c[mask_b]) / delta[mask_b]) + 4.0
+                h_chan = h_chan / 6.0
+
+                mean_sat = float(np.mean(s_chan))
+                if mean_sat < 0.12:
+                    # Чорно-біла / монохромна обкладинка -> теплий бурштиново-перлинний тон
+                    is_mono = True
+                    ambi_rgb = [255, 214, 170]
+                    ambi2_rgb = [220, 180, 140]
+                else:
+                    is_mono = False
+                    # Фільтруємо занадто темні (V < 0.18) і вибілені (S < 0.15)
+                    valid_mask = (v_chan >= 0.18) & (s_chan >= 0.15)
+                    if np.sum(valid_mask) < 20:
+                        valid_mask = (v_chan >= 0.10) & (s_chan >= 0.08)
+
+                    # Вагова перевага нижньої половини обкладинки (y >= 40)
+                    weights = np.ones((80, 80), dtype=np.float32)
+                    weights[40:, :] = 2.5
+                    weights = weights * s_chan * v_chan
+
+                    h_valid = h_chan[valid_mask]
+                    s_valid = s_chan[valid_mask]
+                    v_valid = v_chan[valid_mask]
+                    w_valid = weights[valid_mask]
+
+                    # 24 кошики відтінку (15 градусів кожен) для пошуку домінанти col1
+                    bin_indices = np.clip((h_valid * 24.0).astype(int), 0, 23)
+                    bin_weights = np.bincount(bin_indices, weights=w_valid, minlength=24)
+                    best_bin = int(np.argmax(bin_weights))
+                    bin_center_h = (best_bin + 0.5) / 24.0
+
+                    diff_h = np.abs(h_valid - bin_center_h)
+                    circ_diff = np.minimum(diff_h, 1.0 - diff_h)
+                    cluster_mask = circ_diff <= (25.0 / 360.0)
+                    if np.sum(cluster_mask) > 0:
+                        h1 = bin_center_h
+                        s1 = float(np.average(s_valid[cluster_mask], weights=w_valid[cluster_mask]))
+                        v1 = float(np.average(v_valid[cluster_mask], weights=w_valid[cluster_mask]))
+                    else:
+                        h1 = bin_center_h
+                        s1 = 0.75
+                        v1 = 0.90
+
+                    # Secondary col2: контрастний гармонійний тон з іншої частини спектра (Delta H >= 35 deg)
+                    min_h_diff = 35.0 / 360.0
+                    contrasting_mask = circ_diff >= min_h_diff
+                    if np.sum(contrasting_mask) >= 10:
+                        h_c2 = h_valid[contrasting_mask]
+                        s_c2 = s_valid[contrasting_mask]
+                        v_c2 = v_valid[contrasting_mask]
+                        w_c2 = w_valid[contrasting_mask]
+                        c2_bins = np.clip((h_c2 * 24.0).astype(int), 0, 23)
+                        c2_bin_weights = np.bincount(c2_bins, weights=w_c2, minlength=24)
+                        best_c2_bin = int(np.argmax(c2_bin_weights))
+                        h2 = (best_c2_bin + 0.5) / 24.0
+                        diff_h2 = np.abs(h_c2 - h2)
+                        circ_diff2 = np.minimum(diff_h2, 1.0 - diff_h2)
+                        c2_cluster = circ_diff2 <= (25.0 / 360.0)
+                        if np.sum(c2_cluster) > 0:
+                            s2 = float(np.average(s_c2[c2_cluster], weights=w_c2[c2_cluster]))
+                            v2 = float(np.average(v_c2[c2_cluster], weights=w_c2[c2_cluster]))
+                        else:
+                            s2 = s1
+                            v2 = v1
+                    else:
+                        # Якщо обкладинка монохроматична за кольором: комплементарний тон (+180 deg)
+                        h2 = (h1 + 0.5) % 1.0
+                        s2 = s1
+                        v2 = v1
+
+                    # Примусовий підйом соковитості: S = min(1.0, max(0.65, S * 1.35)), V = max(0.85, V)
+                    s1 = min(1.0, max(0.65, s1 * 1.35))
+                    v1 = max(0.85, v1)
+                    rgb1 = colorsys.hsv_to_rgb(h1, s1, v1)
+                    ambi_rgb = [int(np.clip(rgb1[0] * 255.0, 0, 255)),
+                                int(np.clip(rgb1[1] * 255.0, 0, 255)),
+                                int(np.clip(rgb1[2] * 255.0, 0, 255))]
+
+                    s2 = min(1.0, max(0.65, s2 * 1.35))
+                    v2 = max(0.85, v2)
+                    rgb2 = colorsys.hsv_to_rgb(h2, s2, v2)
+                    ambi2_rgb = [int(np.clip(rgb2[0] * 255.0, 0, 255)),
+                                 int(np.clip(rgb2[1] * 255.0, 0, 255)),
+                                 int(np.clip(rgb2[2] * 255.0, 0, 255))]
         except Exception as color_err:
             logger.debug("Spotify album color extraction fallback: %s", color_err)
 
@@ -344,7 +461,93 @@ class SpotifyService:
         b = b_dith >> 3
         rgb565 = r | g | b
         raw_bytes = rgb565.astype(">u2").tobytes()
-        return raw_bytes, ambi_rgb
+        return raw_bytes, ambi_rgb, ambi2_rgb, is_mono
+
+    async def _fetch_track_bpm(self, track_id: str, title: str, artist: str) -> int:
+        """Отримує точний BPM треку через Deezer API або повертає значення за замовчуванням (120)."""
+        if track_id in self._bpm_cache:
+            return self._bpm_cache[track_id]
+        if not title:
+            return 120
+        clean_title = re.sub(r"\s*\(.*?\)|\s*\[.*?\]", "", title).strip()
+        first_artist = artist.split(",")[0].strip() if artist else ""
+        q = f"{clean_title} {first_artist}".strip()
+        bpm = 120
+        try:
+            resp = await http_pool.get().get(
+                "https://api.deezer.com/search",
+                params={"q": q, "limit": 1},
+                timeout=3.5,
+            )
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                if data:
+                    dz_id = data[0].get("id")
+                    if dz_id:
+                        tr_resp = await http_pool.get().get(f"https://api.deezer.com/track/{dz_id}", timeout=3.5)
+                        if tr_resp.status_code == 200:
+                            val = float(tr_resp.json().get("bpm") or 0.0)
+                            if 45.0 <= val <= 220.0:
+                                bpm = int(round(val))
+        except Exception as err:
+            logger.debug("Deezer BPM fetch fallback: %s", err)
+        if len(self._bpm_cache) > 50:
+            self._bpm_cache.pop(next(iter(self._bpm_cache)))
+        self._bpm_cache[track_id] = bpm
+        return bpm
+
+    def _calc_song_energy(self, bpm: int, progress_ms: int, duration_ms: int) -> int:
+        """
+        Розрахунок реальної енергії треку (0..100) через щільність вокалу LRCLIB:
+        - Без слів або довга пауза > 6.5 с (інтро, яма, соло, аутро): energy = 25 (0.25)
+        - Звичайний темп рядків 3.5..6.0 с (куплет): energy = 55 (0.55)
+        - Щільні рядки 1.0..3.2 с або повторення рядків (приспів, дроп, речитатив): energy = 90 (0.90)
+        """
+        if not self._current_lyrics or len(self._current_lyrics) < 2:
+            return 25
+
+        cur_sec = progress_ms / 1000.0
+        lyrics = self._current_lyrics
+
+        # Інтро до першого рядка
+        if cur_sec < lyrics[0]["sec"]:
+            gap = lyrics[0]["sec"] - cur_sec
+            return 25 if gap > 6.5 else 55
+
+        # Знаходимо активний рядок
+        idx = 0
+        for i, item in enumerate(lyrics):
+            if item["sec"] <= cur_sec:
+                idx = i
+            else:
+                break
+
+        # Аутро після останнього рядка
+        if idx >= len(lyrics) - 1:
+            gap = cur_sec - lyrics[-1]["sec"]
+            return 25 if gap > 6.5 else 55
+
+        # Дельта часу до наступного рядка
+        dt = lyrics[idx + 1]["sec"] - lyrics[idx]["sec"]
+
+        # Перевірка на повторення рядків тексту (ознака приспіву / хука)
+        is_repeat = False
+        cur_txt = lyrics[idx]["text"].strip().lower()
+        if idx > 0:
+            prev_txt = lyrics[idx - 1]["text"].strip().lower()
+            if cur_txt and cur_txt == prev_txt:
+                is_repeat = True
+        if idx + 1 < len(lyrics):
+            next_txt = lyrics[idx + 1]["text"].strip().lower()
+            if cur_txt and cur_txt == next_txt:
+                is_repeat = True
+
+        if is_repeat or dt <= 3.2:
+            return 90
+        elif dt <= 6.5:
+            return 55
+        else:
+            return 25
 
     async def fetch_current_playback(self, force: bool = False) -> Dict[str, Any]:
         """Опитує офіційний Spotify API про поточний трек із захистом від rate-limit."""
@@ -352,7 +555,7 @@ class SpotifyService:
             return self.get_cached_state()
 
         now = time.time()
-        min_poll_interval = 2.0 if self._cached_state.get("playing") else 6.0
+        min_poll_interval = 1.0 if self._cached_state.get("playing") else 3.0
         if not force and (now - self._last_poll_time < min_poll_interval):
             return self.get_cached_state()
         self._last_poll_time = now
@@ -396,6 +599,44 @@ class SpotifyService:
                 images = (item.get("album") or {}).get("images", [])
                 art_url = images[0].get("url") if images else ""
 
+                # Якщо змінився трек — перевіряємо LRU кеш або генеруємо нове вінілове коло
+                track_changed = bool(track_id and track_id != self._last_track_id)
+                if track_changed:
+                    self._last_track_id = track_id
+                    # Миттєве скидання лірики попередньої пісні
+                    self._current_lyrics = []
+                    self._cached_state["lyric"] = ""
+                    if track_id in self._vinyl_cache:
+                        vinyl_bytes, ambi, ambi2, is_mono = self._vinyl_cache[track_id]
+                        self._last_ambi_rgb = ambi
+                        self._last_ambi2_rgb = ambi2
+                        self._last_is_mono = is_mono
+                        with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
+                            f.write(vinyl_bytes)
+                    else:
+                        images = (item.get("album") or {}).get("images", [])
+                        art_url = images[0].get("url") if images else ""
+                        if art_url:
+                            art_resp = await http_pool.get().get(art_url, timeout=7.0)
+                            if art_resp.status_code == 200:
+                                vinyl_bytes, ambi, ambi2, is_mono = self._create_vinyl_art_bytes(art_resp.content)
+                                self._last_ambi_rgb = ambi
+                                self._last_ambi2_rgb = ambi2
+                                self._last_is_mono = is_mono
+                                if len(self._vinyl_cache) > 20:
+                                    self._vinyl_cache.pop(next(iter(self._vinyl_cache)))
+                                self._vinyl_cache[track_id] = (vinyl_bytes, ambi, ambi2, is_mono)
+                                with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
+                                    f.write(vinyl_bytes)
+                                memory_guard.trim_ram()
+
+                    # Асинхронне підвантаження синхронізованих рядків пісні (LRCLIB)
+                    asyncio.create_task(self._fetch_lyrics(track_id, title, artist, duration_ms // 1000))
+
+                # Темп та динамічна енергетика треку
+                bpm = await self._fetch_track_bpm(track_id, title, artist)
+                energy = self._calc_song_energy(bpm, progress_ms, duration_ms)
+
                 prev_playing = self._cached_state.get("playing", False)
                 self._cached_state = {
                     "playing": is_playing,
@@ -406,39 +647,11 @@ class SpotifyService:
                     "progress_ms": progress_ms,
                     "duration_ms": duration_ms,
                     "ambi_rgb": self._last_ambi_rgb,
+                    "ambi2_rgb": self._last_ambi2_rgb,
+                    "is_mono": self._last_is_mono,
+                    "bpm": bpm,
+                    "energy": energy,
                 }
-
-                # Якщо змінився трек — перевіряємо LRU кеш або генеруємо нове вінілове коло
-                track_changed = bool(track_id and track_id != self._last_track_id)
-                if track_changed:
-                    self._last_track_id = track_id
-                    # Миттєве скидання лірики попередньої пісні
-                    self._current_lyrics = []
-                    self._cached_state["lyric"] = ""
-                    if track_id in self._vinyl_cache:
-                        vinyl_bytes, ambi = self._vinyl_cache[track_id]
-                        self._last_ambi_rgb = ambi
-                        self._cached_state["ambi_rgb"] = ambi
-                        with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
-                            f.write(vinyl_bytes)
-                    else:
-                        images = (item.get("album") or {}).get("images", [])
-                        art_url = images[0].get("url") if images else ""
-                        if art_url:
-                            art_resp = await http_pool.get().get(art_url, timeout=7.0)
-                            if art_resp.status_code == 200:
-                                vinyl_bytes, ambi = self._create_vinyl_art_bytes(art_resp.content)
-                                self._last_ambi_rgb = ambi
-                                self._cached_state["ambi_rgb"] = ambi
-                                if len(self._vinyl_cache) > 20:
-                                    self._vinyl_cache.pop(next(iter(self._vinyl_cache)))
-                                self._vinyl_cache[track_id] = (vinyl_bytes, ambi)
-                                with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
-                                    f.write(vinyl_bytes)
-                                memory_guard.trim_ram()
-
-                    # Асинхронне підвантаження синхронізованих рядків пісні (LRCLIB)
-                    asyncio.create_task(self._fetch_lyrics(track_id, title, artist, duration_ms // 1000))
 
                 # Визначаємо поточний рядок тексту за прогресом
                 cur_lyric = self._get_active_lyric(progress_ms)

@@ -47,6 +47,7 @@ struct AppState {
     volatile uint8_t screen_mode = SCREEN_CLIMATE;
     volatile uint8_t light_mode  = MODE_WARM_COZY;
     static constexpr uint8_t LIGHT_MODE_COUNT = TOTAL_LIGHT_MODES;
+    volatile int16_t screen_angle = 0; // 0..359 градусів вільного повороту круглої матриці GC9A01
 
     // Активність користувача та мережі
     volatile uint32_t last_user_activity_ms = 0;
@@ -118,6 +119,21 @@ struct AppState {
     volatile bool     spotify_vinyl_needed  = false;
     volatile bool     spotify_vinyl_loading = false;
     volatile bool     sp_linked             = false; // Офіційний Spotify акаунт прив'язано до сервера
+
+    uint32_t getLocalSpotifyProgressMs() const {
+        if (!spotify.playing) {
+            return spotify.last_server_progress_ms > 0 ? spotify.last_server_progress_ms : spotify.progress_ms;
+        }
+        if (spotify.last_sync_millis == 0) {
+            return spotify.progress_ms;
+        }
+        uint32_t elapsed = (uint32_t)(millis() - spotify.last_sync_millis);
+        uint32_t est = spotify.last_server_progress_ms + elapsed;
+        if (spotify.duration_ms > 0 && est > spotify.duration_ms) {
+            return spotify.duration_ms;
+        }
+        return est;
+    }
 
     // --- ЗВУКОВА ПІДСИСТЕМА I2S ТА МУТЕ-КОНТРОЛЬ (v4.5) ---
     volatile uint8_t  audio_volume          = Config::DEFAULT_VOLUME; // 0..21
@@ -248,8 +264,8 @@ struct AppState {
         strncpy(oracle_url, Config::ORACLE_SERVER_URL, sizeof(oracle_url) - 1);
         strncpy(oracle_key, Config::ORACLE_API_KEY, sizeof(oracle_key) - 1);
 
-        strncpy(inbox[0].sender, "Ярослав", sizeof(inbox[0].sender) - 1);
-        strncpy(inbox[0].text, "Шкатулка MagicBox v4.5 готова! Надішли наліпку чи гіфку ✨", sizeof(inbox[0].text) - 1);
+        strncpy(inbox[0].sender, "Admin", sizeof(inbox[0].sender) - 1);
+        strncpy(inbox[0].text, "MagicBox готова! Надішли наліпку чи гіфку", sizeof(inbox[0].text) - 1);
         strncpy(inbox[0].time_received, "--:--", sizeof(inbox[0].time_received) - 1);
         for (int i = 0; i < 24; i++) pressure_hist[i] = 750.0f;
     }

@@ -1,4 +1,5 @@
 # Файл: oracle_server/app/api/endpoints_box.py
+import asyncio
 import os
 import re
 import time
@@ -12,6 +13,7 @@ try:
 except ImportError:
     msgpack = None
 
+from app.core.logger import logger
 from app.core.security import verify_access
 from app.core.config import settings
 from app.core.events import realtime_hub
@@ -123,7 +125,7 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
 
     # 8. Компактна бітова маска кроків налаштування ('su') та активна тема ('mood')
     resp["su"] = setup_service.get_setup_bitmask()
-    resp["mood"] = db_service.get_theme_mood()
+    resp["mood"] = "custom"
 
     return resp
 

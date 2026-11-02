@@ -172,6 +172,9 @@ class TelegramBotService:
             ],
             [
                 {"text": "🖼 Екран & Заставка", "callback_data": "hub:screen"},
+                {"text": "🔄 Поворот екрана", "callback_data": "menu:rotate"},
+            ],
+            [
                 self._web_button("📱 Web Studio"),
             ],
         ]
@@ -611,6 +614,34 @@ class TelegramBotService:
             ]
         }
         return text, kb
+
+    @staticmethod
+    @staticmethod
+    def _rotate_inline_kb(cur_angle: int = 0) -> Dict[str, Any]:
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "⏪ -45°", "callback_data": "rot:-45"},
+                    {"text": "◀️ -15°", "callback_data": "rot:-15"},
+                    {"text": "➖ -1°", "callback_data": "rot:-1"},
+                    {"text": "➕ +1°", "callback_data": "rot:+1"},
+                    {"text": "▶️ +15°", "callback_data": "rot:+15"},
+                    {"text": "⏩ +45°", "callback_data": "rot:+45"},
+                ],
+                [
+                    {"text": f"{'✅ ' if cur_angle == 0 else ''}0° (Норма)", "callback_data": "rot_set:0"},
+                    {"text": f"{'✅ ' if cur_angle == 90 else ''}90°", "callback_data": "rot_set:90"},
+                    {"text": f"{'✅ ' if cur_angle == 180 else ''}180°", "callback_data": "rot_set:180"},
+                    {"text": f"{'✅ ' if cur_angle == 270 else ''}270°", "callback_data": "rot_set:270"},
+                ],
+                [
+                    {"text": f"📍 Поточний кут: {cur_angle}°", "callback_data": "rot:noop"},
+                ],
+                [
+                    {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
+                ],
+            ]
+        }
 
     @staticmethod
     def _gallery_inline_kb() -> Dict[str, Any]:
@@ -1059,6 +1090,40 @@ class TelegramBotService:
                 "text": "🌙 <b>РЕЖИМ DND (ТИХА НІЧ)</b>\nПовна тиша та спокійне мінімальне світло.",
                 "parse_mode": "HTML",
                 "reply_markup": self._dnd_inline_kb(),
+            })
+
+        elif data.startswith("rot:") or data.startswith("rot_set:") or data == "menu:rotate":
+            cur_telemetry = state_service.latest_telemetry
+            cur_angle = int(cur_telemetry.get("scr_ang", 0) or 0)
+            if data == "rot:noop":
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+                return
+            if data.startswith("rot_set:"):
+                new_angle = int(data.split(":")[1])
+            elif data.startswith("rot:"):
+                delta = int(data.split(":")[1])
+                new_angle = (cur_angle + delta) % 360
+            else:
+                new_angle = cur_angle
+
+            new_angle = (new_angle % 360 + 360) % 360
+            if data != "menu:rotate":
+                state_service.enqueue_raw({"screen_angle": new_angle})
+                cur_telemetry["scr_ang"] = new_angle
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"🔄 Повернуто на {new_angle}°"})
+            else:
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": f"🔄 <b>ОРІЄНТАЦІЯ ТА ПОВОРОТ ЕКРАНА:</b>\n\n"
+                        f"Поточний кут повороту: <b>{new_angle}°</b>\n\n"
+                        f"Круглий екран GC9A01 можна повертати на <b>будь-який градус (0..359°)</b> для ідеального вирівнювання горизонту в корпусі шкатулки.\n\n"
+                        f"Використовуйте кнопки для підлаштування, або надішліть команду:\n"
+                        f"<code>/rotate 35</code> (або будь-який потрібний кут):",
+                "parse_mode": "HTML",
+                "reply_markup": self._rotate_inline_kb(new_angle),
             })
 
         elif data == "hub:screen":
@@ -1617,6 +1682,38 @@ class TelegramBotService:
                 "text": hub_t,
                 "parse_mode": "HTML",
                 "reply_markup": active_kb,
+            })
+            return
+
+        if text.startswith("/rotate") or text.startswith("/angle") or text == "🔄 Поворот екрана":
+            parts = text.split()
+            cur_telemetry = state_service.latest_telemetry
+            cur_angle = int(cur_telemetry.get("scr_ang", 0) or 0)
+            if len(parts) > 1:
+                try:
+                    target_angle = int(parts[1])
+                    target_angle = (target_angle % 360 + 360) % 360
+                    state_service.enqueue_raw({"screen_angle": target_angle})
+                    cur_telemetry["scr_ang"] = target_angle
+                    await self._api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"🔄 <b>Екран повернуто на {target_angle}°!</b>\nКут збережено в пам'ять лампи.",
+                        "parse_mode": "HTML",
+                        "reply_markup": self._rotate_inline_kb(target_angle),
+                    })
+                    return
+                except ValueError:
+                    pass
+
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": f"🔄 <b>ОРІЄНТАЦІЯ ТА ПОВОРОТ ЕКРАНА:</b>\n\n"
+                        f"Поточний кут повороту: <b>{cur_angle}°</b>\n\n"
+                        f"Круглий екран можна повертати на будь-який градус (0..359°) під кут монтажу вашої шкатулки.\n\n"
+                        f"Підлаштуйте орієнтацію кнопками нижче або надішліть, наприклад:\n"
+                        f"<code>/rotate 25</code>",
+                "parse_mode": "HTML",
+                "reply_markup": self._rotate_inline_kb(cur_angle),
             })
             return
 

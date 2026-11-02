@@ -4,6 +4,14 @@
 #include "core/Types.h"
 
 namespace LedEffects {
+    static inline uint8_t ambiGamma8(float v) {
+        if (v <= 0.0f) return 0;
+        if (v >= 255.0f) return 255;
+        float norm = v * (1.0f / 255.0f);
+        float g = norm * norm * sqrtf(norm); // gamma ~2.5
+        return (uint8_t)(g * 255.0f + 0.5f);
+    }
+
     inline void renderNotification(
         Adafruit_NeoPixel& strip,
         uint8_t type,
@@ -52,7 +60,11 @@ namespace LedEffects {
         uint16_t step,
         uint8_t ambi_r = 56,
         uint8_t ambi_g = 189,
-        uint8_t ambi_b = 248
+        uint8_t ambi_b = 248,
+        uint8_t ambi2_r = 248,
+        uint8_t ambi2_g = 113,
+        uint8_t ambi2_b = 113,
+        const SpotifyTrackInfo* sp = nullptr
     ) {
         switch (mode) {
             case MODE_CANDLE: {
@@ -131,14 +143,102 @@ namespace LedEffects {
                 break;
             }
             case MODE_SPOTIFY_AMBI: {
-                uint8_t breath = strip.sine8(step * 2);
+                uint32_t now = millis();
+                bool is_playing = (sp && sp->playing);
+                uint16_t raw_bpm = (sp && sp->bpm >= 40 && sp->bpm <= 240) ? sp->bpm : 120;
+                float track_energy = (sp && sp->energy > 0) ? ((float)sp->energy / 100.0f) : 0.55f;
+                track_energy = constrain(track_energy, 0.20f, 1.00f);
+                bool is_mono = sp ? sp->is_mono : false;
+
+                // 1. Час пісні з урахуванням безперервного локального прогресу без мережевого джиттера
+                uint32_t song_ms = now;
+                if (sp && is_playing) {
+                    if (sp->last_sync_millis > 0) {
+                        song_ms = sp->last_server_progress_ms + (now - sp->last_sync_millis);
+                    } else {
+                        song_ms = sp->progress_ms;
+                    }
+                } else if (sp) {
+                    song_ms = sp->progress_ms;
+                }
+
+                // 2. М\'який басовий грув (Half-Time Sinusoidal Swell)
+                // Якщо bpm > 122, ділимо темп навпіл (effective_bpm = bpm * 0.5f), переходячи в Half-Time Groove
+                float eff_bpm = (raw_bpm > 122) ? ((float)raw_bpm * 0.5f) : (float)raw_bpm;
+                float beat_period_ms = 60000.0f / eff_bpm;
+                float swell = 0.0f;
+
+                if (is_playing) {
+                    float beat_phase = fmodf((float)song_ms, beat_period_ms) / beat_period_ms; // 0.0 .. 1.0
+                    float s = sinf(beat_phase * 3.14159265f);
+                    swell = s * s * s * s; // sin^4 еластичний кач
+                } else {
+                    // Спокійне медитативне дихання в паузі (~3.8 с цикл)
+                    float breath_phase = fmodf((float)now, 3800.0f) / 3800.0f;
+                    float s = sinf(breath_phase * 3.14159265f);
+                    swell = s * s;
+                }
+
+                // 3. Стоячі плазмові хвилі (Fluid Lava)
+                float t_sec = (float)song_ms * 0.001f;
+                if (!is_playing) t_sec = (float)now * 0.0003f;
+                float speed_mult = is_playing ? (0.35f + 0.45f * track_energy) : 0.20f;
+                float phi1 = t_sec * 0.73f * speed_mult;
+                float phi2 = t_sec * 1.17f * speed_mult;
+                float phi3 = t_sec * 0.43f * speed_mult;
+
+                // На ударі біта пляма кольору переднього екрана м\'яко розширюється вшир
+                float expand = swell * (0.08f + 0.12f * track_energy);
+                // Дихаюча яскравість (+15..35% на ударі)
+                float beat_boost = is_playing ? (swell * (0.15f + 0.20f * track_energy)) : (swell * 0.10f);
+
+                // 4. Просторове зонування (Front-Locked Halo) по кільцю світлодіодів
                 for (int i = 0; i < Config::NUM_LEDS; i++) {
-                    uint8_t wave = strip.sine8((step * 3) + (i * 8));
-                    uint8_t pulse = 160 + (wave >> 2);
-                    uint8_t r = ((uint16_t)ambi_r * pulse) >> 8;
-                    uint8_t g = ((uint16_t)ambi_g * pulse) >> 8;
-                    uint8_t b = ((uint16_t)ambi_b * pulse) >> 8;
-                    strip.setPixelColor(i, strip.Color(r, g, b, (breath > 235) ? 18 : 0));
+                    float theta = (2.0f * 3.14159265f * (float)i) / (float)Config::NUM_LEDS;
+                    float cos_th = cosf(theta);
+
+                    // 3 некратні повільні стоячі хвилі, що зміщують межу кольорів вперед-назад
+                    float wave1 = sinf(theta * 1.0f + phi1);
+                    float wave2 = sinf(theta * 2.0f - phi2);
+                    float wave3 = sinf(theta * 3.0f + phi3);
+                    float wave_disp = 0.20f * wave1 + 0.12f * wave2 + 0.08f * wave3;
+
+                    // Модульована координата вздовж передньо-задньої осі
+                    float coord = cos_th + wave_disp + expand;
+
+                    // Плавний перехід між передньою зоною col1 та боковими/задньою col2
+                    // cos(theta) > 0.2 — передня дуга прямо під екраном GC9A01
+                    float t = (coord - (-0.15f)) / (0.35f - (-0.15f));
+                    t = constrain(t, 0.0f, 1.0f);
+                    float blend = t * t * (3.0f - 2.0f * t); // smoothstep
+
+                    // Просторовий рельєф яскравості (spatial_luma):
+                    // Між зоною col1 і col2 формуємо 2 темніші долини (провал mid_dip до 28%),
+                    // щоб обидва кольори читалися на столі роздільно й об\'ємно
+                    float dist_from_boundary = fabsf(blend - 0.5f) * 2.0f; // 0.0 на межі, 1.0 в глибині
+                    float spatial_luma = 0.28f + 0.72f * (dist_from_boundary * dist_from_boundary);
+
+                    float total_scale = spatial_luma * (1.0f + beat_boost);
+
+                    // Інтерполяція RGB
+                    float r_lin = ((float)ambi_r * blend + (float)ambi2_r * (1.0f - blend)) * total_scale;
+                    float g_lin = ((float)ambi_g * blend + (float)ambi2_g * (1.0f - blend)) * total_scale;
+                    float b_lin = ((float)ambi_b * blend + (float)ambi2_b * (1.0f - blend)) * total_scale;
+
+                    // Перцептивна гамма-корекція gamma ~2.5
+                    uint8_t r_out = ambiGamma8(r_lin);
+                    uint8_t g_out = ambiGamma8(g_lin);
+                    uint8_t b_out = ambiGamma8(b_lin);
+
+                    // Повне блокування білого каналу W для кольорових обкладинок (W = 0)
+                    // Тільки для монохромних обкладинок дозволяємо ніжний бурштиново-перлинний W = 4..8
+                    uint8_t w_out = 0;
+                    if (is_mono) {
+                        float w_val = 16.0f * spatial_luma * (1.0f + beat_boost * 0.5f);
+                        w_out = (uint8_t)constrain((int)ambiGamma8(w_val), 4, 8);
+                    }
+
+                    strip.setPixelColor(i, strip.Color(r_out, g_out, b_out, w_out));
                 }
                 break;
             }

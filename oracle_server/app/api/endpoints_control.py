@@ -1277,9 +1277,12 @@ async def update_onboarding_step(step_id: str, payload: Dict[str, str], _: str =
 
 @router.post("/api/v5/setup/mood")
 async def set_onboarding_mood(payload: Dict[str, str], _: str = Depends(verify_access)):
-    """Встановлення колірної теми / настрою ('cozy', 'sakura', 'ocean', 'nordic')."""
+    """Встановлення колірної теми / настрою ('cozy', 'sakura', 'ocean', 'nordic', 'chornobyl')."""
     mood = payload.get("mood", "cozy")
     saved_mood = setup_service.set_mood(mood)
+    mood_mode_map = {"cozy": 0, "sakura": 5, "ocean": 7, "nordic": 6, "chornobyl": 8, "chernobyl": 8}
+    mode_idx = mood_mode_map.get(saved_mood, 0)
+    state_service.enqueue_raw({"set_mode": mode_idx})
     return {"ok": True, "mood": saved_mood}
 
 

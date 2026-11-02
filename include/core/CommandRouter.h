@@ -78,6 +78,12 @@ public:
         state.markSettingsDirty();
     }
 
+    static void setScreenAngle(AppState& state, int16_t angle) {
+        state.screen_angle = (angle % 360 + 360) % 360;
+        state.ui_force_dirty = true;
+        state.markSettingsDirty();
+    }
+
     static void setBrightnessPreset(AppState& state, bool auto_mode, uint8_t preset_idx = 2) {
         state.auto_brt = auto_mode;
         if (!auto_mode) {
@@ -191,7 +197,7 @@ public:
                  "\"claim\":\"%s\","
                  "\"alarm_off\":%s,"
                  "\"ack\":%s,\"ping\":%u,"
-                 "\"ota\":%u,\"ws_rec\":%u}",
+                 "\"ota\":%u,\"ws_rec\":%u,\"scr_ang\":%d}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
                  state.light_mode, getModeNameUa(state.light_mode),
@@ -209,7 +215,8 @@ public:
                  state.claim_secret,
                  alarm_off_flag ? "true" : "false",
                  ack_flag ? "true" : "false", ping_val,
-                 state.ota_in_progress ? 1 : 0, (unsigned int)state.ws_reconnect_cnt);
+                 state.ota_in_progress ? 1 : 0, (unsigned int)state.ws_reconnect_cnt,
+                 (int)state.screen_angle);
     }
 
     static void buildInboxJson(AppState& state, char* out, size_t max_len) {

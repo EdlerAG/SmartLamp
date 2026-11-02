@@ -13,6 +13,7 @@
 #include "network/NetworkService.h"
 #include "cloud/OracleCloudService.h"
 #include "cloud/StandaloneOta.h"
+#include "core/BootSafetyGuard.h"
 #include "ui/DisplayService.h"
 
 AppState       appState;
@@ -303,6 +304,9 @@ void processEvents() {
 void setup() {
     Serial.begin(115200);
 
+    // 🛡️ Критичний захист від збоїв (Autonomous Boot Safety & Rollback Guard)
+    BootSafetyGuard::onEarlyBoot();
+
     // Діагностика причини перезапуску
     esp_reset_reason_t rst = esp_reset_reason();
     switch (rst) {
@@ -316,12 +320,24 @@ void setup() {
         default:                strncpy(appState.reset_reason, "OTHER", sizeof(appState.reset_reason)); break;
     }
 
-    // Критичний фундамент безпеки: підтвердження валідності прошивки
-    StandaloneOta::confirmBootValid();
-
     // Ініціалізація Task Watchdog Timer (TWDT) на 15 секунд для захисту від підвисань
     esp_task_wdt_init(15, true);
     esp_task_wdt_add(NULL);
+
+    // Якщо активовано аварійний режим порятунку (наприклад, краш-петля без можливості відкату)
+    if (BootSafetyGuard::isFailsafeMode()) {
+        Serial.println("[Setup] ⚠️ BootSafetyGuard ACTIVE: Booting into Rescue Network Mode only!");
+        storageService.initFs();
+        storageService.loadUserSettings(appState);
+        appState.initQueue();
+        oracleService.setStorageService(&storageService);
+
+        core0LocalServices.add(&networkService);
+        core0CloudServices.add(&oracleService);
+        xTaskCreatePinnedToCore(backgroundCore0Task, "Core0Net",   8192,  nullptr, 2, nullptr, 0);
+        xTaskCreatePinnedToCore(cloudCore0Task,      "Core0Cloud", 10240, nullptr, 1, nullptr, 0);
+        return;
+    }
 
     // 1. Ініціалізація сховища NVS та LittleFS
     storageService.initFs();
@@ -359,6 +375,9 @@ void loop() {
     esp_task_wdt_reset();
     core1FastServices.tickAll();
     processEvents();
+
+    // 🛡️ Перевірка стабільності системи (знімає захист відкату після виходу в хмару або 25с аптайму)
+    BootSafetyGuard::tick(appState.oracle_online);
 
     if (appState.cmd_reboot) {
         delay(150);

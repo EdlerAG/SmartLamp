@@ -18,6 +18,9 @@ private:
     float    cur_r              = 0.0f;
     float    cur_g              = 0.0f;
     float    cur_b              = 0.0f;
+    float    cur_s_r            = 0.0f;
+    float    cur_s_g            = 0.0f;
+    float    cur_s_b            = 0.0f;
     uint32_t last_lerp_ms       = 0;
 
     const uint8_t manual_levels[4] = {20, 48, 88, Config::MAX_SAFE_BRT};
@@ -31,10 +34,16 @@ private:
         uint8_t target_r = state.ambi_r;
         uint8_t target_g = state.ambi_g;
         uint8_t target_b = state.ambi_b;
-        if (state.light_mode == MODE_SPOTIFY_AMBI && state.spotify.playing) {
-            target_r = state.spotify.ambi_r;
-            target_g = state.spotify.ambi_g;
-            target_b = state.spotify.ambi_b;
+        uint8_t target_s_r = state.spotify.ambi2_r;
+        uint8_t target_s_g = state.spotify.ambi2_g;
+        uint8_t target_s_b = state.spotify.ambi2_b;
+
+        if (state.light_mode == MODE_SPOTIFY_AMBI) {
+            if (state.spotify.ambi_r != 0 || state.spotify.ambi_g != 0 || state.spotify.ambi_b != 0) {
+                target_r = state.spotify.ambi_r;
+                target_g = state.spotify.ambi_g;
+                target_b = state.spotify.ambi_b;
+            }
         }
 
         // Преміальний плавний перехід кольору (RGB lerp ~350мс) замість різкого стрибка
@@ -42,17 +51,26 @@ private:
             cur_r = (float)target_r;
             cur_g = (float)target_g;
             cur_b = (float)target_b;
+            cur_s_r = (float)target_s_r;
+            cur_s_g = (float)target_s_g;
+            cur_s_b = (float)target_s_b;
             last_lerp_ms = now;
         } else if (now - last_lerp_ms >= 20) {
             last_lerp_ms = now;
-            cur_r += ((float)target_r - cur_r) * 0.15f;
-            cur_g += ((float)target_g - cur_g) * 0.15f;
-            cur_b += ((float)target_b - cur_b) * 0.15f;
+            cur_r += ((float)target_r - cur_r) * 0.065f;
+            cur_g += ((float)target_g - cur_g) * 0.065f;
+            cur_b += ((float)target_b - cur_b) * 0.065f;
+            cur_s_r += ((float)target_s_r - cur_s_r) * 0.065f;
+            cur_s_g += ((float)target_s_g - cur_s_g) * 0.065f;
+            cur_s_b += ((float)target_s_b - cur_s_b) * 0.065f;
         }
 
         uint8_t eff_r = (uint8_t)constrain((int)(cur_r + 0.5f), 0, 255);
         uint8_t eff_g = (uint8_t)constrain((int)(cur_g + 0.5f), 0, 255);
         uint8_t eff_b = (uint8_t)constrain((int)(cur_b + 0.5f), 0, 255);
+        uint8_t eff_s_r = (uint8_t)constrain((int)(cur_s_r + 0.5f), 0, 255);
+        uint8_t eff_s_g = (uint8_t)constrain((int)(cur_s_g + 0.5f), 0, 255);
+        uint8_t eff_s_b = (uint8_t)constrain((int)(cur_s_b + 0.5f), 0, 255);
 
         if (notify_frames > 0) {
             if (now - last_anim_ms >= 20) {
@@ -84,7 +102,14 @@ private:
         if (now - last_anim_ms < 22 && !mode_changed && !force) return;
         last_anim_ms = now;
 
-        LedEffects::renderDynamicMode(strip, state.light_mode, anim_step++, eff_r, eff_g, eff_b);
+        LedEffects::renderDynamicMode(
+            strip,
+            state.light_mode,
+            anim_step++,
+            eff_r, eff_g, eff_b,
+            eff_s_r, eff_s_g, eff_s_b,
+            (state.light_mode == MODE_SPOTIFY_AMBI) ? &state.spotify : nullptr
+        );
         strip.show();
     }
 
@@ -126,8 +151,15 @@ public:
 
             if (state.auto_brt) {
                 float factor = constrain((state.smooth_ldr - 200.0f) / 3500.0f, 0.0f, 1.0f);
-                target_led = (uint8_t)(Config::MIN_SAFE_BRT + factor * (Config::MAX_SAFE_BRT - Config::MIN_SAFE_BRT));
-                target_lcd = (uint8_t)(40 + factor * 215.0f);
+                uint8_t desired_led = (uint8_t)(Config::MIN_SAFE_BRT + factor * (Config::MAX_SAFE_BRT - Config::MIN_SAFE_BRT));
+                uint8_t desired_lcd = (uint8_t)(40 + factor * 215.0f);
+                // Гістерезис: запобігає коливанням через шум сенсора
+                if (abs((int)desired_led - (int)state.current_led_brt) >= 2) {
+                    target_led = desired_led;
+                }
+                if (abs((int)desired_lcd - (int)state.current_lcd_brt) >= 4) {
+                    target_lcd = desired_lcd;
+                }
             } else {
                 uint8_t idx = state.manual_brt_idx % 4;
                 target_led = manual_levels[idx];
@@ -155,7 +187,6 @@ public:
                 state.current_led_brt += (target_led > state.current_led_brt) ? 1 : -1;
                 strip.setBrightness(state.current_led_brt);
                 brt_changed = true;
-                state.ui_force_dirty = true;
             }
 
             if (state.current_lcd_brt != target_lcd) {

@@ -173,9 +173,10 @@ public:
         }
 
         if (prefs.begin("box_state", false)) {
-            if (prefs.isKey("l_mode")) state.light_mode     = prefs.getUChar("l_mode", 0) % TOTAL_LIGHT_MODES;
-            if (prefs.isKey("a_brt"))  state.auto_brt       = prefs.getBool("a_brt", true);
-            if (prefs.isKey("m_brt"))  state.manual_brt_idx = prefs.getUChar("m_brt", 2) % 4;
+            if (prefs.isKey("l_mode"))  state.light_mode     = prefs.getUChar("l_mode", 0) % TOTAL_LIGHT_MODES;
+            if (prefs.isKey("a_brt"))   state.auto_brt       = prefs.getBool("a_brt", true);
+            if (prefs.isKey("m_brt"))   state.manual_brt_idx = prefs.getUChar("m_brt", 2) % 4;
+            if (prefs.isKey("scr_ang")) state.screen_angle   = (prefs.getShort("scr_ang", 0) % 360 + 360) % 360;
 
             if (prefs.isKey("a_vol"))  state.audio_volume       = prefs.getUChar("a_vol", Config::DEFAULT_VOLUME);
             if (prefs.isKey("a_mut"))  state.audio_muted        = prefs.getBool("a_mut", false);
@@ -272,8 +273,16 @@ public:
                 prefs.putUChar("l_mode", state.light_mode);
                 prefs.putBool("a_brt", state.auto_brt);
                 prefs.putUChar("m_brt", state.manual_brt_idx);
+                prefs.putShort("scr_ang", state.screen_angle);
                 prefs.end();
             }
+        }
+    }
+
+    void saveScreenAngle(int16_t angle) {
+        if (prefs.begin("box_state", false)) {
+            prefs.putShort("scr_ang", (angle % 360 + 360) % 360);
+            prefs.end();
         }
     }
 

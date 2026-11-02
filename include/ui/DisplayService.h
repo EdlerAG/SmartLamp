@@ -75,6 +75,7 @@ public:
         lcd.init();
         lcd.setRotation(0);
         lcd.setBrightness(state.current_lcd_brt);
+        lcd.setPivot(120, 120);
 
         canvas.setPsram(false);
         canvas.setColorDepth(16);
@@ -83,6 +84,7 @@ public:
             canvas.createSprite(240, 240);
         }
         canvas.setTextDatum(textdatum_t::middle_center);
+        canvas.setPivot(120, 120);
 
         state.shared_canvas_buf = (uint8_t*)canvas.getBuffer();
 
@@ -107,7 +109,17 @@ public:
 
         // Вітальний екран
         ScreenRenderer::drawBootSplash(canvas, 0, Config::BOOT_SPLASH_MS);
-        canvas.pushSprite(0, 0);
+        pushCanvas();
+    }
+
+    void pushCanvas() {
+        int16_t ang = state.screen_angle;
+        ang = (ang % 360 + 360) % 360;
+        if (ang == 0) {
+            canvas.pushSprite(0, 0);
+        } else {
+            canvas.pushRotated(&lcd, (float)ang);
+        }
     }
 
     bool isHighFpsNeeded() const {
@@ -163,7 +175,7 @@ public:
                 if (now - last_frame_ms >= 16) {
                     last_frame_ms = now;
                     ScreenRenderer::drawBootSplash(canvas, elapsed, Config::BOOT_SPLASH_MS);
-                    canvas.pushSprite(0, 0);
+                    pushCanvas();
                 }
                 return;
             } else {
@@ -209,7 +221,7 @@ public:
                 last_frame_ms = now;
                 state.ui_force_dirty = false;
                 ScreenRenderer::drawOnboardingWizard(canvas, qr_cache, cached_qr_str, sizeof(cached_qr_str), state);
-                canvas.pushSprite(0, 0);
+                pushCanvas();
             }
             return;
         }
@@ -219,7 +231,7 @@ public:
                 last_frame_ms = now;
                 state.ui_force_dirty = false;
                 ScreenRenderer::drawNetworkDiag(canvas, qr_cache, cached_qr_str, sizeof(cached_qr_str), state);
-                canvas.pushSprite(0, 0);
+                pushCanvas();
             }
             return;
         }
@@ -234,7 +246,7 @@ public:
                     state.ui_force_dirty = false;
                     canvas.fillScreen(HallmarkTheme::BG_PRIMARY);
                     ScreenRenderer::drawBirthdayCelebrate(canvas, state, now);
-                    canvas.pushSprite(0, 0);
+                    pushCanvas();
                 }
                 return;
             }
@@ -249,7 +261,7 @@ public:
             if (now - last_frame_ms >= 33) {
                 last_frame_ms = now;
                 ScreenRenderer::drawOta(canvas, state);
-                canvas.pushSprite(0, 0);
+                pushCanvas();
             }
             return;
         }
@@ -259,7 +271,7 @@ public:
             if (now - last_frame_ms >= 25) {
                 last_frame_ms = now;
                 ReactionRenderer::draw(canvas, state.screen_reaction_type, now);
-                canvas.pushSprite(0, 0);
+                pushCanvas();
             }
             return;
         }
@@ -295,7 +307,7 @@ public:
                     canvas.drawString(med_lbl, 120, 189);
                 }
 
-                canvas.pushSprite(0, 0);
+                pushCanvas();
             }
             return;
         } else if (state.anim_frames_count > 0 && !state.canvas_loading) {
@@ -360,6 +372,6 @@ public:
         }
 
         ScreenRenderer::drawFooterNav(canvas, state);
-        canvas.pushSprite(0, 0);
+        pushCanvas();
     }
 };

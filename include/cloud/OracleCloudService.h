@@ -451,19 +451,9 @@ private:
         state.oracle_manages_bot  = doc["bot_managed"] | false;
         state.has_more_cloud_cmds = doc["has_more"] | false;
 
-        // Майстер налаштування Onboarding (su бітмаска та mood атмосфера)
+        // Майстер налаштування Onboarding (su бітмаска)
         if (doc["su"].is<uint8_t>()) {
             state.setup_bitmask = doc["su"].as<uint8_t>();
-        }
-        if (doc["mood"].is<const char*>()) {
-            const char* m = doc["mood"].as<const char*>();
-            if (m && m[0] != '\0') {
-                if (strcmp(m, "cozy") == 0) state.light_mode = MODE_WARM_COZY;
-                else if (strcmp(m, "sakura") == 0) state.light_mode = MODE_SAKURA_NEON;
-                else if (strcmp(m, "ocean") == 0) state.light_mode = MODE_OCEAN_BREEZE;
-                else if (strcmp(m, "nordic") == 0) state.light_mode = MODE_AURORA_WAVE;
-                else if (strcmp(m, "chornobyl") == 0 || strcmp(m, "chernobyl") == 0) state.light_mode = MODE_CYBER_RUNNER;
-            }
         }
 
         // Статус підключення Spotify від сервера (для майстра Onboarding та плеєра)
@@ -504,7 +494,11 @@ private:
         // Обробка Spotify стану від сервера (Zero Heap Allocation)
         if (doc["spotify"].is<JsonObject>()) {
             JsonObject sp = doc["spotify"];
-            state.spotify.playing = sp["playing"] | false;
+            bool new_playing = sp["playing"] | false;
+            if (new_playing != state.spotify.playing) {
+                state.spotify.playing = new_playing;
+                state.spotify.last_sync_millis = millis();
+            }
 
             const char* tr_id = sp["track_id"] | "";
             if (tr_id && tr_id[0] != '\0' && strcmp(state.spotify.track_id, tr_id) != 0) {
@@ -523,8 +517,25 @@ private:
                 TgJsonUtils::decodeJsonString(artist, state.spotify.artist, sizeof(state.spotify.artist));
             }
 
-            if (sp["progress_ms"].is<uint32_t>()) state.spotify.progress_ms = sp["progress_ms"].as<uint32_t>();
+            if (sp["is_mono"].is<bool>()) {
+                state.spotify.is_mono = sp["is_mono"].as<bool>();
+            }
+
+            if (sp["progress_ms"].is<uint32_t>()) {
+                uint32_t srv_prog = sp["progress_ms"].as<uint32_t>();
+                uint32_t local_prog = state.getLocalSpotifyProgressMs();
+                int32_t diff = (int32_t)srv_prog - (int32_t)local_prog;
+                if (abs(diff) < 350 && state.spotify.playing && state.spotify.last_sync_millis > 0) {
+                    state.spotify.progress_ms = (uint32_t)((int32_t)local_prog + (diff / 4));
+                } else {
+                    state.spotify.progress_ms = srv_prog;
+                }
+                state.spotify.last_server_progress_ms = state.spotify.progress_ms;
+                state.spotify.last_sync_millis = millis();
+            }
             if (sp["duration_ms"].is<uint32_t>()) state.spotify.duration_ms = sp["duration_ms"].as<uint32_t>();
+            if (sp["bpm"].is<uint16_t>()) state.spotify.bpm = sp["bpm"].as<uint16_t>();
+            if (sp["energy"].is<uint8_t>()) state.spotify.energy = sp["energy"].as<uint8_t>();
 
             if (sp["ambi_rgb"].is<JsonArray>()) {
                 JsonArray rgb = sp["ambi_rgb"];
@@ -536,6 +547,14 @@ private:
                     state.ambi_r = r; state.ambi_g = g; state.ambi_b = b;
                 }
             }
+            if (sp["ambi2_rgb"].is<JsonArray>()) {
+                JsonArray rgb2 = sp["ambi2_rgb"];
+                if (rgb2.size() >= 3) {
+                    state.spotify.ambi2_r = rgb2[0].as<uint8_t>();
+                    state.spotify.ambi2_g = rgb2[1].as<uint8_t>();
+                    state.spotify.ambi2_b = rgb2[2].as<uint8_t>();
+                }
+            }
             state.spotify.last_sync_ms = millis();
         }
 
@@ -545,6 +564,11 @@ private:
         // 1. Команди світла та яскравості
         if (doc["set_mode"].is<int>()) {
             CommandRouter::setLightMode(state, doc["set_mode"].as<uint8_t>());
+        }
+
+        if (doc["screen_angle"].is<int>()) {
+            CommandRouter::setScreenAngle(state, doc["screen_angle"].as<int16_t>());
+            if (storage_srv) storage_srv->saveScreenAngle(state.screen_angle);
         }
 
         if (!doc["set_brt"].isNull()) {

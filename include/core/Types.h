@@ -93,14 +93,22 @@ struct InboxMessage {
 
 struct SpotifyTrackInfo {
     bool     playing = false;
+    bool     is_mono = false;
     uint32_t progress_ms = 0;
     uint32_t duration_ms = 0;
     uint32_t last_sync_ms = 0;
+    uint32_t last_server_progress_ms = 0;
+    uint32_t last_sync_millis = 0;
     char     title[64] = {0};
     char     artist[48] = {0};
     char     track_id[36] = {0};
     uint8_t  ambi_r = 56;
     uint8_t  ambi_g = 189;
     uint8_t  ambi_b = 248;
+    uint8_t  ambi2_r = 248;
+    uint8_t  ambi2_g = 113;
+    uint8_t  ambi2_b = 113;
+    uint16_t bpm = 120;
+    uint8_t  energy = 65; // 0..100
     bool     vinyl_ready = false;
 };

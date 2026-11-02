@@ -2,6 +2,7 @@
 #include <LovyanGFX.hpp>
 #include "core/Types.h"
 #include "ui/HallmarkTheme.h"
+#include "ui/UkrainianFont12Bold.h"
 
 namespace ReactionRenderer {
     inline void draw(LGFX_Sprite& canvas, uint8_t r_type, uint32_t now) {
@@ -47,11 +48,12 @@ namespace ReactionRenderer {
 
             // Підпис
             canvas.fillRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BG_SURFACE);
+            canvas.fillRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BG_SURFACE);
             canvas.drawRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BORDER_HAIRLINE);
-            canvas.setFont(&fonts::efontCN_12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextDatum(middle_center);
             canvas.setTextColor(col_acc);
-            canvas.drawString("Затишний Котик ✨", 120, 188);
+            canvas.drawString("Затишний Котик", 120, 188);
         }
         else if (r_type == NOTIFY_FIRE) {
             uint16_t col_org = HallmarkTheme::ACCENT_AMBER;
@@ -68,10 +70,10 @@ namespace ReactionRenderer {
 
             canvas.fillRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BG_SURFACE);
             canvas.drawRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BORDER_HAIRLINE);
-            canvas.setFont(&fonts::efontCN_12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextDatum(middle_center);
             canvas.setTextColor(col_org);
-            canvas.drawString("Теплий Вогник 🔥", 120, 188);
+            canvas.drawString("Теплий Вогник", 120, 188);
         }
         else if (r_type == NOTIFY_LIGHTNING) {
             uint16_t col_el = HallmarkTheme::ACCENT_COOL;
@@ -83,10 +85,10 @@ namespace ReactionRenderer {
 
             canvas.fillRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BG_SURFACE);
             canvas.drawRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BORDER_HAIRLINE);
-            canvas.setFont(&fonts::efontCN_12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextDatum(middle_center);
             canvas.setTextColor(col_el);
-            canvas.drawString("Енергія Світла ⚡", 120, 188);
+            canvas.drawString("Енергія Світла", 120, 188);
         }
         else if (r_type == NOTIFY_UFO) {
             uint16_t col_grn = HallmarkTheme::ACCENT_SUCCESS;
@@ -102,10 +104,10 @@ namespace ReactionRenderer {
 
             canvas.fillRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BG_SURFACE);
             canvas.drawRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BORDER_HAIRLINE);
-            canvas.setFont(&fonts::efontCN_12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextDatum(middle_center);
             canvas.setTextColor(col_grn);
-            canvas.drawString("Космічний Привіт 🛸", 120, 188);
+            canvas.drawString("Космічний Привіт", 120, 188);
         }
         else if (r_type == NOTIFY_CROWN) {
             uint16_t col_gld = HallmarkTheme::ACCENT_AMBER;
@@ -122,10 +124,10 @@ namespace ReactionRenderer {
 
             canvas.fillRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BG_SURFACE);
             canvas.drawRoundRect(36, 176, 168, 24, 12, HallmarkTheme::BORDER_HAIRLINE);
-            canvas.setFont(&fonts::efontCN_12);
+            canvas.setFont(&UkrainianFont12Bold);
             canvas.setTextDatum(middle_center);
             canvas.setTextColor(col_gld);
-            canvas.drawString("Королівський Настрій 👑", 120, 188);
+            canvas.drawString("Королівський Настрій", 120, 188);
         }
     }
 }
