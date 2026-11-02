@@ -455,12 +455,31 @@ void loop() {
         high_demand_last_seen_ms = loop_now;
     }
 
+    // Рівень 3: Апаратний термозахист кремнію у закритому корпусі (Silicon Thermal Throttle)
+    static uint32_t last_temp_check_ms = 0;
+    static bool thermal_throttled = false;
+    if (loop_now - last_temp_check_ms >= 4000UL) {
+        last_temp_check_ms = loop_now;
+        float die_temp = temperatureRead();
+        if (die_temp > 74.0f) {
+            thermal_throttled = true;
+        } else if (die_temp < 65.0f) {
+            thermal_throttled = false;
+        }
+    }
+
     uint32_t current_hw_mhz = getCpuFrequencyMhz();
 
     // Забороняємо зміну частоти ядра, якщо в LedService триває активна передача RMT-кадру,
     // щоб уникнути збою тактування шини APB та спотворення таймінгів SK6812
     if (!ledService.isTransmitting()) {
-        if (high_freq_needed) {
+        if (thermal_throttled) {
+            // При перегріві в закритому корпусі обмежуємо частоту до 160 МГц
+            if (current_hw_mhz > 160 && (loop_now - last_freq_change_ms >= 1000UL)) {
+                setCpuFrequencyMhz(160);
+                last_freq_change_ms = loop_now;
+            }
+        } else if (high_freq_needed) {
             // Миттєвий підйом до 240 МГц без затримок для плавності UI та звуку
             if (current_hw_mhz < 240 && (loop_now - last_freq_change_ms >= 500UL)) {
                 setCpuFrequencyMhz(240);

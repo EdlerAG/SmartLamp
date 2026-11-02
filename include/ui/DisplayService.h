@@ -88,17 +88,15 @@ public:
 
         state.shared_canvas_buf = (uint8_t*)canvas.getBuffer();
 
-        qr_cache.setPsram(false);
+        // Розміщення QR-кешу та Spotify Vinyl у швидкісній Octal OPI PSRAM (80 MHz)
+        // Це миттєво вивільняє +49 КБ внутрішньої SRAM для стабільності сокетів Wi-Fi та TLS!
+        qr_cache.setPsram(true);
         qr_cache.setColorDepth(8);
         qr_cache.createSprite(110, 110);
 
-        // Spotify Vinyl Sprite 136x136 (37 KB): пріоритет швидкої внутрішньої SRAM для 30 FPS
-        vinylSprite.setPsram(false);
+        vinylSprite.setPsram(true);
         vinylSprite.setColorDepth(16);
-        if (!vinylSprite.createSprite(Config::VINYL_DIAMETER, Config::VINYL_DIAMETER)) {
-            vinylSprite.setPsram(true);
-            vinylSprite.createSprite(Config::VINYL_DIAMETER, Config::VINYL_DIAMETER);
-        }
+        vinylSprite.createSprite(Config::VINYL_DIAMETER, Config::VINYL_DIAMETER);
         vinylSprite.fillScreen(HallmarkTheme::BG_PRIMARY);
         // Початкові канавки вінілу
         for (int r = 10; r < 66; r += 3) {
