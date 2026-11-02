@@ -281,6 +281,10 @@ class DatabaseService:
     def add_climate_sample(self, temp: float, hum: float, pres: float, light: int) -> None:
         now_ts = int(time.time())
         cutoff = now_ts - (30 * 86400)
+        # Санітарний анти-глюк фільтр: ігноруємо дефолтні заглушки та нереальні значення
+        is_stub = (abs(temp - 22.0) < 0.05 and abs(hum - 50.0) < 0.1 and abs(pres - 750.0) < 0.1)
+        if pres < 650.0 or pres > 850.0 or is_stub:
+            return
         try:
             conn = self._get_conn()
             conn.execute(
@@ -322,7 +326,10 @@ class DatabaseService:
         try:
             rows = self._get_conn().execute(
                 "SELECT ts, temp AS t, hum AS h, pres AS p, light AS l "
-                "FROM climate_history WHERE ts >= ? ORDER BY ts ASC",
+                "FROM climate_history WHERE ts >= ? "
+                "AND pres >= 650.0 AND pres <= 850.0 "
+                "AND NOT (abs(temp - 22.0) < 0.05 AND abs(hum - 50.0) < 0.1 AND abs(pres - 750.0) < 0.1) "
+                "ORDER BY ts ASC",
                 (cutoff,),
             ).fetchall()
             return [dict(r) for r in rows]

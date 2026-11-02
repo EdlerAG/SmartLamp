@@ -106,10 +106,13 @@ class StateService:
         dump["m_name"] = MODES_UA[payload.m % len(MODES_UA)]
         self.latest_telemetry = dump
 
-        # Записуємо зріз клімату в SQLite WAL кожні 5 хвилин
+        # Записуємо зріз клімату в SQLite WAL кожні 5 хвилин (з санітарним фільтром від дефолтних заглушок)
         if now - self.last_history_sample >= 300.0:
-            self.last_history_sample = now
-            db_service.add_climate_sample(payload.t, payload.h, payload.p, payload.l)
+            is_stub = (abs(payload.t - 22.0) < 0.05 and abs(payload.h - 50.0) < 0.1 and abs(payload.p - 750.0) < 0.1)
+            is_valid = (payload.p >= 650.0 and payload.p <= 850.0 and not is_stub and payload.t > -40.0 and payload.t < 85.0)
+            if is_valid:
+                self.last_history_sample = now
+                db_service.add_climate_sample(payload.t, payload.h, payload.p, payload.l)
 
         # Фіксація апаратного здоров'я плати кожні 15 хвилин
         if now - self.last_health_sample >= 900.0:

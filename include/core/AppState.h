@@ -61,6 +61,7 @@ struct AppState {
     volatile float pressure_diff = 0.0f;
     volatile bool  sht_connected = false;
     volatile bool  bmp_connected = false;
+    volatile bool  sensors_valid = false;
 
     float   pressure_hist[24]   = {0};
     uint8_t pressure_hist_count = 0;

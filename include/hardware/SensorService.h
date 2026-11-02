@@ -184,6 +184,11 @@ public:
 
         if (bmp280.begin(0x76) || bmp280.begin(0x77)) {
             state.bmp_connected = true;
+            float p = bmp280.readPressure();
+            if (!isnan(p) && p > 80000.0f && p < 115000.0f) {
+                state.pressure = p * 0.00750062f;
+                state.addPressureSample(state.pressure);
+            }
         }
 
         if (probeSht31(0x44)) {
@@ -192,6 +197,29 @@ public:
         } else if (probeSht31(0x45)) {
             sht_addr = 0x45;
             state.sht_connected = true;
+        }
+
+        // Швидке початкове зчитування температури та вологості SHT30/31 при старті
+        if (state.sht_connected) {
+            Wire.beginTransmission(sht_addr);
+            Wire.write(0x24);
+            Wire.write(0x00);
+            if (Wire.endTransmission() == 0) {
+                delay(16);
+                if (Wire.requestFrom((int)sht_addr, 6) == 6) {
+                    uint8_t buf[6];
+                    for (int i = 0; i < 6; i++) buf[i] = Wire.read();
+                    if (crc8(buf, 2) == buf[2] && crc8(buf + 3, 2) == buf[5]) {
+                        uint16_t raw_t = ((uint16_t)buf[0] << 8) | buf[1];
+                        uint16_t raw_h = ((uint16_t)buf[3] << 8) | buf[4];
+                        float t_val = -45.0f + (175.0f * (float)raw_t / 65535.0f);
+                        float h_val = 100.0f * ((float)raw_h / 65535.0f);
+                        state.temperature = t_val - Config::TEMP_OFFSET_C;
+                        state.humidity = constrain(h_val, 0.0f, 100.0f);
+                        state.sensors_valid = true;
+                    }
+                }
+            }
         }
     }
 
@@ -290,13 +318,13 @@ public:
             }
         }
 
-        // Автономна «Чорна скринька» телеметрії при блекаутах / відсутності Wi-Fi
-        if (!state.oracle_online) {
+        // Автономна «Чорна скринька» телеметрії при блекаутах / відсутності Wi-Fi (лише валідні дані після прогріву)
+        if (!state.oracle_online && state.sensors_valid && now > 10000UL) {
             if (state.last_offline_sample_ms == 0 || (now - state.last_offline_sample_ms >= 300000UL)) {
                 state.last_offline_sample_ms = now;
                 state.pushOfflineSample(state.temperature, state.humidity, state.pressure, (uint8_t)state.light_percent, state.light_mode);
             }
-        } else {
+        } else if (state.oracle_online) {
             state.last_offline_sample_ms = 0;
         }
     }

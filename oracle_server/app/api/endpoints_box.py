@@ -240,16 +240,21 @@ async def box_websocket_endpoint(ws: WebSocket):
                     samples = []
                     now_sec = int(time.time())
                     for pt in points:
-                        age = pt.get("age_sec", 0)
-                        ts = max(0, now_sec - age)
-                        samples.append({
-                            "ts": ts,
-                            "temp": pt.get("t", 0.0),
-                            "hum": pt.get("h", 0.0),
-                            "pres": pt.get("p", 0.0),
-                            "light": pt.get("l", 0),
-                        })
-                    cnt = db_service.add_climate_batch(samples)
+                        t = float(pt.get("t", 0.0))
+                        h = float(pt.get("h", 0.0))
+                        p = float(pt.get("p", 0.0))
+                        is_stub = (abs(t - 22.0) < 0.05 and abs(h - 50.0) < 0.1 and abs(p - 750.0) < 0.1)
+                        if p >= 650.0 and p <= 850.0 and not is_stub and t > -40.0 and t < 85.0:
+                            age = pt.get("age_sec", 0)
+                            ts = max(0, now_sec - age)
+                            samples.append({
+                                "ts": ts,
+                                "temp": t,
+                                "hum": h,
+                                "pres": p,
+                                "light": pt.get("l", 0),
+                            })
+                    cnt = db_service.add_climate_batch(samples) if samples else 0
                     realtime_hub.emit_to_dashboards({"type": "batch", "count": cnt})
                 ack_resp = {"type": "batch_ack", "ok": True}
                 if is_binary_session and msgpack:
