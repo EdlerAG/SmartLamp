@@ -282,7 +282,7 @@ class DatabaseService:
         now_ts = int(time.time())
         cutoff = now_ts - (30 * 86400)
         # Санітарний анти-глюк фільтр: ігноруємо дефолтні заглушки та нереальні значення
-        is_stub = (abs(temp - 22.0) < 0.05 and abs(hum - 50.0) < 0.1 and abs(pres - 750.0) < 0.1)
+        is_stub = (abs(temp - 22.0) < 0.05 and abs(hum - 50.0) < 0.1 and abs(pres - 750.0) < 0.1) or abs(pres - 750.0) < 0.05
         if pres < 650.0 or pres > 850.0 or is_stub:
             return
         try:
@@ -329,6 +329,7 @@ class DatabaseService:
                 "FROM climate_history WHERE ts >= ? "
                 "AND pres >= 650.0 AND pres <= 850.0 "
                 "AND NOT (abs(temp - 22.0) < 0.05 AND abs(hum - 50.0) < 0.1 AND abs(pres - 750.0) < 0.1) "
+                "AND abs(pres - 750.0) >= 0.05 "
                 "ORDER BY ts ASC",
                 (cutoff,),
             ).fetchall()
