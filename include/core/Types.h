@@ -126,6 +126,9 @@ struct SpotifyTrackInfo {
     uint8_t  ambi2_r = 248;
     uint8_t  ambi2_g = 113;
     uint8_t  ambi2_b = 113;
+    uint8_t  ambi3_r = 250;
+    uint8_t  ambi3_g = 204;
+    uint8_t  ambi3_b = 21;
     uint16_t bpm = 120;
     uint8_t  energy = 65; // 0..100
     bool     vinyl_ready = false;

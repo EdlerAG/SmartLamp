@@ -1681,7 +1681,7 @@ class TelegramBotService:
                 "chat_id": chat_id,
                 "text": hub_t,
                 "parse_mode": "HTML",
-                "reply_markup": active_kb,
+                "reply_markup": hub_k,
             })
             return
 
@@ -1729,13 +1729,13 @@ class TelegramBotService:
                 await self._pin_message(chat_id, mid)
             return
 
-        if text in ("🎛 Головний пульт", "/menu", "/hub"):
+        if text in ("🎛 Головний пульт", "/menu", "/hub", "🎛 Пульт"):
             hub_t, hub_k = self._hub_main_view(chat_id, is_admin, is_girl)
             await self._api("sendMessage", {
                 "chat_id": chat_id,
                 "text": hub_t,
                 "parse_mode": "HTML",
-                "reply_markup": active_kb,
+                "reply_markup": hub_k,
             })
             return
 

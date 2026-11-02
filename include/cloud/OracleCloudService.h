@@ -541,9 +541,21 @@ private:
             if (sp["ambi2_rgb"].is<JsonArray>()) {
                 JsonArray rgb2 = sp["ambi2_rgb"];
                 if (rgb2.size() >= 3) {
-                    state.spotify.ambi2_r = rgb2[0].as<uint8_t>();
-                    state.spotify.ambi2_g = rgb2[1].as<uint8_t>();
-                    state.spotify.ambi2_b = rgb2[2].as<uint8_t>();
+                    uint8_t r2 = rgb2[0].as<uint8_t>();
+                    uint8_t g2 = rgb2[1].as<uint8_t>();
+                    uint8_t b2 = rgb2[2].as<uint8_t>();
+                    state.spotify.ambi2_r = r2; state.spotify.ambi2_g = g2; state.spotify.ambi2_b = b2;
+                    state.ambi2_r = r2; state.ambi2_g = g2; state.ambi2_b = b2;
+                }
+            }
+            if (sp["ambi3_rgb"].is<JsonArray>()) {
+                JsonArray rgb3 = sp["ambi3_rgb"];
+                if (rgb3.size() >= 3) {
+                    uint8_t r3 = rgb3[0].as<uint8_t>();
+                    uint8_t g3 = rgb3[1].as<uint8_t>();
+                    uint8_t b3 = rgb3[2].as<uint8_t>();
+                    state.spotify.ambi3_r = r3; state.spotify.ambi3_g = g3; state.spotify.ambi3_b = b3;
+                    state.ambi3_r = r3; state.ambi3_g = g3; state.ambi3_b = b3;
                 }
             }
             state.spotify.last_sync_ms = millis();

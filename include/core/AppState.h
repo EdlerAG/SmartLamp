@@ -135,6 +135,12 @@ struct AppState {
     volatile uint8_t  ambi_r                = 56;
     volatile uint8_t  ambi_g                = 189;
     volatile uint8_t  ambi_b                = 248;
+    volatile uint8_t  ambi2_r               = 248;
+    volatile uint8_t  ambi2_g               = 113;
+    volatile uint8_t  ambi2_b               = 113;
+    volatile uint8_t  ambi3_r               = 250;
+    volatile uint8_t  ambi3_g               = 204;
+    volatile uint8_t  ambi3_b               = 21;
     volatile bool     ambi_active           = false;
 
     // Резервний оверлей реакції

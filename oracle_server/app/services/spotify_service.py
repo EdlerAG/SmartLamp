@@ -33,6 +33,7 @@ class SpotifyService:
         "_cached_state",
         "_last_ambi_rgb",
         "_last_ambi2_rgb",
+        "_last_ambi3_rgb",
         "_last_is_mono",
         "_vinyl_cache",
         "_lyrics_cache",
@@ -71,12 +72,14 @@ class SpotifyService:
             "duration_ms": 0,
             "ambi_rgb": [56, 189, 248],
             "ambi2_rgb": [248, 113, 113],
+            "ambi3_rgb": [250, 204, 21],
             "is_mono": False,
             "bpm": 120,
             "energy": 65,
         }
         self._last_ambi_rgb: List[int] = [56, 189, 248]
         self._last_ambi2_rgb: List[int] = [248, 113, 113]
+        self._last_ambi3_rgb: List[int] = [250, 204, 21]
         self._last_is_mono: bool = False
         self._vinyl_cache: Dict[str, Tuple[bytes, List[int], List[int], bool]] = {}
         self._lyrics_cache: Dict[str, List[Dict[str, Any]]] = {}
@@ -343,19 +346,19 @@ class SpotifyService:
                 h_chan = h_chan / 6.0
 
                 mean_sat = float(np.mean(s_chan))
-                if mean_sat < 0.12:
-                    # Чорно-біла / монохромна обкладинка -> теплий бурштиново-перлинний тон
+                if mean_sat < 0.14:
+                    # Монохромний альбом: благородна золота тріада
                     is_mono = True
-                    ambi_rgb = [255, 214, 170]
-                    ambi2_rgb = [220, 180, 140]
+                    ambi_rgb = [255, 180, 50]   # Primary: Теплий бурштин
+                    ambi2_rgb = [255, 120, 80]  # Secondary: Персиковий корал
+                    ambi3_rgb = [255, 220, 140] # Accent: Перлинне сяйво
                 else:
                     is_mono = False
-                    # Фільтруємо занадто темні (V < 0.18) і вибілені (S < 0.15)
-                    valid_mask = (v_chan >= 0.18) & (s_chan >= 0.15)
+                    # Фільтрація темних (V < 0.18) та сірих/вибілених (S < 0.22)
+                    valid_mask = (v_chan >= 0.18) & (s_chan >= 0.22)
                     if np.sum(valid_mask) < 20:
-                        valid_mask = (v_chan >= 0.10) & (s_chan >= 0.08)
+                        valid_mask = (v_chan >= 0.12) & (s_chan >= 0.12)
 
-                    # Вагова перевага нижньої половини обкладинки (y >= 40)
                     weights = np.ones((80, 80), dtype=np.float32)
                     weights[40:, :] = 2.5
                     weights = weights * s_chan * v_chan
@@ -365,65 +368,49 @@ class SpotifyService:
                     v_valid = v_chan[valid_mask]
                     w_valid = weights[valid_mask]
 
-                    # 24 кошики відтінку (15 градусів кожен) для пошуку домінанти col1
+                    # 1. Primary col1 (Домінанта)
                     bin_indices = np.clip((h_valid * 24.0).astype(int), 0, 23)
                     bin_weights = np.bincount(bin_indices, weights=w_valid, minlength=24)
                     best_bin = int(np.argmax(bin_weights))
-                    bin_center_h = (best_bin + 0.5) / 24.0
+                    h1 = (best_bin + 0.5) / 24.0
 
-                    diff_h = np.abs(h_valid - bin_center_h)
-                    circ_diff = np.minimum(diff_h, 1.0 - diff_h)
-                    cluster_mask = circ_diff <= (25.0 / 360.0)
-                    if np.sum(cluster_mask) > 0:
-                        h1 = bin_center_h
-                        s1 = float(np.average(s_valid[cluster_mask], weights=w_valid[cluster_mask]))
-                        v1 = float(np.average(v_valid[cluster_mask], weights=w_valid[cluster_mask]))
-                    else:
-                        h1 = bin_center_h
-                        s1 = 0.75
-                        v1 = 0.90
+                    diff_h1 = np.abs(h_valid - h1)
+                    circ_diff1 = np.minimum(diff_h1, 1.0 - diff_h1)
 
-                    # Secondary col2: контрастний гармонійний тон з іншої частини спектра (Delta H >= 35 deg)
-                    min_h_diff = 35.0 / 360.0
-                    contrasting_mask = circ_diff >= min_h_diff
-                    if np.sum(contrasting_mask) >= 10:
-                        h_c2 = h_valid[contrasting_mask]
-                        s_c2 = s_valid[contrasting_mask]
-                        v_c2 = v_valid[contrasting_mask]
-                        w_c2 = w_valid[contrasting_mask]
-                        c2_bins = np.clip((h_c2 * 24.0).astype(int), 0, 23)
-                        c2_bin_weights = np.bincount(c2_bins, weights=w_c2, minlength=24)
-                        best_c2_bin = int(np.argmax(c2_bin_weights))
-                        h2 = (best_c2_bin + 0.5) / 24.0
-                        diff_h2 = np.abs(h_c2 - h2)
-                        circ_diff2 = np.minimum(diff_h2, 1.0 - diff_h2)
-                        c2_cluster = circ_diff2 <= (25.0 / 360.0)
-                        if np.sum(c2_cluster) > 0:
-                            s2 = float(np.average(s_c2[c2_cluster], weights=w_c2[c2_cluster]))
-                            v2 = float(np.average(v_c2[c2_cluster], weights=w_c2[c2_cluster]))
-                        else:
-                            s2 = s1
-                            v2 = v1
+                    # 2. Secondary col2 (Контраст Delta H >= 35 deg)
+                    mask2 = circ_diff1 >= (35.0 / 360.0)
+                    if np.sum(mask2) >= 10:
+                        b2 = np.clip((h_valid[mask2] * 24.0).astype(int), 0, 23)
+                        w2 = np.bincount(b2, weights=w_valid[mask2], minlength=24)
+                        h2 = (int(np.argmax(w2)) + 0.5) / 24.0
                     else:
-                        # Якщо обкладинка монохроматична за кольором: комплементарний тон (+180 deg)
                         h2 = (h1 + 0.5) % 1.0
-                        s2 = s1
-                        v2 = v1
 
-                    # Примусовий підйом соковитості: S = min(1.0, max(0.65, S * 1.35)), V = max(0.85, V)
-                    s1 = min(1.0, max(0.65, s1 * 1.35))
-                    v1 = max(0.85, v1)
-                    rgb1 = colorsys.hsv_to_rgb(h1, s1, v1)
+                    # 3. Accent col3 (Яскравий піковий відтінок з відстанню >= 30 deg від обох)
+                    diff_h2 = np.abs(h_valid - h2)
+                    circ_diff2 = np.minimum(diff_h2, 1.0 - diff_h2)
+                    mask3 = (circ_diff1 >= (30.0 / 360.0)) & (circ_diff2 >= (30.0 / 360.0))
+                    if np.sum(mask3) >= 8:
+                        score3 = s_valid[mask3] * v_valid[mask3]
+                        idx3 = int(np.argmax(score3))
+                        h3 = float(h_valid[mask3][idx3])
+                    else:
+                        h3 = (h1 + 0.25) % 1.0
+
+                    # Примусова соковитість та максимальна яскравість (S >= 0.75, V = 1.0)
+                    rgb1 = colorsys.hsv_to_rgb(h1, 0.88, 1.0)
+                    rgb2 = colorsys.hsv_to_rgb(h2, 0.82, 1.0)
+                    rgb3 = colorsys.hsv_to_rgb(h3, 0.95, 1.0)
+
                     ambi_rgb = [int(np.clip(rgb1[0] * 255.0, 0, 255)),
                                 int(np.clip(rgb1[1] * 255.0, 0, 255)),
                                 int(np.clip(rgb1[2] * 255.0, 0, 255))]
-
-                    s2 = min(1.0, max(0.65, s2 * 1.35))
-                    v2 = max(0.85, v2)
-                    rgb2 = colorsys.hsv_to_rgb(h2, s2, v2)
                     ambi2_rgb = [int(np.clip(rgb2[0] * 255.0, 0, 255)),
                                  int(np.clip(rgb2[1] * 255.0, 0, 255)),
                                  int(np.clip(rgb2[2] * 255.0, 0, 255))]
+                    ambi3_rgb = [int(np.clip(rgb3[0] * 255.0, 0, 255)),
+                                 int(np.clip(rgb3[1] * 255.0, 0, 255)),
+                                 int(np.clip(rgb3[2] * 255.0, 0, 255))]
         except Exception as color_err:
             logger.debug("Spotify album color extraction fallback: %s", color_err)
 
@@ -461,7 +448,7 @@ class SpotifyService:
         b = b_dith >> 3
         rgb565 = r | g | b
         raw_bytes = rgb565.astype(">u2").tobytes()
-        return raw_bytes, ambi_rgb, ambi2_rgb, is_mono
+        return raw_bytes, ambi_rgb, ambi2_rgb, ambi3_rgb, is_mono
 
     async def _fetch_track_bpm(self, track_id: str, title: str, artist: str) -> int:
         """Отримує точний BPM треку через Deezer API або повертає значення за замовчуванням (120)."""
@@ -607,7 +594,8 @@ class SpotifyService:
                     self._current_lyrics = []
                     self._cached_state["lyric"] = ""
                     if track_id in self._vinyl_cache:
-                        vinyl_bytes, ambi, ambi2, is_mono = self._vinyl_cache[track_id]
+                        vinyl_bytes, ambi, ambi2, ambi3, is_mono = self._vinyl_cache[track_id]
+                        self._last_ambi3_rgb = ambi3
                         self._last_ambi_rgb = ambi
                         self._last_ambi2_rgb = ambi2
                         self._last_is_mono = is_mono
@@ -619,13 +607,14 @@ class SpotifyService:
                         if art_url:
                             art_resp = await http_pool.get().get(art_url, timeout=7.0)
                             if art_resp.status_code == 200:
-                                vinyl_bytes, ambi, ambi2, is_mono = self._create_vinyl_art_bytes(art_resp.content)
+                                vinyl_bytes, ambi, ambi2, ambi3, is_mono = self._create_vinyl_art_bytes(art_resp.content)
+                                self._last_ambi3_rgb = ambi3
                                 self._last_ambi_rgb = ambi
                                 self._last_ambi2_rgb = ambi2
                                 self._last_is_mono = is_mono
                                 if len(self._vinyl_cache) > 20:
                                     self._vinyl_cache.pop(next(iter(self._vinyl_cache)))
-                                self._vinyl_cache[track_id] = (vinyl_bytes, ambi, ambi2, is_mono)
+                                self._vinyl_cache[track_id] = (vinyl_bytes, ambi, ambi2, ambi3, is_mono)
                                 with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
                                     f.write(vinyl_bytes)
                                 memory_guard.trim_ram()
@@ -648,6 +637,7 @@ class SpotifyService:
                     "duration_ms": duration_ms,
                     "ambi_rgb": self._last_ambi_rgb,
                     "ambi2_rgb": self._last_ambi2_rgb,
+                    "ambi3_rgb": self._last_ambi3_rgb,
                     "is_mono": self._last_is_mono,
                     "bpm": bpm,
                     "energy": energy,

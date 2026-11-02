@@ -412,6 +412,7 @@ function dismissHellcatWelcome(){
   closeHellcatModal();
 }
 function checkHellcatFirstLaunch(){
+  if (Boolean(window.Telegram?.WebApp?.initData)) return;
   if(!localStorage.getItem('smartlamp_welcomed')){
     openHellcatModal();
   }
@@ -1725,6 +1726,18 @@ if (isTelegramApp) {
   try {
     window.Telegram.WebApp.ready();
     window.Telegram.WebApp.expand();
+    try {
+      if (window.Telegram.WebApp.setHeaderColor) window.Telegram.WebApp.setHeaderColor('#07090e');
+      if (window.Telegram.WebApp.setBackgroundColor) window.Telegram.WebApp.setBackgroundColor('#07090e');
+    } catch (_) {}
+    const qrBtn = document.querySelector('button[title="QR Код"]');
+    if (qrBtn) qrBtn.style.display = 'none';
+    const onboardList = document.getElementById('onboardStepsList');
+    const onboardBtn = document.getElementById('onboardToggleBtn');
+    if (onboardList && localStorage.getItem('mb_onboard_open') !== '1') {
+      onboardList.style.display = 'none';
+      if (onboardBtn) onboardBtn.innerText = 'Розгорнути ▼';
+    }
     fetch('/api/v5/auth/tg-webapp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

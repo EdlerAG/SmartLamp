@@ -301,6 +301,18 @@ void processEvents() {
     }
 }
 
+static TaskHandle_t s_ledTaskHandle = nullptr;
+
+static void ledCore1Task(void* pvParameters) {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xPeriod = pdMS_TO_TICKS(16); // 60 FPS (16.6ms)
+
+    while (true) {
+        ledService.update();
+        vTaskDelayUntil(&xLastWakeTime, xPeriod);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
 
@@ -348,10 +360,22 @@ void setup() {
     oracleService.setStorageService(&storageService);
 
     // 2. Швидкі сервіси реального часу на Core 1
+    // 2. Ініціалізація швидких сервісів Core 1 (Дисплей та кнопки)
     core1FastServices.add(&inputService);
-    core1FastServices.add(&ledService);
     core1FastServices.add(&displayService);
     core1FastServices.initAll();
+
+    // 2.1 Ізольований апаратний RMT рушій підсвітки (Core 1, Priority 4, 60 FPS)
+    ledService.init();
+    xTaskCreatePinnedToCore(
+        ledCore1Task,
+        "LedTask",
+        4096,
+        nullptr,
+        4, // Priority 4 (вище за loop())
+        &s_ledTaskHandle,
+        1  // Core 1
+    );
 
     // 3. Завантаження заставки LittleFS у PSRAM одразу після старту
     displayService.loadScreensaverFromFs(storageService);

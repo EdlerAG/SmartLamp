@@ -71,6 +71,8 @@ class CommandPayload(BaseModel):
     media_frames: Optional[int] = None
     media_fps: Optional[int] = None
     ambi_rgb: Optional[List[int]] = None
+    ambi2_rgb: Optional[List[int]] = None
+    ambi3_rgb: Optional[List[int]] = None
     set_saver: Optional[bool] = None
     sp_action: Optional[str] = None
     spotify: Optional[Dict[str, Any]] = None

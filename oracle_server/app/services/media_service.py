@@ -96,25 +96,71 @@ class MediaService:
         rgb565 = r | g | b
         return rgb565.astype(">u2").tobytes()
 
+        @staticmethod
+    def _extract_ambilight_triad(arr) -> Tuple[Tuple[int, int, int], Tuple[int, int, int], Tuple[int, int, int]]:
+        """Розумна екстракція 3-зонної палітри (Primary, Secondary, Accent) для SK6812."""
+        import colorsys
+        np, mask, _ = _get_np_resources()
+        flat = arr[mask].reshape(-1, 3).astype(np.float32) / 255.0
+        max_c = np.max(flat, axis=1)
+        min_c = np.min(flat, axis=1)
+        delta = max_c - min_c
+
+        v_chan = max_c
+        s_chan = np.zeros_like(max_c)
+        nz = max_c > 1e-4
+        s_chan[nz] = delta[nz] / max_c[nz]
+
+        valid = (v_chan >= 0.18) & (s_chan >= 0.20)
+        if np.sum(valid) < 25:
+            valid = (v_chan >= 0.10) & (s_chan >= 0.10)
+
+        if np.sum(valid) == 0:
+            return ((56, 189, 248), (248, 113, 113), (250, 204, 21))
+
+        r_c, g_c, b_c = flat[:, 0], flat[:, 1], flat[:, 2]
+        h_chan = np.zeros_like(max_c)
+        mr = nz & (delta > 1e-4) & (max_c == r_c)
+        mg = nz & (delta > 1e-4) & (max_c == g_c)
+        mb = nz & (delta > 1e-4) & (max_c == b_c)
+        h_chan[mr] = ((g_c[mr] - b_c[mr]) / delta[mr]) % 6.0
+        h_chan[mg] = ((b_c[mg] - r_c[mg]) / delta[mg]) + 2.0
+        h_chan[mb] = ((r_c[mb] - g_c[mb]) / delta[mb]) + 4.0
+        h_chan = h_chan / 6.0
+
+        h_val = h_chan[valid]
+        w_val = (s_chan[valid] * v_chan[valid]) ** 1.5
+
+        bins = np.clip((h_val * 24.0).astype(int), 0, 23)
+        bweights = np.bincount(bins, weights=w_val, minlength=24)
+        h1 = (int(np.argmax(bweights)) + 0.5) / 24.0
+
+        diff1 = np.minimum(np.abs(h_val - h1), 1.0 - np.abs(h_val - h1))
+        mask2 = diff1 >= (35.0 / 360.0)
+        if np.sum(mask2) >= 8:
+            b2 = np.clip((h_val[mask2] * 24.0).astype(int), 0, 23)
+            bw2 = np.bincount(b2, weights=w_val[mask2], minlength=24)
+            h2 = (int(np.argmax(bw2)) + 0.5) / 24.0
+        else:
+            h2 = (h1 + 0.5) % 1.0
+
+        diff2 = np.minimum(np.abs(h_val - h2), 1.0 - np.abs(h_val - h2))
+        mask3 = (diff1 >= (30.0 / 360.0)) & (diff2 >= (30.0 / 360.0))
+        if np.sum(mask3) >= 6:
+            score3 = s_chan[valid][mask3] * v_chan[valid][mask3]
+            h3 = float(h_val[mask3][int(np.argmax(score3))])
+        else:
+            h3 = (h1 + 0.25) % 1.0
+
+        rgb1 = [int(np.clip(c * 255.0, 0, 255)) for c in colorsys.hsv_to_rgb(h1, 0.88, 1.0)]
+        rgb2 = [int(np.clip(c * 255.0, 0, 255)) for c in colorsys.hsv_to_rgb(h2, 0.82, 1.0)]
+        rgb3 = [int(np.clip(c * 255.0, 0, 255)) for c in colorsys.hsv_to_rgb(h3, 0.95, 1.0)]
+        return (tuple(rgb1), tuple(rgb2), tuple(rgb3))
+
     @staticmethod
     def _extract_ambilight_color(arr) -> Tuple[int, int, int]:
-        """Визначає насичений домінуючий колір кадру для підсвітки LED-стрічки SK6812."""
-        np, mask, _ = _get_np_resources()
-        flat = arr[mask].reshape(-1, 3).astype(np.float32)
-        brightness = np.max(flat, axis=1)
-        saturation = brightness - np.min(flat, axis=1)
-        mask = (brightness > 45.0) & (saturation > 25.0)
-        vivid = flat[mask]
-        if len(vivid) < 50:
-            vivid = flat[brightness > 30.0]
-        if len(vivid) == 0:
-            return (56, 189, 248)
-        mean_rgb = np.mean(vivid, axis=0)
-        peak = float(np.max(mean_rgb))
-        if peak > 0:
-            mean_rgb = np.clip(mean_rgb * (235.0 / peak), 0, 255)
-        return (int(mean_rgb[0]), int(mean_rgb[1]), int(mean_rgb[2]))
-
+        p, _, _ = MediaService._extract_ambilight_triad(arr)
+        return p
     @classmethod
     def _process_media_sync(
         cls,
