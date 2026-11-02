@@ -161,10 +161,10 @@ namespace LedEffects {
     static PixelBuffer stageBuf;
 
     // Smart Power Budget Limiter (I <= 2200mA) + Gamma mapping
-    inline void commitFrameWithBudgetAndGamma(SmartLampStrip& strip, const PixelBuffer& buf, float brightness_factor) {
+    inline void commitFrameWithBudgetAndGamma(SmartLampStrip& strip, const PixelBuffer& buf, float brightness_factor, float max_allowed_ma = 2200.0f) {
         constexpr float QUIESCENT_CURRENT_MA = 60.0f; // 1mA quiescent * 60 LEDs
         constexpr float MAX_CHANNEL_MA       = 15.0f; // 15mA per channel at 255
-        constexpr float MAX_TOTAL_MA         = 2200.0f;
+        float max_total_ma                   = (max_allowed_ma >= 400.0f && max_allowed_ma <= 3000.0f) ? max_allowed_ma : 2200.0f;
 
         float scaled_r[Config::NUM_LEDS];
         float scaled_g[Config::NUM_LEDS];
@@ -184,8 +184,8 @@ namespace LedEffects {
 
         float total_current_est = QUIESCENT_CURRENT_MA + (sum_channels * (MAX_CHANNEL_MA / 255.0f));
         float pwr_scale = 1.0f;
-        if (total_current_est > MAX_TOTAL_MA && (total_current_est - QUIESCENT_CURRENT_MA) > 1.0f) {
-            pwr_scale = (MAX_TOTAL_MA - QUIESCENT_CURRENT_MA) / (total_current_est - QUIESCENT_CURRENT_MA);
+        if (total_current_est > max_total_ma && (total_current_est - QUIESCENT_CURRENT_MA) > 1.0f) {
+            pwr_scale = (max_total_ma - QUIESCENT_CURRENT_MA) / (total_current_est - QUIESCENT_CURRENT_MA);
         }
 
         for (int i = 0; i < Config::NUM_LEDS; i++) {
@@ -208,7 +208,8 @@ namespace LedEffects {
         uint8_t notify_type,
         uint16_t frame,
         float brightness_factor,
-        uint8_t col_r = 56, uint8_t col_g = 189, uint8_t col_b = 248
+        uint8_t col_r = 56, uint8_t col_g = 189, uint8_t col_b = 248,
+        float max_allowed_ma = 2200.0f
     ) {
         stageBuf.clear();
         float pulse = sinf((float)frame * 0.14f);
@@ -260,7 +261,7 @@ namespace LedEffects {
             default:
                 break;
         }
-        commitFrameWithBudgetAndGamma(strip, stageBuf, brightness_factor);
+        commitFrameWithBudgetAndGamma(strip, stageBuf, brightness_factor, max_allowed_ma);
     }
 
     inline void renderDynamicMode(
@@ -274,7 +275,8 @@ namespace LedEffects {
         uint8_t ambi3_r = 250, uint8_t ambi3_g = 204, uint8_t ambi3_b = 21,
         const SpotifyTrackInfo* sp = nullptr,
         uint8_t custom_r = 255, uint8_t custom_g = 180, uint8_t custom_b = 80, uint8_t custom_w = 120,
-        uint8_t screen_mode = 0, float screen_temp = 22.5f, float screen_pomo_prog = 0.0f, float screen_pres_diff = 0.0f
+        uint8_t screen_mode = 0, float screen_temp = 22.5f, float screen_pomo_prog = 0.0f, float screen_pres_diff = 0.0f,
+        float max_allowed_ma = 2200.0f
     ) {
         stageBuf.clear();
         float speed_scale = constrain((float)anim_speed / 50.0f, 0.1f, 2.5f);
@@ -586,6 +588,6 @@ namespace LedEffects {
             }
         }
 
-        commitFrameWithBudgetAndGamma(strip, stageBuf, brightness_factor);
+        commitFrameWithBudgetAndGamma(strip, stageBuf, brightness_factor, max_allowed_ma);
     }
 }

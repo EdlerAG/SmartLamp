@@ -380,6 +380,55 @@
         </div>
       </div>
 
+      <!-- Топологія та Калібратор Стрічки (Підготовка до монтажу) -->
+      <div class="studio-slider-group" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px;margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--text-primary)">🔧 Калібрування та Топологія (60 LED)</span>
+          <span class="badge" id="calActiveBadge" style="font-size:10px;background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid #38bdf8">Клікніть LED на кільці</span>
+        </div>
+        
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px;line-height:1.4">
+          Натискайте на будь-яку з 60 точок кільця вгорі, щоб підсвітити відповідний фізичний діод яскравим бірюзовим маяком на корпусі.
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Активні діоди (1..60):</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <input type="number" id="cfgLedCount" min="1" max="60" value="60" class="input" style="padding:4px 8px;font-size:13px;width:70px;text-align:center" onchange="applyTopologyFromUi()">
+              <span class="mono" style="font-size:12px">шт</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Зміщення 12-год (Offset):</div>
+            <div style="display:flex;align-items:center;gap:4px">
+              <button class="btn" style="padding:4px 8px;font-size:12px" onclick="adjustOffset(-1)">-1</button>
+              <input type="number" id="cfgLedOffset" min="0" max="59" value="0" class="input" style="padding:4px 4px;font-size:13px;width:50px;text-align:center" onchange="applyTopologyFromUi()">
+              <button class="btn" style="padding:4px 8px;font-size:12px" onclick="adjustOffset(1)">+1</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center;margin-bottom:10px">
+          <div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Напрямок обходу:</div>
+            <button class="btn" id="btnLedReverse" style="width:100%;padding:5px 8px;font-size:11px" onclick="toggleLedReverse()">
+              🔄 За годинниковою (CW)
+            </button>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">
+              Ліміт струму: <b class="mono" id="cfgMaxMaVal">2000 мА</b>
+            </div>
+            <input type="range" id="cfgMaxMa" min="500" max="2500" step="100" value="2000" style="width:100%" oninput="onMaxMaInput(this.value)" onchange="applyTopologyFromUi()">
+          </div>
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;padding:7px;font-size:12px" onclick="applyTopologyFromUi()">
+          💾 Зберегти топологію в NVS плати
+        </button>
+      </div>
+
       <!-- Режими світла -->
       <h3 style="margin-top:14px"><span>🎨 12 Режимів Підсвітки (LED Modes)</span></h3>
       <div class="mode-grid" id="modeGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(135px, 1fr));gap:6px;margin-bottom:14px"></div>

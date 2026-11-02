@@ -99,6 +99,55 @@ private:
     uint8_t  sht_addr         = 0x44;
     bool     sht_waiting_data = false;
     uint32_t sht_cmd_ms       = 0;
+    uint8_t  sht_fail_count   = 0;
+    uint8_t  bmp_fail_count   = 0;
+
+    void recoverI2cBus() {
+        Wire.end();
+        pinMode(Config::PIN_I2C_SDA, INPUT_PULLUP);
+        pinMode(Config::PIN_I2C_SCL, OUTPUT);
+
+        // 9 тактів SCL для визволення заблокованої slave-лінії SDA
+        for (int i = 0; i < 9; i++) {
+            digitalWrite(Config::PIN_I2C_SCL, LOW);
+            delayMicroseconds(5);
+            digitalWrite(Config::PIN_I2C_SCL, HIGH);
+            delayMicroseconds(5);
+        }
+
+        // Формування апаратного STOP: SDA low -> SCL high -> SDA high
+        pinMode(Config::PIN_I2C_SDA, OUTPUT);
+        digitalWrite(Config::PIN_I2C_SDA, LOW);
+        delayMicroseconds(5);
+        digitalWrite(Config::PIN_I2C_SCL, HIGH);
+        delayMicroseconds(5);
+        digitalWrite(Config::PIN_I2C_SDA, HIGH);
+        delayMicroseconds(5);
+
+        // Переініціалізація шини Wire та датчиків без перезавантаження плати
+        Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL, 400000);
+        Wire.setTimeOut(25);
+
+        if (bmp280.begin(0x76) || bmp280.begin(0x77)) {
+            state.bmp_connected = true;
+        } else {
+            state.bmp_connected = false;
+        }
+
+        if (probeSht31(0x44)) {
+            sht_addr = 0x44;
+            state.sht_connected = true;
+        } else if (probeSht31(0x45)) {
+            sht_addr = 0x45;
+            state.sht_connected = true;
+        } else {
+            state.sht_connected = false;
+        }
+
+        sht_waiting_data = false;
+        sht_fail_count = 0;
+        bmp_fail_count = 0;
+    }
     uint32_t last_climate_ms  = 0;
     uint32_t last_ldr_ms      = 0;
     uint32_t last_hist_ms     = 0;
@@ -177,6 +226,7 @@ public:
                 for (int i = 0; i < 6; i++) buf[i] = Wire.read();
 
                 if (crc8(&buf[0], 2) == buf[2] && crc8(&buf[3], 2) == buf[5]) {
+                    sht_fail_count = 0;
                     uint16_t rawT = ((uint16_t)buf[0] << 8) | buf[1];
                     uint16_t rawH = ((uint16_t)buf[3] << 8) | buf[4];
 
@@ -192,7 +242,11 @@ public:
                         state.humidity = h;
                         state.ui_force_dirty = true;
                     }
+                } else {
+                    if (++sht_fail_count >= 3) recoverI2cBus();
                 }
+            } else {
+                if (++sht_fail_count >= 3) recoverI2cBus();
             }
         }
 
@@ -219,6 +273,7 @@ public:
             if (state.bmp_connected) {
                 float p = bmp280.readPressure();
                 if (!isnan(p) && p > 80000.0f && p < 115000.0f) {
+                    bmp_fail_count = 0;
                     float mm = p * 0.00750062f;
                     if (fabs(mm - state.pressure) >= 0.2f) {
                         state.pressure = mm;
@@ -229,6 +284,8 @@ public:
                         last_hist_ms = now;
                         state.addPressureSample(mm);
                     }
+                } else {
+                    if (++bmp_fail_count >= 3) recoverI2cBus();
                 }
             }
         }

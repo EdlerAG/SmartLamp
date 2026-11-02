@@ -26,7 +26,7 @@ def update_telegram_menu_button(url: str, env_vars: dict) -> None:
     if not token:
         return
     clean_url = url.rstrip("/")
-    web_app_url = f"{clean_url}/?v=5.2.0"
+    web_app_url = f"{clean_url}/?v=5.6.2"
     api_url = f"https://api.telegram.org/bot{token}/setChatMenuButton"
 
     # 1. Загальна кнопка за замовчуванням

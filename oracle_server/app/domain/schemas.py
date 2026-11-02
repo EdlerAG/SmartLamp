@@ -73,6 +73,11 @@ class CommandPayload(BaseModel):
     ambi_rgb: Optional[List[int]] = None
     ambi2_rgb: Optional[List[int]] = None
     ambi3_rgb: Optional[List[int]] = None
+    led_cal_px: Optional[int] = Field(None, ge=0, le=59, description="Індекс пікселя для калібрування 0..59")
+    led_count: Optional[int] = Field(None, ge=1, le=60, description="Кількість активних LED 1..60")
+    led_offset: Optional[int] = Field(None, ge=0, le=59, description="Зміщення стартового LED 0..59")
+    led_reverse: Optional[bool] = Field(None, description="Реверс напрямку обходу")
+    led_max_ma: Optional[int] = Field(None, ge=500, le=2500, description="Ліміт струму живлення в мА")
     set_saver: Optional[bool] = None
     sp_action: Optional[str] = None
     spotify: Optional[Dict[str, Any]] = None
@@ -124,6 +129,21 @@ class AiPersonaConfigRequest(BaseModel):
 class AiAskRequest(BaseModel):
     custom_note: Optional[str] = ""
     speak: bool = False
+
+
+class LedLayoutRequest(BaseModel):
+    led_count: int = Field(60, ge=1, le=60)
+    led_offset: int = Field(0, ge=0, le=59)
+    led_reverse: bool = False
+    led_max_ma: int = Field(2000, ge=500, le=2500)
+    zone_top_s: int = Field(0, ge=0, le=59)
+    zone_top_l: int = Field(15, ge=1, le=60)
+    zone_rgt_s: int = Field(15, ge=0, le=59)
+    zone_rgt_l: int = Field(15, ge=1, le=60)
+    zone_bot_s: int = Field(30, ge=0, le=59)
+    zone_bot_l: int = Field(15, ge=1, le=60)
+    zone_lft_s: int = Field(45, ge=0, le=59)
+    zone_lft_l: int = Field(15, ge=1, le=60)
 
 
 class LoginRequest(BaseModel):

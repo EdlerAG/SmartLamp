@@ -191,6 +191,19 @@ public:
             String o_key = prefs.isKey("or_key") ? prefs.getString("or_key") : String(Config::ORACLE_API_KEY);
             state.setOracleConfig(o_url.c_str(), o_key.c_str());
 
+            if (prefs.isKey("led_cnt"))  state.led_layout.active_led_count     = prefs.getUShort("led_cnt", 60);
+            if (prefs.isKey("led_off"))  state.led_layout.start_offset         = prefs.getUChar("led_off", 0);
+            if (prefs.isKey("led_rev"))  state.led_layout.reverse_dir          = prefs.getBool("led_rev", false);
+            if (prefs.isKey("led_ma"))   state.led_layout.max_current_ma_div10 = prefs.getUChar("led_ma", 200);
+            if (prefs.isKey("zt_s"))     state.led_layout.zone_top.start_idx    = prefs.getUChar("zt_s", 0);
+            if (prefs.isKey("zt_l"))     state.led_layout.zone_top.len          = prefs.getUChar("zt_l", 15);
+            if (prefs.isKey("zr_s"))     state.led_layout.zone_right.start_idx  = prefs.getUChar("zr_s", 15);
+            if (prefs.isKey("zr_l"))     state.led_layout.zone_right.len        = prefs.getUChar("zr_l", 15);
+            if (prefs.isKey("zb_s"))     state.led_layout.zone_bottom.start_idx = prefs.getUChar("zb_s", 30);
+            if (prefs.isKey("zb_l"))     state.led_layout.zone_bottom.len       = prefs.getUChar("zb_l", 15);
+            if (prefs.isKey("zl_s"))     state.led_layout.zone_left.start_idx   = prefs.getUChar("zl_s", 45);
+            if (prefs.isKey("zl_l"))     state.led_layout.zone_left.len         = prefs.getUChar("zl_l", 15);
+
             prefs.end();
         }
     }
@@ -267,6 +280,11 @@ public:
             }
         }
 
+        if (state.led_layout_dirty) {
+            state.led_layout_dirty = false;
+            saveLedLayout(state.led_layout);
+        }
+
         if (state.settings_dirty && (millis() - state.settings_change_ms >= 5000)) {
             state.settings_dirty = false;
             if (prefs.begin("box_state", false)) {
@@ -276,6 +294,24 @@ public:
                 prefs.putShort("scr_ang", state.screen_angle);
                 prefs.end();
             }
+        }
+    }
+
+    void saveLedLayout(const LedLayoutConfig& cfg) {
+        if (prefs.begin("box_state", false)) {
+            prefs.putUShort("led_cnt", cfg.active_led_count);
+            prefs.putUChar("led_off", cfg.start_offset);
+            prefs.putBool("led_rev", cfg.reverse_dir);
+            prefs.putUChar("led_ma", cfg.max_current_ma_div10);
+            prefs.putUChar("zt_s", cfg.zone_top.start_idx);
+            prefs.putUChar("zt_l", cfg.zone_top.len);
+            prefs.putUChar("zr_s", cfg.zone_right.start_idx);
+            prefs.putUChar("zr_l", cfg.zone_right.len);
+            prefs.putUChar("zb_s", cfg.zone_bottom.start_idx);
+            prefs.putUChar("zb_l", cfg.zone_bottom.len);
+            prefs.putUChar("zl_s", cfg.zone_left.start_idx);
+            prefs.putUChar("zl_l", cfg.zone_left.len);
+            prefs.end();
         }
     }
 

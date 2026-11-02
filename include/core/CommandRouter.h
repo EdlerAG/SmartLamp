@@ -250,7 +250,9 @@ public:
                  "\"claim\":\"%s\","
                  "\"alarm_off\":%s,"
                  "\"ack\":%s,\"ping\":%u,"
-                 "\"ota\":%u,\"ws_rec\":%u,\"scr_ang\":%d}",
+                 "\"ota\":%u,\"ws_rec\":%u,\"scr_ang\":%d,"
+                 "\"stk_net\":%lu,\"stk_cld\":%lu,\"stk_led\":%lu,"
+                 "\"led_cnt\":%u,\"led_off\":%u,\"led_rev\":%s,\"led_ma\":%u}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
                  state.light_mode, getModeNameUa(state.light_mode),
@@ -269,7 +271,11 @@ public:
                  alarm_off_flag ? "true" : "false",
                  ack_flag ? "true" : "false", ping_val,
                  state.ota_in_progress ? 1 : 0, (unsigned int)state.ws_reconnect_cnt,
-                 (int)state.screen_angle);
+                 (int)state.screen_angle,
+                 (unsigned long)state.stk_net, (unsigned long)state.stk_cloud, (unsigned long)state.stk_led,
+                 (unsigned int)state.led_layout.active_led_count, (unsigned int)state.led_layout.start_offset,
+                 state.led_layout.reverse_dir ? "true" : "false",
+                 (unsigned int)(state.led_layout.max_current_ma_div10 * 10));
     }
 
     static void buildInboxJson(AppState& state, char* out, size_t max_len) {

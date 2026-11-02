@@ -976,15 +976,21 @@ namespace ScreenRenderer {
         canvas.drawString(r_lbl, 158, 219);
     }
 
-    // HUD TOAST (Horological HUD Overlay - 1.5s non-blocking pill)
+    // HUD TOAST (Horological HUD Overlay - 1.8s non-blocking pill with smooth ease-out)
     inline void drawHudToast(LGFX_Sprite& canvas, AppState& state, uint32_t now) {
         if (!state.isHudActive(now)) return;
 
-        int x = 32;
-        int y = 158;
-        int w = 176;
-        int h = 36;
-        int r = 14;
+        int32_t rem = (int32_t)(state.hud_until_ms - now);
+        int offset_y = 0;
+        if (rem < 250) {
+            offset_y = (250 - rem) / 8; // Плавне опускання вниз при зникненні
+        }
+
+        int x = 28;
+        int y = 158 + offset_y;
+        int w = 184;
+        int h = 42;
+        int r = 16;
 
         canvas.fillRoundRect(x, y, w, h, r, HallmarkTheme::BG_SURFACE);
         canvas.drawRoundRect(x, y, w, h, r, HallmarkTheme::BORDER_ACTIVE);
@@ -992,17 +998,17 @@ namespace ScreenRenderer {
         canvas.setTextDatum(textdatum_t::middle_center);
         canvas.setFont(&UkrainianFont12);
         canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
-        canvas.drawString(state.hud_title, 120, y + 11);
+        canvas.drawString(state.hud_title, 120, y + 13);
 
         if (state.hud_subtitle[0] != '\0') {
             canvas.setFont(&UkrainianFont12);
             canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-            canvas.drawString(state.hud_subtitle, 120, y + 24);
+            canvas.drawString(state.hud_subtitle, 120, y + 28);
         } else {
-            int bar_w = 110;
+            int bar_w = 120;
             int bar_h = 4;
             int bar_x = 120 - bar_w / 2;
-            int bar_y = y + 24;
+            int bar_y = y + 28;
             canvas.fillRoundRect(bar_x, bar_y, bar_w, bar_h, 2, HallmarkTheme::BORDER_HAIRLINE);
             int fill_w = (bar_w * state.manual_brt_pct) / 100;
             if (fill_w > bar_w) fill_w = bar_w;

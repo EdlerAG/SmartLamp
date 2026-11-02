@@ -128,6 +128,7 @@ public:
                state.ota_in_progress ||
                state.isCustomFrameActive(now) ||
                state.isReactionActive(now) ||
+               state.isHudActive(now) ||
                (state.screen_mode == SCREEN_POMODORO && state.pomo_active && !state.pomo_paused) ||
                (state.screen_mode == SCREEN_LIVING_GIF && state.saver_loaded) ||
                (state.screen_mode == SCREEN_SMART_HUB && (state.spotify.playing || state.tg_unread)) ||
@@ -153,6 +154,10 @@ public:
 
         bool high_perf = isHighFpsNeeded() || state.audio_playing || state.ota_in_progress;
         updateCpuPerformance(high_perf);
+
+        if (state.isHudActive(now) && state.current_lcd_brt == 0) {
+            state.current_lcd_brt = 120;
+        }
 
         if (applied_lcd_brt != state.current_lcd_brt) {
             bool was_off = (applied_lcd_brt == 0);
@@ -317,7 +322,9 @@ public:
 
         // Динамічний розрахунок FPS для 5 основних вікон
         uint32_t target_fps = 10;
-        if (state.screen_mode == SCREEN_POMODORO) {
+        if (state.isHudActive(now)) {
+            target_fps = 30; // 30 FPS для плавного відображення преміального HUD-тосту
+        } else if (state.screen_mode == SCREEN_POMODORO) {
             target_fps = (state.pomo_active && !state.pomo_paused) ? 10 : 4;
         } else if (state.screen_mode == SCREEN_LIVING_GIF) {
             target_fps = (state.saver_loaded && state.saver_fps > 0) ? state.saver_fps : 25;

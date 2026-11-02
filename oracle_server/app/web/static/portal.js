@@ -201,7 +201,105 @@ let customR = 255, customG = 180, customB = 60, customW = 0;
 let brtDebounceTimer = null;
 let speedDebounceTimer = null;
 let rgbwDebounceTimer = null;
+// 🔒 Slider Input Lock-Out Guard (Zero Slider Jump / Telemetry Conflict Protection)
+const _sliderLockUntil = {};
+
+function lockSlider(id, ms = 1000) {
+  _sliderLockUntil[id] = Date.now() + ms;
+}
+
+function isSliderLocked(id) {
+  return Boolean(_sliderLockUntil[id] && Date.now() < _sliderLockUntil[id]);
+}
+
+function bindSliderLockGuards() {
+  const ids = ['brtSlider', 'speedSlider', 'sliderR', 'sliderG', 'sliderB', 'sliderW', 'volSlider', 'scrAngleSlider', 'cfgMaxMa'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const lock = () => lockSlider(id, 1200);
+    el.addEventListener('input', lock);
+    el.addEventListener('change', lock);
+    el.addEventListener('pointerdown', () => lockSlider(id, 3000));
+    el.addEventListener('pointerup', () => lockSlider(id, 1200));
+    el.addEventListener('touchstart', () => lockSlider(id, 3000), { passive: true });
+    el.addEventListener('touchend', () => lockSlider(id, 1200), { passive: true });
+  });
+}
+
+// 🔧 LED Calibrator & Interactive Topology Controller
 let ledRingNodes = [];
+let calSelectedPixel = -1;
+let calUntilTime = 0;
+let currentLedReverse = false;
+
+function onLedNodeClick(idx, evt) {
+  if (evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+  }
+  if (window.Telegram?.WebApp?.HapticFeedback) {
+    try { window.Telegram.WebApp.HapticFeedback.impactOccurred('medium'); } catch(_) {}
+  }
+  calSelectedPixel = idx;
+  calUntilTime = Date.now() + 4200;
+
+  const brtLabel = document.getElementById('ledRingBrt');
+  if (brtLabel) brtLabel.innerText = `#${idx}`;
+  const modeLabel = document.getElementById('ledRingMode');
+  if (modeLabel) modeLabel.innerText = 'Калібратор';
+  const badge = document.getElementById('calActiveBadge');
+  if (badge) badge.innerText = `Обрано LED #${idx}`;
+
+  sendCmd({ led_cal_px: idx });
+  toast(`🔧 LED #${idx} світить бірюзовим маяком на шкатулці`);
+  renderLedRing();
+}
+
+function toggleLedReverse() {
+  currentLedReverse = !currentLedReverse;
+  updateReverseBtnText();
+  applyTopologyFromUi();
+}
+
+function updateReverseBtnText() {
+  const btn = document.getElementById('btnLedReverse');
+  if (btn) {
+    btn.innerText = currentLedReverse ? '🔄 Проти стрілки (CCW)' : '🔄 За годинниковою (CW)';
+    btn.style.color = currentLedReverse ? '#f59e0b' : '#38bdf8';
+  }
+}
+
+function adjustOffset(delta) {
+  const inp = document.getElementById('cfgLedOffset');
+  if (!inp) return;
+  let val = (parseInt(inp.value, 10) || 0) + delta;
+  val = ((val % 60) + 60) % 60;
+  inp.value = val;
+  applyTopologyFromUi();
+}
+
+function onMaxMaInput(val) {
+  lockSlider('cfgMaxMa', 1000);
+  const lbl = document.getElementById('cfgMaxMaVal');
+  if (lbl) lbl.innerText = `${val} мА`;
+}
+
+function applyTopologyFromUi() {
+  const cnt = parseInt(document.getElementById('cfgLedCount')?.value || 60, 10);
+  const off = parseInt(document.getElementById('cfgLedOffset')?.value || 0, 10);
+  const ma  = parseInt(document.getElementById('cfgMaxMa')?.value || 2000, 10);
+
+  const payload = {
+    led_count: Math.min(60, Math.max(1, cnt)),
+    led_offset: ((off % 60) + 60) % 60,
+    led_reverse: currentLedReverse,
+    led_max_ma: Math.min(2500, Math.max(500, ma))
+  };
+
+  sendCmd(payload);
+  toast(`Топологія: ${payload.led_count} діодів, зсув ${payload.led_offset}, ${payload.led_max_ma} мА`);
+}
 
 function buildLedRing() {
   const svg = document.getElementById('ledRingSvg');
@@ -214,6 +312,7 @@ function buildLedRing() {
     const angle = (i / numLeds) * 2 * Math.PI - (Math.PI / 2);
     const x = cx + r * Math.cos(angle);
     const y = cy + r * Math.sin(angle);
+
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('cx', x.toFixed(2));
     circle.setAttribute('cy', y.toFixed(2));
@@ -221,9 +320,103 @@ function buildLedRing() {
     circle.setAttribute('class', 'led-ring-node');
     circle.setAttribute('fill', '#334155');
     circle.setAttribute('opacity', '0.6');
+    circle.setAttribute('data-idx', String(i));
+    circle.addEventListener('click', (e) => onLedNodeClick(i, e));
+    circle.addEventListener('touchstart', (e) => onLedNodeClick(i, e), { passive: false });
+
+    // Invisible hit area for fingertip touch targets
+    const hitCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    hitCircle.setAttribute('cx', x.toFixed(2));
+    hitCircle.setAttribute('cy', y.toFixed(2));
+    hitCircle.setAttribute('r', '10');
+    hitCircle.setAttribute('class', 'led-ring-hit');
+    hitCircle.addEventListener('click', (e) => onLedNodeClick(i, e));
+    hitCircle.addEventListener('touchstart', (e) => onLedNodeClick(i, e), { passive: false });
+
     svg.appendChild(circle);
+    svg.appendChild(hitCircle);
     ledRingNodes.push(circle);
   }
+}
+
+// 🌈 Live 20 FPS Client-Side Animation Loop
+let ringAnimStep = 0;
+function animateLedRingFrame() {
+  if (!ledRingNodes.length) return;
+  const now = Date.now();
+  const isCalibrating = (now < calUntilTime && calSelectedPixel >= 0);
+
+  if (isCalibrating) {
+    const pulse = (Math.sin(ringAnimStep * 0.25) + 1.0) * 0.5;
+    const beaconColor = `hsl(175, 100%, ${45 + Math.round(pulse * 30)}%)`;
+
+    ledRingNodes.forEach((node, i) => {
+      if (i === calSelectedPixel) {
+        node.setAttribute('fill', beaconColor);
+        node.setAttribute('opacity', '1.0');
+        node.setAttribute('r', String(5 + pulse * 2.5));
+      } else if (i % 10 === 0) {
+        node.setAttribute('fill', '#38bdf8');
+        node.setAttribute('opacity', '0.6');
+        node.setAttribute('r', '4');
+      } else {
+        node.setAttribute('fill', '#1e2536');
+        node.setAttribute('opacity', '0.2');
+        node.setAttribute('r', '3');
+      }
+    });
+    ringAnimStep++;
+    return;
+  }
+
+  if (currentLightMode === 10 || currentBrtPct === 0) return;
+
+  const baseOpacity = Math.max(0.4, currentBrtPct / 100);
+  ringAnimStep++;
+
+  if (currentLightMode === 9) {
+    ledRingNodes.forEach((node, i) => {
+      const hue = Math.floor(((i + ringAnimStep * 0.5) % 60) * 6);
+      node.setAttribute('fill', `hsl(${hue}, 90%, 55%)`);
+      node.setAttribute('opacity', String(baseOpacity));
+    });
+  } else if (currentLightMode === 8) {
+    const cometHead = Math.floor((ringAnimStep * 0.6) % 60);
+    ledRingNodes.forEach((node, i) => {
+      const dist = (i - cometHead + 60) % 60;
+      if (dist === 0) {
+        node.setAttribute('fill', '#ffffff');
+        node.setAttribute('opacity', '1.0');
+        node.setAttribute('r', '5');
+      } else if (dist < 8) {
+        node.setAttribute('fill', '#38bdf8');
+        node.setAttribute('opacity', String(Math.max(0.2, (1 - dist / 8) * baseOpacity)));
+        node.setAttribute('r', '4');
+      } else {
+        node.setAttribute('fill', '#0c4a6e');
+        node.setAttribute('opacity', '0.3');
+        node.setAttribute('r', '3');
+      }
+    });
+  } else if (currentLightMode === 3) {
+    ledRingNodes.forEach((node, i) => {
+      const flicker = Math.sin(ringAnimStep * 0.3 + i * 0.4) * 0.25;
+      const hue = 15 + Math.floor((Math.sin(ringAnimStep * 0.15 + i * 0.8) + 1.0) * 15);
+      node.setAttribute('fill', `hsl(${hue}, 100%, ${45 + flicker * 20}%)`);
+      node.setAttribute('opacity', String(Math.min(1.0, baseOpacity + flicker)));
+    });
+  } else if (currentLightMode === 6) {
+    ledRingNodes.forEach((node, i) => {
+      const w = (Math.sin(ringAnimStep * 0.1 + i * 0.2) + 1.0) * 0.5;
+      const hue = Math.floor(150 + w * 40);
+      node.setAttribute('fill', `hsl(${hue}, 90%, ${45 + w * 20}%)`);
+      node.setAttribute('opacity', String(baseOpacity));
+    });
+  }
+}
+
+function startLedRingLiveAnimation() {
+  setInterval(animateLedRingFrame, 50); // 20 FPS
 }
 
 function computeRgbwCss(r, g, b, w) {
@@ -1805,17 +1998,17 @@ function applyTelemetryInPlace(t) {
     renderLedRing(currentLightMode, currentBrtPct);
   }
 
-  if (t.b_pct !== undefined) {
+  if (t.b_pct !== undefined && !isSliderLocked('brtSlider')) {
     currentBrtPct = t.b_pct;
     const brtSlider = document.getElementById('brtSlider');
-    if (brtSlider && document.activeElement !== brtSlider) {
+    if (brtSlider) {
       brtSlider.value = t.b_pct;
       setCachedText('brtVal', `${t.b_pct}%`);
     }
     renderLedRing(currentLightMode, currentBrtPct);
   }
 
-  if (t.vol !== undefined) {
+  if (t.vol !== undefined && !isSliderLocked('volSlider')) {
     setCachedValue('volSlider', t.vol);
     setCachedText('volVal', `${t.vol} / 21`);
   }
@@ -1830,11 +2023,27 @@ function applyTelemetryInPlace(t) {
   if (t.dnd !== undefined) {
     updateDndUI(Boolean(t.dnd));
   }
-  if (t.scr_ang !== undefined) {
+  if (t.scr_ang !== undefined && !isSliderLocked('scrAngleSlider')) {
     currentScreenAngle = t.scr_ang;
     const slider = document.getElementById('scrAngleSlider');
-    if (slider && document.activeElement !== slider) slider.value = t.scr_ang;
+    if (slider) slider.value = t.scr_ang;
     setCachedText('scrAngleVal', `${t.scr_ang}°`);
+  }
+
+  // Синхронізація топології стрічки від плати
+  if (t.led_cnt !== undefined && !isSliderLocked('cfgLedCount')) {
+    setCachedValue('cfgLedCount', t.led_cnt);
+  }
+  if (t.led_off !== undefined && !isSliderLocked('cfgLedOffset')) {
+    setCachedValue('cfgLedOffset', t.led_off);
+  }
+  if (t.led_rev !== undefined) {
+    currentLedReverse = Boolean(t.led_rev === true || t.led_rev === 'true');
+    updateReverseBtnText();
+  }
+  if (t.led_ma !== undefined && !isSliderLocked('cfgMaxMa')) {
+    setCachedValue('cfgMaxMa', t.led_ma);
+    setCachedText('cfgMaxMaVal', `${t.led_ma} мА`);
   }
 }
 
@@ -2077,9 +2286,11 @@ async function testWebPush() {
   }
 }
 
-// Startup LED Ring and RGBW
+// Startup LED Ring, Slider Guards and Animation Loop
 setTimeout(() => {
   buildLedRing();
   onRgbwInput();
   renderLedRing();
+  bindSliderLockGuards();
+  startLedRingLiveAnimation();
 }, 200);

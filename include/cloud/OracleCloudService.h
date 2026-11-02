@@ -570,6 +570,25 @@ private:
             CommandRouter::setLightMode(state, doc["set_mode"].as<uint8_t>());
         }
 
+        // 1.1 Топологія стрічки та LED Calibrator
+        if (doc["led_cal_px"].is<int>()) {
+            int16_t px = doc["led_cal_px"].as<int16_t>();
+            state.triggerCalibratePixel(px, 4000);
+            char sub[32];
+            snprintf(sub, sizeof(sub), "Світлодіод #%d", px);
+            state.showHudToast("🔧 LED Калібратор", sub, 1800);
+        }
+
+        if (doc["led_count"].is<int>() || doc["led_offset"].is<int>() || doc["led_reverse"].is<bool>() || doc["led_max_ma"].is<int>()) {
+            if (doc["led_count"].is<int>())   state.led_layout.active_led_count     = (uint16_t)constrain(doc["led_count"].as<int>(), 1, (int)Config::NUM_LEDS);
+            if (doc["led_offset"].is<int>())  state.led_layout.start_offset         = (uint8_t)(doc["led_offset"].as<int>() % Config::NUM_LEDS);
+            if (doc["led_reverse"].is<bool>()) state.led_layout.reverse_dir          = doc["led_reverse"].as<bool>();
+            if (doc["led_max_ma"].is<int>())  state.led_layout.max_current_ma_div10 = (uint8_t)constrain(doc["led_max_ma"].as<int>() / 10, 50, 250);
+            state.led_layout_dirty = true;
+            if (storage_srv) storage_srv->saveLedLayout(state.led_layout);
+            state.showHudToast("🔧 Топологія LED", "Налаштування оновлено", 1800);
+        }
+
         if (doc["screen_angle"].is<int>()) {
             CommandRouter::setScreenAngle(state, doc["screen_angle"].as<int16_t>());
             if (storage_srv) storage_srv->saveScreenAngle(state.screen_angle);

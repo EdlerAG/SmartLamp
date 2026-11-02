@@ -21,6 +21,7 @@ from app.core.security import (
 from app.core.memory_guard import memory_guard
 from app.domain.schemas import (
     CommandPayload,
+    LedLayoutRequest,
     AiPersonaConfigRequest,
     AiAskRequest,
     LoginRequest,
@@ -449,6 +450,27 @@ async def dashboard_websocket(ws: WebSocket):
 async def enqueue_command(cmd: CommandPayload, _: str = Depends(verify_access)):
     queued = state_service.enqueue_command(cmd)
     return {"ok": True, "queued": queued}
+
+
+@router.post("/api/v5/led/topology")
+async def set_led_topology(req: LedLayoutRequest, _: str = Depends(verify_access)):
+    """Встановлює топологію та ліміти живлення стрічки SK6812."""
+    cmd = {
+        "led_count": req.led_count,
+        "led_offset": req.led_offset,
+        "led_reverse": req.led_reverse,
+        "led_max_ma": req.led_max_ma,
+        "zt_s": req.zone_top_s,
+        "zt_l": req.zone_top_l,
+        "zr_s": req.zone_rgt_s,
+        "zr_l": req.zone_rgt_l,
+        "zb_s": req.zone_bot_s,
+        "zb_l": req.zone_bot_l,
+        "zl_s": req.zone_lft_s,
+        "zl_l": req.zone_lft_l,
+    }
+    queued = state_service.enqueue_raw(cmd)
+    return {"ok": True, "queued": queued, "topology": cmd}
 
 
 @router.get("/api/v1/weather")

@@ -31,10 +31,15 @@ ServiceRegistry<4> core1FastServices;  // Core 1: Кнопки, LED-стрічк
 ServiceRegistry<4> core0LocalServices; // Core 0 (Пріоритет 2): Датчики, Wi-Fi/Web, Аудіо I2S
 ServiceRegistry<2> core0CloudServices; // Core 0 (Пріоритет 1): Oracle Cloud Gateway
 
+static TaskHandle_t s_netTaskHandle   = nullptr;
+static TaskHandle_t s_cloudTaskHandle = nullptr;
+
 void backgroundCore0Task(void* pvParameters) {
+    esp_task_wdt_add(NULL);
     core0LocalServices.initAll();
 
     for (;;) {
+        esp_task_wdt_reset();
         core0LocalServices.tickAll();
 
         bool fast_net = appState.ota_in_progress || appState.ap_mode_active || audioService.isPlaying();
@@ -43,9 +48,11 @@ void backgroundCore0Task(void* pvParameters) {
 }
 
 void cloudCore0Task(void* pvParameters) {
+    esp_task_wdt_add(NULL);
     core0CloudServices.initAll();
 
     for (;;) {
+        esp_task_wdt_reset();
         core0CloudServices.tickAll();
         vTaskDelay(pdMS_TO_TICKS(15));
     }
@@ -304,10 +311,12 @@ void processEvents() {
 static TaskHandle_t s_ledTaskHandle = nullptr;
 
 static void ledCore1Task(void* pvParameters) {
+    esp_task_wdt_add(NULL);
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xPeriod = pdMS_TO_TICKS(16); // 60 FPS (16.6ms)
 
     while (true) {
+        esp_task_wdt_reset();
         ledService.update();
         vTaskDelayUntil(&xLastWakeTime, xPeriod);
     }
@@ -332,8 +341,8 @@ void setup() {
         default:                strncpy(appState.reset_reason, "OTHER", sizeof(appState.reset_reason)); break;
     }
 
-    // Ініціалізація Task Watchdog Timer (TWDT) на 15 секунд для захисту від підвисань
-    esp_task_wdt_init(15, true);
+    // Ініціалізація Task Watchdog Timer (TWDT) на 20 секунд для захисту від важких TLS-хендшейків
+    esp_task_wdt_init(20, true);
     esp_task_wdt_add(NULL);
 
     // Якщо активовано аварійний режим порятунку (наприклад, краш-петля без можливості відкату)
@@ -391,12 +400,21 @@ void setup() {
     // Гармонійний процедурний акорд старту (якщо звук не вимкнено)
     audioService.playBootChord();
 
-    xTaskCreatePinnedToCore(backgroundCore0Task, "Core0Net",   8192,  nullptr, 2, nullptr, 0);
-    xTaskCreatePinnedToCore(cloudCore0Task,      "Core0Cloud", 10240, nullptr, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(backgroundCore0Task, "Core0Net",   8192,  nullptr, 2, &s_netTaskHandle,   0);
+    xTaskCreatePinnedToCore(cloudCore0Task,      "Core0Cloud", 10240, nullptr, 1, &s_cloudTaskHandle, 0);
 }
 
 void loop() {
     esp_task_wdt_reset();
+
+    static uint32_t last_stk_check_ms = 0;
+    uint32_t now = millis();
+    if (now - last_stk_check_ms >= 2000) {
+        last_stk_check_ms = now;
+        if (s_netTaskHandle)   appState.stk_net   = (uint32_t)uxTaskGetStackHighWaterMark(s_netTaskHandle);
+        if (s_cloudTaskHandle) appState.stk_cloud = (uint32_t)uxTaskGetStackHighWaterMark(s_cloudTaskHandle);
+        if (s_ledTaskHandle)   appState.stk_led   = (uint32_t)uxTaskGetStackHighWaterMark(s_ledTaskHandle);
+    }
     core1FastServices.tickAll();
     processEvents();
 

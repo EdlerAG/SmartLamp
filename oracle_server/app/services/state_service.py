@@ -160,15 +160,25 @@ class StateService:
             else:
                 data["ttl_sec"] = 86400.0
 
-        if self.command_queue:
-            last = self.command_queue[-1]
-            if not any(k in data for k in ("msg", "media_url", "play_url", "ota_url", "stop_media")):
-                if not any(k in last for k in ("msg", "media_url", "play_url", "ota_url", "stop_media")):
-                    last.update(data)
-                    db_service.sync_pending_commands(list(self.command_queue))
-                    realtime_hub.notify_new_command()
-                    realtime_hub.emit_to_box_immediate()
-                    return len(self.command_queue)
+        # In-Place Command Coalescing (Захист від флуду слайдерами)
+        coalesce_keys = {
+            "set_brt", "speed", "set_speed", "custom_r", "custom_g", "custom_b", "custom_w",
+            "set_mode", "screen_angle", "scr_angle", "led_cal_px", "volume",
+            "led_count", "led_offset", "led_reverse", "led_max_ma"
+        }
+        is_discrete = any(k in data for k in ("msg", "media_url", "play_url", "ota_url", "stop_media", "react", "birthday_celebrate"))
+
+        if not is_discrete and self.command_queue:
+            # Шукаємо невідправлену команду в черзі з кінця для оновлення на місці
+            for queued in reversed(self.command_queue):
+                if not any(k in queued for k in ("msg", "media_url", "play_url", "ota_url", "stop_media", "react", "birthday_celebrate")):
+                    if any(k in data for k in coalesce_keys):
+                        queued.update(data)
+                        queued["created_at"] = now
+                        db_service.sync_pending_commands(list(self.command_queue))
+                        realtime_hub.notify_new_command()
+                        realtime_hub.emit_to_box_immediate()
+                        return len(self.command_queue)
 
         self.command_queue.append(data)
         db_service.save_pending_command(data)

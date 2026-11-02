@@ -5,6 +5,23 @@
 #include "Config.h"
 #include "core/Types.h"
 
+struct LedZone {
+    uint8_t start_idx;
+    uint8_t len;
+    LedZone(uint8_t s = 0, uint8_t l = 15) : start_idx(s), len(l) {}
+};
+
+struct LedLayoutConfig {
+    uint16_t active_led_count     = 60;   // 1..60
+    uint8_t  start_offset         = 0;    // 0..59
+    bool     reverse_dir          = false;// false = CW, true = CCW
+    uint8_t  max_current_ma_div10 = 200;  // 200 => 2000 mA (50..250 = 500..2500 mA)
+    LedZone  zone_top             = {0, 15};
+    LedZone  zone_right           = {15, 15};
+    LedZone  zone_bottom          = {30, 15};
+    LedZone  zone_left            = {45, 15};
+};
+
 struct AppState {
     portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -46,12 +63,36 @@ struct AppState {
     volatile uint8_t custom_b        = 80;
     volatile uint8_t custom_w        = 120;
 
-    // Тактильний хорологічний HUD-тост на GC9A01 (1.5 с)
+    // Топологія стрічки та калібратор пікселів
+    LedLayoutConfig   led_layout;
+    volatile bool     led_layout_dirty     = false;
+    volatile int16_t  cal_pixel            = -1;
+    volatile uint32_t cal_until_ms         = 0;
+
+    // Stack High-Water Marks для RTOS-телеметрії здоров'я
+    volatile uint32_t stk_net   = 0;
+    volatile uint32_t stk_cloud = 0;
+    volatile uint32_t stk_led   = 0;
+
+    void triggerCalibratePixel(int16_t px, uint32_t duration_ms = 4000) {
+        portENTER_CRITICAL(&mux);
+        cal_pixel = px;
+        cal_until_ms = millis() + duration_ms;
+        portEXIT_CRITICAL(&mux);
+        ui_force_dirty = true;
+        registerActivity();
+    }
+
+    bool isCalActive(uint32_t now) const {
+        return (cal_until_ms > 0 && (int32_t)(cal_until_ms - now) > 0);
+    }
+
+    // Тактильний хорологічний HUD-тост на GC9A01 (1.8 с з авто-пробудженням дисплея)
     volatile uint32_t hud_until_ms    = 0;
     char              hud_title[24]   = "";
     char              hud_subtitle[32] = "";
 
-    void showHudToast(const char* title, const char* subtitle, uint32_t duration_ms = 1500) {
+    void showHudToast(const char* title, const char* subtitle, uint32_t duration_ms = 1800) {
         portENTER_CRITICAL(&mux);
         if (title) {
             strncpy(hud_title, title, sizeof(hud_title) - 1);
@@ -62,6 +103,9 @@ struct AppState {
             hud_subtitle[sizeof(hud_subtitle) - 1] = '\0';
         }
         hud_until_ms = millis() + duration_ms;
+        if (current_lcd_brt == 0) {
+            current_lcd_brt = 120;
+        }
         ui_force_dirty = true;
         portEXIT_CRITICAL(&mux);
         registerActivity();
