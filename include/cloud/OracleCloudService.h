@@ -62,9 +62,11 @@ private:
                         uint8_t* vinyl_buf = (uint8_t*)self->display_srv->getVinylSprite().getBuffer();
                         if (vinyl_buf && ((size_t)(data->payload_offset + data->data_len) <= Config::VINYL_BYTES_RGB565)) {
                             self->rx_binary_in_progress = true;
+                            self->state.spotify_vinyl_loading = true;
                             memcpy(vinyl_buf + data->payload_offset, data->data_ptr, data->data_len);
                             if ((size_t)(data->payload_offset + data->data_len) >= Config::VINYL_BYTES_RGB565) {
                                 self->rx_binary_in_progress = false;
+                                self->state.spotify_vinyl_loading = false;
                                 self->state.spotify.vinyl_ready = true;
                                 self->state.spotify_vinyl_needed = false;
                                 self->state.ui_force_dirty = true;
@@ -324,7 +326,11 @@ private:
 
     bool downloadSpotifyVinylArt() {
         if (!display_srv || !state.wifi_connected || base_server_url.length() == 0) return false;
-        String url = base_server_url + "/api/v5/spotify/vinyl.rgb565";
+        String t_param = "";
+        if (state.spotify.track_id[0] != '\0') {
+            t_param = "?t=" + String(state.spotify.track_id);
+        }
+        String url = base_server_url + "/api/v5/spotify/vinyl.rgb565" + t_param;
 
         HTTPClient v_http;
         WiFiClient v_client;
@@ -378,6 +384,7 @@ private:
 
         if (total_read == Config::VINYL_BYTES_RGB565) {
             state.spotify.vinyl_ready = true;
+            state.spotify_vinyl_needed = false;
             state.ui_force_dirty = true;
             return true;
         }
@@ -507,6 +514,8 @@ private:
                 strncpy(state.spotify.track_id, tr_id, sizeof(state.spotify.track_id) - 1);
                 state.spotify.vinyl_ready = false;
                 state.spotify_vinyl_needed = true;
+                state.spotify_vinyl_loading = false;
+                state.ui_force_dirty = true;
             }
 
             const char* title = sp["title"] | "";
@@ -884,13 +893,28 @@ public:
         }
 
         // Завантаження нової обкладинки вінілу для Spotify
-        if (state.spotify_vinyl_needed && !state.audio_playing) {
-            if (ws_connected && ws_client) {
+        static uint32_t s_vinyl_loading_start_ms = 0;
+        if (state.spotify_vinyl_loading) {
+            if (s_vinyl_loading_start_ms == 0) s_vinyl_loading_start_ms = millis();
+            else if (millis() - s_vinyl_loading_start_ms > 4500) {
+                state.spotify_vinyl_loading = false;
+                rx_binary_in_progress = false;
+                s_vinyl_loading_start_ms = 0;
+            }
+        } else {
+            s_vinyl_loading_start_ms = 0;
+        }
+
+        if (state.spotify_vinyl_needed && !state.spotify_vinyl_loading && !rx_binary_in_progress && !state.audio_playing) {
+            if (ws_connected && ws_client && esp_websocket_client_is_connected(ws_client)) {
+                state.spotify_vinyl_loading = true;
                 esp_websocket_client_send_text(ws_client, "{\"type\":\"get_vinyl\"}", 20, pdMS_TO_TICKS(50));
-                state.spotify_vinyl_needed = false;
             } else {
-                state.spotify_vinyl_needed = false;
-                downloadSpotifyVinylArt();
+                state.spotify_vinyl_loading = true;
+                if (downloadSpotifyVinylArt()) {
+                    state.spotify_vinyl_needed = false;
+                }
+                state.spotify_vinyl_loading = false;
             }
         }
 

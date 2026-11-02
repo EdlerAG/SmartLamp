@@ -125,7 +125,7 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
 
     # 8. Компактна бітова маска кроків налаштування ('su') та активна тема ('mood')
     resp["su"] = setup_service.get_setup_bitmask()
-    resp["mood"] = "custom"
+    resp["mood"] = db_service.get_setting("box_active_mood", "ocean")
 
     return resp
 
@@ -291,11 +291,19 @@ async def spotify_login_redirect(request: Request):
 
 
 @router.get("/api/v5/spotify/vinyl.rgb565")
-async def download_spotify_vinyl():
+async def download_spotify_vinyl(
+    t: Optional[str] = Query(None, description="Cache buster track id"),
+    track_id: Optional[str] = Query(None, description="Track ID"),
+):
     """Віддає 36992 байти обкладинки вінілу 136x136 RGB565 з RAM-диска."""
     if not os.path.exists(settings.SPOTIFY_VINYL_PATH):
         raise HTTPException(status_code=404, detail="Spotify vinyl art not ready")
-    return FileResponse(settings.SPOTIFY_VINYL_PATH, media_type="application/octet-stream", filename="vinyl.rgb565")
+    return FileResponse(
+        settings.SPOTIFY_VINYL_PATH,
+        media_type="application/octet-stream",
+        filename="vinyl.rgb565",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @router.get("/api/v5/media/live.mbx")

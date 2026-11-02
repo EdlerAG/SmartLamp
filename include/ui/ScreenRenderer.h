@@ -602,6 +602,62 @@ namespace ScreenRenderer {
     }
 
     // ВІКНО 3: SCREEN_SMART_HUB (Telegram Inbox ⇄ Spotify Vinyl Player)
+    inline void drawSmoothMarquee(
+        LGFX_Sprite& canvas,
+        const char* text,
+        int center_x,
+        int y,
+        int max_w,
+        uint16_t color,
+        const GFXfont* font,
+        uint32_t now,
+        uint32_t pause_start_ms = 1800,
+        uint32_t pause_end_ms = 1200,
+        float px_per_sec = 26.0f
+    ) {
+        if (!text || text[0] == '\0') return;
+        canvas.setFont(font);
+        canvas.setTextColor(color);
+
+        int text_w = canvas.textWidth(text);
+        if (text_w <= max_w) {
+            canvas.setTextDatum(textdatum_t::middle_center);
+            canvas.drawString(text, center_x, y);
+            return;
+        }
+
+        int overflow = text_w - max_w;
+        uint32_t scroll_duration_ms = (uint32_t)((float)overflow / px_per_sec * 1000.0f);
+        if (scroll_duration_ms < 600) scroll_duration_ms = 600;
+        uint32_t total_cycle_ms = pause_start_ms + scroll_duration_ms + pause_end_ms + scroll_duration_ms;
+
+        uint32_t cycle_t = now % total_cycle_ms;
+        float offset = 0.0f;
+
+        if (cycle_t < pause_start_ms) {
+            offset = 0.0f;
+        } else if (cycle_t < (pause_start_ms + scroll_duration_ms)) {
+            float progress = (float)(cycle_t - pause_start_ms) / (float)scroll_duration_ms;
+            float ease = 0.5f * (1.0f - cosf(progress * 3.14159265f));
+            offset = ease * (float)overflow;
+        } else if (cycle_t < (pause_start_ms + scroll_duration_ms + pause_end_ms)) {
+            offset = (float)overflow;
+        } else {
+            uint32_t return_t = cycle_t - (pause_start_ms + scroll_duration_ms + pause_end_ms);
+            float progress = (float)return_t / (float)scroll_duration_ms;
+            float ease = 0.5f * (1.0f - cosf(progress * 3.14159265f));
+            offset = (1.0f - ease) * (float)overflow;
+        }
+
+        int clip_x = center_x - (max_w / 2);
+        int base_x = clip_x - (int)offset;
+
+        canvas.setClipRect(clip_x, y - 12, max_w, 24);
+        canvas.setTextDatum(textdatum_t::middle_left);
+        canvas.drawString(text, base_x, y);
+        canvas.clearClipRect();
+    }
+
     inline void drawSmartHub(
         LGFX_Sprite& canvas,
         LGFX_Sprite& vinylSprite,
@@ -654,85 +710,119 @@ namespace ScreenRenderer {
         // --- ПРІОРИТЕТ 2: Spotify (Hallmark Luxury Vinyl Deck — 30 FPS) ---
         bool has_spotify_deck = (state.spotify.playing || (state.spotify.track_id[0] != '\0' && (now - state.spotify.last_sync_ms < 60000UL)));
         if (has_spotify_deck) {
-            // Без фонових рисок: чистий глибокий чорний колір циферблата
+            // Динамічна плавна RGB інтерполяція кольорів обкладинки (lerp ~500 мс)
+            static float s_lerp_r = 56.0f, s_lerp_g = 189.0f, s_lerp_b = 248.0f;
+            static float s_lerp_r2 = 248.0f, s_lerp_g2 = 113.0f, s_lerp_b2 = 113.0f;
 
-            // 1. Обертання вінілової платівки 136x136 px у центрі (120, 90) з субпіксельним антиаліасингом
+            float target_r = (state.spotify.ambi_r > 0 || state.spotify.ambi_g > 0 || state.spotify.ambi_b > 0) ? (float)state.spotify.ambi_r : (float)state.ambi_r;
+            float target_g = (state.spotify.ambi_r > 0 || state.spotify.ambi_g > 0 || state.spotify.ambi_b > 0) ? (float)state.spotify.ambi_g : (float)state.ambi_g;
+            float target_b = (state.spotify.ambi_r > 0 || state.spotify.ambi_g > 0 || state.spotify.ambi_b > 0) ? (float)state.spotify.ambi_b : (float)state.ambi_b;
+
+            float target_r2 = (state.spotify.ambi2_r > 0 || state.spotify.ambi2_g > 0 || state.spotify.ambi2_b > 0) ? (float)state.spotify.ambi2_r : (float)state.ambi2_r;
+            float target_g2 = (state.spotify.ambi2_r > 0 || state.spotify.ambi2_g > 0 || state.spotify.ambi2_b > 0) ? (float)state.spotify.ambi2_r : (float)state.ambi2_r;
+            float target_b2 = (state.spotify.ambi2_r > 0 || state.spotify.ambi2_g > 0 || state.spotify.ambi2_b > 0) ? (float)state.spotify.ambi2_r : (float)state.ambi2_r;
+
+            if (target_r == 0.0f && target_g == 0.0f && target_b == 0.0f) {
+                target_r = 56.0f; target_g = 189.0f; target_b = 248.0f;
+            }
+            if (target_r2 == 0.0f && target_g2 == 0.0f && target_b2 == 0.0f) {
+                target_r2 = 248.0f; target_g2 = 113.0f; target_b2 = 113.0f;
+            }
+
+            s_lerp_r += (target_r - s_lerp_r) * 0.12f;
+            s_lerp_g += (target_g - s_lerp_g) * 0.12f;
+            s_lerp_b += (target_b - s_lerp_b) * 0.12f;
+
+            s_lerp_r2 += (target_r2 - s_lerp_r2) * 0.12f;
+            s_lerp_g2 += (target_g2 - s_lerp_g2) * 0.12f;
+            s_lerp_b2 += (target_b2 - s_lerp_b2) * 0.12f;
+
+            uint8_t cur_r = (uint8_t)constrain(s_lerp_r, 0.0f, 255.0f);
+            uint8_t cur_g = (uint8_t)constrain(s_lerp_g, 0.0f, 255.0f);
+            uint8_t cur_b = (uint8_t)constrain(s_lerp_b, 0.0f, 255.0f);
+
+            uint8_t cur_r2 = (uint8_t)constrain(s_lerp_r2, 0.0f, 255.0f);
+            uint8_t cur_g2 = (uint8_t)constrain(s_lerp_g2, 0.0f, 255.0f);
+            uint8_t cur_b2 = (uint8_t)constrain(s_lerp_b2, 0.0f, 255.0f);
+
+            uint16_t primary_col = canvas.color565(cur_r, cur_g, cur_b);
+            uint16_t secondary_col = (cur_r2 > 35 || cur_g2 > 35 || cur_b2 > 35) ? canvas.color565(cur_r2, cur_g2, cur_b2) : primary_col;
+
+            // Фоновий ореол під вінілом (15% від Primary кольору з легким BPM диханням)
+            float halo_pulse = 1.0f + 0.08f * sinf((float)now * 0.006f * (state.spotify.bpm / 120.0f));
+            int halo_r = (int)(73.0f * halo_pulse);
+            uint8_t h_r = (uint8_t)(cur_r * 0.15f);
+            uint8_t h_g = (uint8_t)(cur_g * 0.15f);
+            uint8_t h_b = (uint8_t)(cur_b * 0.15f);
+            uint16_t halo_col = canvas.color565(h_r, h_g, h_b);
+            canvas.fillCircle(120, 88, halo_r, halo_col);
+
+            // 1. Обертання вінілової платівки 136x136 px у центрі (120, 88)
             static float s_vinyl_speed = 0.0f;
             float target_speed = state.spotify.playing ? 1.8f : 0.0f;
-            if (state.spotify.isSwitchingOptimistic(now)) target_speed = 4.5f; // Прискорене обертання під час зміни треку
+            if (state.spotify.isSwitchingOptimistic(now)) target_speed = 4.5f; // Швидке обертання при перемиканні
             float inertia_factor = state.spotify.playing ? 0.082f : 0.045f;
             s_vinyl_speed += (target_speed - s_vinyl_speed) * inertia_factor;
             if (s_vinyl_speed > 0.005f) {
                 vinyl_angle += s_vinyl_speed;
                 if (vinyl_angle >= 360.0f) vinyl_angle -= 360.0f;
             }
-            vinylSprite.pushRotateZoomWithAA(&canvas, 120, 90, vinyl_angle, 1.0f, 1.0f);
+            vinylSprite.pushRotateZoomWithAA(&canvas, 120, 88, vinyl_angle, 1.0f, 1.0f, (uint16_t)0x0000);
 
-            // Оптичний міст (Optical Bridge): м'яке свічення вздовж нижньої кромки дисплея (дуга 45°..135° знизу)
-            uint8_t br_r = state.ambi_r;
-            uint8_t br_g = state.ambi_g;
-            uint8_t br_b = state.ambi_b;
-            uint16_t bridge_col = canvas.color565(br_r, br_g, br_b);
-            uint16_t bridge_dim = canvas.color565(br_r / 3, br_g / 3, br_b / 3);
-            canvas.drawArc(120, 120, 119, 117, 45, 135, bridge_col);
-            canvas.drawArc(120, 120, 117, 115, 45, 135, bridge_dim);
-
-            // 2. Елегантна кругова шкала прогресу треку навколо вінілової платівки (R = 73..71)
+            // 2. Кругова дуга прогресу треку навколо вінілу (R = 73..71 на X = 120, Y = 88)
             uint32_t cur_prog = state.getLocalSpotifyProgressMs();
             float prog_frac = (state.spotify.duration_ms > 0) ? ((float)cur_prog / (float)state.spotify.duration_ms) : 0.0f;
             prog_frac = constrain(prog_frac, 0.0f, 1.0f);
 
-            uint16_t prog_col = canvas.color565(state.ambi_r, state.ambi_g, state.ambi_b);
-            if (state.ambi_r == 0 && state.ambi_g == 0 && state.ambi_b == 0) {
-                prog_col = HallmarkTheme::ACCENT_WARM;
-            }
-            canvas.drawArc(120, 90, 73, 71, 0, 360, HallmarkTheme::BORDER_HAIRLINE);
+            uint16_t dim_primary = canvas.color565(cur_r / 4, cur_g / 4, cur_b / 4);
+            canvas.drawArc(120, 88, 73, 71, 0, 360, dim_primary);
             int prog_deg = (int)(prog_frac * 360.0f);
             if (prog_deg > 0) {
-                canvas.drawArc(120, 90, 73, 71, 270, 270 + prog_deg, prog_col);
-                // Світяща крапка-курсор на кінці дуги прогресу
+                canvas.drawArc(120, 88, 73, 71, 270, 270 + prog_deg, primary_col);
                 float rad = (270.0f + (float)prog_deg) * 0.0174532925f;
                 int dot_x = 120 + (int)(cosf(rad) * 72.0f);
-                int dot_y = 90  + (int)(sinf(rad) * 72.0f);
-                canvas.fillCircle(dot_x, dot_y, 3, prog_col);
+                int dot_y = 88  + (int)(sinf(rad) * 72.0f);
+                canvas.fillCircle(dot_x, dot_y, 3, primary_col);
             }
 
-            // 3. Назва треку (шрифт UkrainianFont16Bold з плавним скролінгом)
-            canvas.setFont(&UkrainianFont16Bold);
-            canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
+            // 3. Рядок 1 (Y = 171): Назва пісні (UkrainianFont16Bold, білий колір, плавний marquee)
+            const char* title_str = state.spotify.isSwitchingOptimistic(now) ? ">> Перемикання..." : (state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify");
+            drawSmoothMarquee(canvas, title_str, 120, 171, 190, TFT_WHITE, &UkrainianFont16Bold, now, 1800, 1200, 26.0f);
 
-            const char* title_str = state.spotify.isSwitchingOptimistic(now) ? "⏭ Перемикання..." : (state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify");
-            int title_w = canvas.textWidth(title_str);
-            if (title_w > 192) {
-                int scroll_range = title_w + 50;
-                int scroll_offset = (now / 35) % scroll_range;
-                int base_x = 120 + 96 - scroll_offset;
-                canvas.setClipRect(20, 158, 200, 22);
-                canvas.setTextDatum(textdatum_t::middle_left);
-                canvas.drawString(title_str, base_x, 169);
-                canvas.clearClipRect();
-            } else {
-                canvas.setTextDatum(textdatum_t::middle_center);
-                canvas.drawString(title_str, 120, 169);
-            }
+            // 4. Рядок 2 (Y = 193): Виконавець або рядок LRCLIB у пастельному відтінку Primary (40% білого)
+            uint8_t pastel_r = (uint8_t)((cur_r * 60 + 255 * 40) / 100);
+            uint8_t pastel_g = (uint8_t)((cur_g * 60 + 255 * 40) / 100);
+            uint8_t pastel_b = (uint8_t)((cur_b * 60 + 255 * 40) / 100);
+            uint16_t pastel_col = canvas.color565(pastel_r, pastel_g, pastel_b);
 
-            // 4. Підпис (LRCLIB текст пісні в кольорі обкладинки або ім'я виконавця)
-            if (state.spotify.lyric[0] != '\0') {
-                canvas.setFont(&UkrainianFont12);
-                canvas.setTextColor(prog_col);
-                canvas.setTextDatum(textdatum_t::middle_center);
-                canvas.drawString(state.spotify.lyric, 120, 192);
-            } else {
-                canvas.setFont(&UkrainianFont14);
-                canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-                canvas.setTextDatum(textdatum_t::middle_center);
-                canvas.drawString(state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist", 120, 192);
-            }
+            const char* sub_str = (state.spotify.lyric[0] != '\0') ? state.spotify.lyric : (state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist");
+            drawSmoothMarquee(canvas, sub_str, 120, 193, 180, pastel_col, &UkrainianFont12Bold, now, 1800, 1200, 24.0f);
+
+            // 5. Рядок 3 (Y = 213): Точний таймер MM:SS / MM:SS моноширинно у кольорі Secondary / Primary
+            uint32_t prog_sec = cur_prog / 1000UL;
+            uint32_t dur_sec = state.spotify.duration_ms / 1000UL;
+            char timer_buf[20];
+            snprintf(timer_buf, sizeof(timer_buf), "%02u:%02u / %02u:%02u",
+                     (unsigned)(prog_sec / 60), (unsigned)(prog_sec % 60),
+                     (unsigned)(dur_sec / 60), (unsigned)(dur_sec % 60));
+            canvas.setFont(&UkrainianFont12Bold);
+            canvas.setTextColor(secondary_col);
+            canvas.setTextDatum(textdatum_t::middle_center);
+            canvas.drawString(timer_buf, 120, 213);
+
+            // 6. Нижня кромка (Y = 232..239): Оптичний міст (Optical Bridge)
+            float bass_pulse = 1.0f + 0.15f * sinf((float)now * 0.008f * (state.spotify.bpm / 120.0f));
+            uint8_t ob_r = (uint8_t)constrain(cur_r * bass_pulse, 0.0f, 255.0f);
+            uint8_t ob_g = (uint8_t)constrain(cur_g * bass_pulse, 0.0f, 255.0f);
+            uint8_t ob_b = (uint8_t)constrain(cur_b * bass_pulse, 0.0f, 255.0f);
+            uint16_t ob_col = canvas.color565(ob_r, ob_g, ob_b);
+            uint16_t ob_dim = canvas.color565(ob_r / 3, ob_g / 3, ob_b / 3);
+            canvas.drawArc(120, 120, 119, 117, 45, 135, ob_col);
+            canvas.drawArc(120, 120, 117, 115, 45, 135, ob_dim);
             return;
         }
 
-        // --- ПРІОРИТЕТ 2.5: Найближча подія Google Календаря Насті (<= 15 хв до початку) ---
-        if (state.cal_active && state.cal_is_soon && !state.tg_unread && !has_spotify_deck) {
+                if (state.cal_active && state.cal_is_soon && !state.tg_unread && !has_spotify_deck) {
             drawPerimeterTicks(canvas);
 
             canvas.fillRoundRect(22, 28, 196, 148, 10, HallmarkTheme::BG_SURFACE);

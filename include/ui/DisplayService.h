@@ -97,12 +97,13 @@ public:
         vinylSprite.setPsram(true);
         vinylSprite.setColorDepth(16);
         vinylSprite.createSprite(Config::VINYL_DIAMETER, Config::VINYL_DIAMETER);
-        vinylSprite.fillScreen(HallmarkTheme::BG_PRIMARY);
+        vinylSprite.setPivot(68, 68);
+        vinylSprite.fillScreen(0x0000);
         // Початкові канавки вінілу
         for (int r = 10; r < 66; r += 3) {
             vinylSprite.drawCircle(68, 68, r, HallmarkTheme::BORDER_HAIRLINE);
         }
-        vinylSprite.fillCircle(68, 68, 6, HallmarkTheme::BG_PRIMARY);
+        vinylSprite.fillCircle(68, 68, 6, 0x0000);
         vinylSprite.drawCircle(68, 68, 6, HallmarkTheme::BORDER_HAIRLINE);
 
         // Вітальний екран
