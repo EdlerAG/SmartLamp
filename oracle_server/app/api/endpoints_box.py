@@ -258,6 +258,7 @@ async def box_websocket_endpoint(ws: WebSocket):
                     await realtime_hub.push_to_box(ack_resp)
                 continue
 
+            logger.info("Box WS telemetry received from %s (time=%s, t=%s)", ws.client.host if ws.client else 'unknown', data.get('time'), data.get('t'))
             payload = BoxTelemetryPayload(**data)
             prev_seen = state_service.update_telemetry(payload)
             await blackout_service.on_box_ping(prev_seen, ack=bool(payload.ack), ping_type=payload.ping or 0)
