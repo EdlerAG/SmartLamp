@@ -96,7 +96,7 @@ class MediaService:
         rgb565 = r | g | b
         return rgb565.astype(">u2").tobytes()
 
-        @staticmethod
+    @staticmethod
     def _extract_ambilight_triad(arr) -> Tuple[Tuple[int, int, int], Tuple[int, int, int], Tuple[int, int, int]]:
         """Розумна екстракція 3-зонної палітри (Primary, Secondary, Accent) для SK6812."""
         import colorsys
