@@ -46,6 +46,9 @@ async def lifespan(app: FastAPI):
     # Валідація ключів безпеки при старті
     validate_security_keys()
     db_service.cleanup_expired_sessions()
+    purged_stubs = db_service.purge_climate_stubs()
+    if purged_stubs > 0:
+        logger.info(f"🧹 Purged {purged_stubs} climate stub points (750 mmHg / 22°C)")
     memory_guard.recalculate_disk_usage()
     memory_guard.trim_ram()
 
