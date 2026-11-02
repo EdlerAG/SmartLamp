@@ -795,12 +795,17 @@ class SpotifyService:
         return await self.fetch_current_playback()
 
     def get_lyric_offset_ms(self) -> int:
-        """Повертає час випередження слів пісні в мс (за замовчуванням 2500 мс для компенсації буфера Spotify Connect)."""
+        """Повертає час випередження слів пісні в мс (за замовчуванням 150 мс для точної синхронізації без поспіху)."""
         try:
-            val = db_service.get_setting("spotify_lyric_offset_ms", "2500")
-            return int(val)
+            val = db_service.get_setting("spotify_lyric_offset_ms", "150")
+            offset = int(val)
+            # Якщо в базі збереглося старе завищене значення (наприклад, 2500 мс), скидаємо до 150 мс
+            if offset > 800 or offset < -800:
+                offset = 150
+                db_service.set_setting("spotify_lyric_offset_ms", "150")
+            return offset
         except Exception:
-            return 2500
+            return 150
 
     def set_lyric_offset_ms(self, offset_ms: int) -> None:
         """Зберігає налаштування випередження тексту пісні у SQLite WAL."""
