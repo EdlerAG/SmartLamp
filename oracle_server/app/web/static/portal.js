@@ -271,7 +271,7 @@ function updateReverseBtnText() {
 }
 
 function adjustOffset(delta) {
-  const inp = document.getElementById('cfgLedOffset');
+  const inp = document.getElementById('cfgFrontOffset') || document.getElementById('cfgLedOffset');
   if (!inp) return;
   let val = (parseInt(inp.value, 10) || 0) + delta;
   val = ((val % 60) + 60) % 60;
@@ -286,19 +286,28 @@ function onMaxMaInput(val) {
 }
 
 function applyTopologyFromUi() {
-  const cnt = parseInt(document.getElementById('cfgLedCount')?.value || 60, 10);
-  const off = parseInt(document.getElementById('cfgLedOffset')?.value || 0, 10);
+  const bot = parseInt(document.getElementById('cfgBottomCount')?.value || 36, 10);
+  const bak = parseInt(document.getElementById('cfgBackCount')?.value || 24, 10);
+  const off = parseInt(document.getElementById('cfgFrontOffset')?.value || 0, 10);
   const ma  = parseInt(document.getElementById('cfgMaxMa')?.value || 2000, 10);
 
   const payload = {
-    led_count: Math.min(60, Math.max(1, cnt)),
-    led_offset: ((off % 60) + 60) % 60,
+    set_led_topology: true,
+    bottom_count: Math.min(60, Math.max(1, bot)),
+    back_count: Math.min(60, Math.max(0, bak)),
+    front_offset: ((off % 60) + 60) % 60,
+    reversed: currentLedReverse,
+    max_ma: Math.min(2500, Math.max(500, ma)),
+    // Застарілі поля для сумісності
+    led_count: bot + bak,
+    led_offset: off,
     led_reverse: currentLedReverse,
-    led_max_ma: Math.min(2500, Math.max(500, ma))
+    led_max_ma: ma
   };
 
   sendCmd(payload);
-  toast(`Топологія: ${payload.led_count} діодів, зсув ${payload.led_offset}, ${payload.led_max_ma} мА`);
+  buildLedRing();
+  toast(`Топологія: Дно ${payload.bottom_count} + Стіна ${payload.back_count} LED, зсув ${payload.front_offset}`);
 }
 
 function buildLedRing() {
@@ -306,32 +315,69 @@ function buildLedRing() {
   if (!svg) return;
   svg.innerHTML = '';
   ledRingNodes = [];
-  const cx = 110, cy = 110, r = 88;
-  const numLeds = 60;
-  for (let i = 0; i < numLeds; i++) {
-    const angle = (i / numLeds) * 2 * Math.PI - (Math.PI / 2);
-    const x = cx + r * Math.cos(angle);
-    const y = cy + r * Math.sin(angle);
+
+  const cx = 110, cy = 110;
+  const botCnt = parseInt(document.getElementById('cfgBottomCount')?.value || 36, 10);
+  const bakCnt = parseInt(document.getElementById('cfgBackCount')?.value || 24, 10);
+
+  // 1. Зона 1: Внутрішнє коло (Дно / Underglow на стіл)
+  const rBot = 65;
+  for (let i = 0; i < botCnt; i++) {
+    // 0 index знаходиться під екраном (внизу: angle = PI/2)
+    const angle = (i / botCnt) * 2 * Math.PI + (Math.PI / 2);
+    const x = cx + rBot * Math.cos(angle);
+    const y = cy + rBot * Math.sin(angle);
 
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('cx', x.toFixed(2));
     circle.setAttribute('cy', y.toFixed(2));
-    circle.setAttribute('r', '4');
-    circle.setAttribute('class', 'led-ring-node');
-    circle.setAttribute('fill', '#334155');
-    circle.setAttribute('opacity', '0.6');
+    circle.setAttribute('r', '3.8');
+    circle.setAttribute('class', 'led-ring-node led-zone-bot');
+    circle.setAttribute('fill', '#38bdf8');
+    circle.setAttribute('opacity', '0.7');
     circle.setAttribute('data-idx', String(i));
-    circle.addEventListener('click', (e) => onLedNodeClick(i, e));
-    circle.addEventListener('touchstart', (e) => onLedNodeClick(i, e), { passive: false });
+    circle.setAttribute('title', `Дно #${i}`);
 
-    // Invisible hit area for fingertip touch targets
+    const hitCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    hitCircle.setAttribute('cx', x.toFixed(2));
+    hitCircle.setAttribute('cy', y.toFixed(2));
+    hitCircle.setAttribute('r', '9');
+    hitCircle.setAttribute('class', 'led-ring-hit');
+    hitCircle.addEventListener('click', (e) => onLedNodeClick(i, e));
+    hitCircle.addEventListener('touchstart', (e) => onLedNodeClick(i, e), { passive: false });
+
+    svg.appendChild(circle);
+    svg.appendChild(hitCircle);
+    ledRingNodes.push(circle);
+  }
+
+  // 2. Зона 2: Зовнішня дуга (Задня стінка / Wall-Wash на стіну)
+  const rBak = 94;
+  for (let k = 0; k < bakCnt; k++) {
+    const globalIdx = botCnt + k;
+    // Дуга зверху (від 135° до 45° через верх, тобто від -3*PI/4 до -PI/4 або розмах 180°)
+    const spanFrac = bakCnt > 1 ? (k / (bakCnt - 1)) : 0.5;
+    const arcAngle = (Math.PI * 0.85) - spanFrac * (Math.PI * 1.7); // верхня дуга
+    const x = cx + rBak * Math.cos(arcAngle);
+    const y = cy - rBak * Math.sin(arcAngle);
+
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', x.toFixed(2));
+    circle.setAttribute('cy', y.toFixed(2));
+    circle.setAttribute('r', '4.4');
+    circle.setAttribute('class', 'led-ring-node led-zone-bak');
+    circle.setAttribute('fill', '#f59e0b');
+    circle.setAttribute('opacity', '0.7');
+    circle.setAttribute('data-idx', String(globalIdx));
+    circle.setAttribute('title', `Стіна #${globalIdx}`);
+
     const hitCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     hitCircle.setAttribute('cx', x.toFixed(2));
     hitCircle.setAttribute('cy', y.toFixed(2));
     hitCircle.setAttribute('r', '10');
     hitCircle.setAttribute('class', 'led-ring-hit');
-    hitCircle.addEventListener('click', (e) => onLedNodeClick(i, e));
-    hitCircle.addEventListener('touchstart', (e) => onLedNodeClick(i, e), { passive: false });
+    hitCircle.addEventListener('click', (e) => onLedNodeClick(globalIdx, e));
+    hitCircle.addEventListener('touchstart', (e) => onLedNodeClick(globalIdx, e), { passive: false });
 
     svg.appendChild(circle);
     svg.appendChild(hitCircle);
@@ -2030,12 +2076,20 @@ function applyTelemetryInPlace(t) {
     setCachedText('scrAngleVal', `${t.scr_ang}°`);
   }
 
-  // Синхронізація топології стрічки від плати
-  if (t.led_cnt !== undefined && !isSliderLocked('cfgLedCount')) {
-    setCachedValue('cfgLedCount', t.led_cnt);
+  // Синхронізація дводіапазонної топології стрічки від плати
+  let rebuildRing = false;
+  if (t.led_bot !== undefined && !isSliderLocked('cfgBottomCount')) {
+    const curVal = document.getElementById('cfgBottomCount')?.value;
+    if (curVal != t.led_bot) rebuildRing = true;
+    setCachedValue('cfgBottomCount', t.led_bot);
   }
-  if (t.led_off !== undefined && !isSliderLocked('cfgLedOffset')) {
-    setCachedValue('cfgLedOffset', t.led_off);
+  if (t.led_bak !== undefined && !isSliderLocked('cfgBackCount')) {
+    const curVal = document.getElementById('cfgBackCount')?.value;
+    if (curVal != t.led_bak) rebuildRing = true;
+    setCachedValue('cfgBackCount', t.led_bak);
+  }
+  if (t.led_off !== undefined && !isSliderLocked('cfgFrontOffset')) {
+    setCachedValue('cfgFrontOffset', t.led_off);
   }
   if (t.led_rev !== undefined) {
     currentLedReverse = Boolean(t.led_rev === true || t.led_rev === 'true');
@@ -2044,6 +2098,9 @@ function applyTelemetryInPlace(t) {
   if (t.led_ma !== undefined && !isSliderLocked('cfgMaxMa')) {
     setCachedValue('cfgMaxMa', t.led_ma);
     setCachedText('cfgMaxMaVal', `${t.led_ma} мА`);
+  }
+  if (rebuildRing) {
+    buildLedRing();
   }
 }
 

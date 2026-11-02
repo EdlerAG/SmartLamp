@@ -621,12 +621,27 @@ namespace ScreenRenderer {
         if (has_spotify_deck) {
             drawPerimeterTicks(canvas);
 
-            // 1. Обертання вінілової платівки 136x136 px у центрі (120, 94)
-            vinylSprite.pushRotateZoom(&canvas, 120, 94, vinyl_angle, 1.0f, 1.0f);
-            if (state.spotify.playing) {
-                vinyl_angle += 1.8f;
+            // 1. Обертання вінілової платівки 136x136 px у центрі (120, 94) з фізичною інерцією
+            static float s_vinyl_speed = 0.0f;
+            float target_speed = state.spotify.playing ? 1.8f : 0.0f;
+            // 33.3 RPM: розгін від 0 за ~650 мс, плавний вибіг/гальмування за ~850 мс
+            float inertia_factor = state.spotify.playing ? 0.082f : 0.045f;
+            s_vinyl_speed += (target_speed - s_vinyl_speed) * inertia_factor;
+            if (s_vinyl_speed > 0.005f) {
+                vinyl_angle += s_vinyl_speed;
                 if (vinyl_angle >= 360.0f) vinyl_angle -= 360.0f;
             }
+            vinylSprite.pushRotateZoom(&canvas, 120, 94, vinyl_angle, 1.0f, 1.0f);
+
+            // Оптичний міст (Optical Bridge): м'яке 4px градієнтне свічення вздовж нижньої кромки дисплея (дуга 45°..135° знизу)
+            // Колір синхронізовано з передніми діодами Дна для візуального «перетікання» з екрана на стіл
+            uint8_t br_r = state.ambi_r;
+            uint8_t br_g = state.ambi_g;
+            uint8_t br_b = state.ambi_b;
+            uint16_t bridge_col = canvas.color565(br_r, br_g, br_b);
+            uint16_t bridge_dim = canvas.color565(br_r / 3, br_g / 3, br_b / 3);
+            canvas.drawArc(120, 120, 119, 117, 45, 135, bridge_col);
+            canvas.drawArc(120, 120, 117, 115, 45, 135, bridge_dim);
 
             // 2. Векторний тонарм (голка звукознімача) зверху справа
             if (state.spotify.playing) {

@@ -42,12 +42,11 @@ private:
     const uint8_t lcd_levels[4]        = {60, 130, 200, 255};
 
     inline uint16_t mapLogicalToPhysical(uint16_t logical_idx) const {
-        uint16_t active_cnt = state.led_layout.active_led_count;
-        if (active_cnt == 0 || active_cnt > Config::NUM_LEDS) active_cnt = Config::NUM_LEDS;
+        uint16_t active_cnt = state.led_layout.totalCount();
         if (logical_idx >= active_cnt) return 0xFFFF;
 
-        uint16_t mapped = state.led_layout.reverse_dir ? (active_cnt - 1 - logical_idx) : logical_idx;
-        mapped = (mapped + state.led_layout.start_offset) % active_cnt;
+        uint16_t mapped = state.led_layout.reversed ? (active_cnt - 1 - logical_idx) : logical_idx;
+        mapped = (mapped + state.led_layout.bottom_offset) % active_cnt;
         return mapped;
     }
 
@@ -61,37 +60,24 @@ private:
             float pulse = (sinf((float)now * 0.012f) + 1.0f) * 0.5f; // ~2 Hz пульсація
             uint8_t beacon_g = 180 + (uint8_t)(pulse * 75.0f);
             uint8_t beacon_b = 160 + (uint8_t)(pulse * 95.0f);
+            uint16_t total = state.led_layout.totalCount();
 
-            for (int i = 0; i < Config::NUM_LEDS; i++) {
+            for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
                 if (i == target_px) {
                     // Яскравий маркерний бірюзовий маяк на обраному світлодіоді
                     strip.SetPixelColor(i, RgbwColor(0, beacon_g, beacon_b, 0));
-                } else if (i % 10 == 0) {
-                    // Тьмяні мітки кожні 10 діодів (0, 10, 20, 30, 40, 50) для швидкого орієнтування
+                } else if (i < total && (i % 10 == 0)) {
+                    // Тьмяні мітки кожні 10 діодів (0, 10, 20, 30...) для швидкого орієнтування
                     strip.SetPixelColor(i, RgbwColor(12, 24, 48, 0));
                 } else {
                     strip.SetPixelColor(i, RgbwColor(0, 0, 0, 0));
                 }
             }
         } else {
-            // Топологічний ремапінг: зміщення, реверс та гасіння незмонтованих діодів
-            uint16_t active_cnt = state.led_layout.active_led_count;
-            if (active_cnt == 0 || active_cnt > Config::NUM_LEDS) active_cnt = Config::NUM_LEDS;
-            uint8_t offset = state.led_layout.start_offset % active_cnt;
-            bool rev = state.led_layout.reverse_dir;
-
-            if (active_cnt < Config::NUM_LEDS || offset != 0 || rev) {
-                RgbwColor temp[Config::NUM_LEDS];
-                for (int i = 0; i < Config::NUM_LEDS; i++) temp[i] = strip.GetPixelColor(i);
-                strip.ClearTo(RgbwColor(0, 0, 0, 0));
-
-                for (uint16_t i = 0; i < active_cnt; i++) {
-                    uint16_t p = rev ? (active_cnt - 1 - i) : i;
-                    p = (p + offset) % active_cnt;
-                    if (p < Config::NUM_LEDS) {
-                        strip.SetPixelColor(p, temp[i]);
-                    }
-                }
+            // Гасіння незмонтованих діодів за межами totalCount()
+            uint16_t total_active = state.led_layout.totalCount();
+            for (int i = total_active; i < Config::MAX_LED_COUNT; i++) {
+                strip.SetPixelColor(i, RgbwColor(0, 0, 0, 0));
             }
         }
         bool is_color_mode = (state.light_mode >= MODE_SUNSET_VIBE && state.light_mode <= MODE_SPOTIFY_AMBI);
@@ -290,7 +276,12 @@ private:
             state.temperature,
             pomo_prog,
             state.pressure_diff,
-            (float)state.led_layout.max_current_ma_div10 * 10.0f
+            (float)state.led_layout.max_current_ma_div10 * 10.0f,
+            state.led_layout,
+            state.audio_playing,
+            state.combo_wifi_prog,
+            state.touch_ripple_angle,
+            (uint32_t)(now - state.touch_ripple_ms)
         );
 
         showWithLatchGuard(mode_changed || force);

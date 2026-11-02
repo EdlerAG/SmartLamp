@@ -260,6 +260,152 @@ class MediaService:
             "ambi_rgb": list(ambi_rgb),
         }
 
+    @classmethod
+    def _process_video_note_sync(
+        cls,
+        raw_bytes: bytes,
+        save_name: str = "",
+        reaction_slot: int = 0,
+    ) -> Dict[str, Any]:
+        import subprocess, tempfile, glob
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            in_mp4 = os.path.join(tmpdir, "input.mp4")
+            with open(in_mp4, "wb") as f:
+                f.write(raw_bytes)
+            out_pattern = os.path.join(tmpdir, "frame_%03d.png")
+
+            # Екстракція до 36 кадрів при 12 fps, обрізка під коло 240x240 через ffmpeg
+            cmd = [
+                "ffmpeg", "-y", "-i", in_mp4,
+                "-vf", "fps=12,scale=240:240:force_original_aspect_ratio=increase,crop=240:240",
+                "-frames:v", "36",
+                out_pattern
+            ]
+            try:
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            except Exception:
+                # Фоллбек: якщо ffmpeg недоступний, пробуємо обробити як звичайне медіа
+                return cls._process_media_sync(raw_bytes, save_name, reaction_slot)
+
+            frame_files = sorted(glob.glob(os.path.join(tmpdir, "frame_*.png")))
+            if not frame_files:
+                return cls._process_media_sync(raw_bytes, save_name, reaction_slot)
+
+            frames_bytes: List[bytes] = []
+            ambi_rgb = (56, 189, 248)
+            ambi2_rgb = (248, 113, 113)
+            ambi3_rgb = (250, 204, 21)
+
+            mid_idx = len(frame_files) // 2
+            for idx_pos, fpath in enumerate(frame_files):
+                with Image.open(fpath) as img:
+                    arr = cls._fit_and_composite_frame(img)
+                    if idx_pos == mid_idx:
+                        p, s, a = cls._extract_ambilight_triad(arr)
+                        ambi_rgb, ambi2_rgb, ambi3_rgb = p, s, a
+                    frames_bytes.append(cls._rgb_array_to_rgb565_bytes(arr))
+
+            num_frames = len(frames_bytes)
+            fps = 12
+
+            mid_frame = frames_bytes[num_frames // 2]
+            with open(cls.RAM_FRAME_PATH, "wb") as f:
+                f.write(mid_frame)
+
+            body_blob = b"".join(frames_bytes)
+            crc_val = zlib.crc32(body_blob) & 0xFFFFFFFF
+            crc_hex = f"{crc_val:08x}"
+
+            header = struct.pack(
+                "<4sBBBBBBBBI",
+                b"MBX5",
+                5,
+                num_frames,
+                fps,
+                0,
+                ambi_rgb[0],
+                ambi_rgb[1],
+                ambi_rgb[2],
+                0,
+                crc_val,
+            )
+            full_mbx = header + body_blob
+
+            with open(cls.RAM_ANIM_PATH, "wb") as f:
+                f.write(full_mbx)
+
+            safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", save_name)[:28].lower()
+            if not safe_name:
+                safe_name = f"vn_{crc_hex[:6]}"
+
+            perm_path = os.path.join(settings.STICKERS_DIR, f"{safe_name}.mbx")
+            with open(perm_path, "wb") as f:
+                f.write(full_mbx)
+            memory_guard.register_file_write(len(full_mbx))
+            db_service.upsert_custom_media(
+                name=safe_name,
+                media_type="video_note",
+                file_path=perm_path,
+                crc32_hex=crc_hex,
+                frames=num_frames,
+                fps=fps,
+                byte_size=len(full_mbx),
+                ambi_rgb=ambi_rgb,
+                reaction_slot=reaction_slot,
+            )
+
+            del frames_bytes
+            del body_blob
+            memory_guard.trim_ram()
+
+            return {
+                "name": safe_name,
+                "media_type": "video_note",
+                "crc": crc_hex,
+                "frames": num_frames,
+                "fps": fps,
+                "size_bytes": len(full_mbx),
+                "ambi_rgb": list(ambi_rgb),
+                "ambi2_rgb": list(ambi2_rgb),
+                "ambi3_rgb": list(ambi3_rgb),
+            }
+
+    async def process_video_note_and_enqueue(
+        self,
+        raw_bytes: bytes,
+        base_url: str = "",
+        save_name: str = "",
+        reaction_slot: int = 0,
+        set_as_saver: bool = False,
+        media_timer_min: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        meta = await asyncio.to_thread(self._process_video_note_sync, raw_bytes, save_name, reaction_slot)
+        host = state_service.resolve_public_url(base_url)
+        media_url = f"{host}/api/v5/media/{meta['name']}.mbx?c={meta['crc']}"
+        frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
+
+        cmd_dict: Dict[str, Any] = {
+            "media_name": meta["name"],
+            "media_url": media_url,
+            "img_url": frame_url,
+            "media_crc": meta["crc"],
+            "media_frames": meta["frames"],
+            "media_fps": meta["fps"],
+            "ambi_rgb": meta["ambi_rgb"],
+            "ambi2_rgb": meta.get("ambi2_rgb", [248, 113, 113]),
+            "ambi3_rgb": meta.get("ambi3_rgb", [250, 204, 21]),
+        }
+        if set_as_saver:
+            cmd_dict["set_saver"] = True
+        if media_timer_min is not None:
+            cmd_dict["media_timer"] = int(media_timer_min)
+
+        state_service.enqueue_raw(cmd_dict)
+        meta["media_url"] = media_url
+        return meta
+
     async def process_and_enqueue(
         self,
         raw_bytes: bytes,

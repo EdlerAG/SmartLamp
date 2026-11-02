@@ -8,6 +8,7 @@ enum class EventType : uint8_t {
     BTN_TOP_LONG,
     BTN_RIGHT_SHORT,
     BTN_RIGHT_LONG,
+    BTN_COMBO_WIFI_RESET,
     NEW_TELEGRAM_MSG
 };
 

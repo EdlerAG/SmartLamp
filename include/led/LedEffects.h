@@ -139,10 +139,10 @@ namespace LedEffects {
     }
 
     struct PixelBuffer {
-        float r[Config::NUM_LEDS];
-        float g[Config::NUM_LEDS];
-        float b[Config::NUM_LEDS];
-        float w[Config::NUM_LEDS];
+        float r[Config::MAX_LED_COUNT];
+        float g[Config::MAX_LED_COUNT];
+        float b[Config::MAX_LED_COUNT];
+        float w[Config::MAX_LED_COUNT];
 
         void clear() {
             memset(r, 0, sizeof(r));
@@ -152,7 +152,7 @@ namespace LedEffects {
         }
 
         void set(int i, float cr, float cg, float cb, float cw) {
-            if (i >= 0 && i < Config::NUM_LEDS) {
+            if (i >= 0 && i < Config::MAX_LED_COUNT) {
                 r[i] = cr; g[i] = cg; b[i] = cb; w[i] = cw;
             }
         }
@@ -166,15 +166,15 @@ namespace LedEffects {
         constexpr float MAX_CHANNEL_MA       = 15.0f; // 15mA per channel at 255
         float max_total_ma                   = (max_allowed_ma >= 400.0f && max_allowed_ma <= 3000.0f) ? max_allowed_ma : 2200.0f;
 
-        float scaled_r[Config::NUM_LEDS];
-        float scaled_g[Config::NUM_LEDS];
-        float scaled_b[Config::NUM_LEDS];
-        float scaled_w[Config::NUM_LEDS];
+        float scaled_r[Config::MAX_LED_COUNT];
+        float scaled_g[Config::MAX_LED_COUNT];
+        float scaled_b[Config::MAX_LED_COUNT];
+        float scaled_w[Config::MAX_LED_COUNT];
 
         float sum_channels = 0.0f;
         float brt = constrain(brightness_factor, 0.01f, 1.0f);
 
-        for (int i = 0; i < Config::NUM_LEDS; i++) {
+        for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
             scaled_r[i] = constrain(buf.r[i] * brt, 0.0f, 255.0f);
             scaled_g[i] = constrain(buf.g[i] * brt, 0.0f, 255.0f);
             scaled_b[i] = constrain(buf.b[i] * brt, 0.0f, 255.0f);
@@ -188,7 +188,7 @@ namespace LedEffects {
             pwr_scale = (max_total_ma - QUIESCENT_CURRENT_MA) / (total_current_est - QUIESCENT_CURRENT_MA);
         }
 
-        for (int i = 0; i < Config::NUM_LEDS; i++) {
+        for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
             uint8_t raw_r = (uint8_t)constrain(scaled_r[i] * pwr_scale, 0.0f, 255.0f);
             uint8_t raw_g = (uint8_t)constrain(scaled_g[i] * pwr_scale, 0.0f, 255.0f);
             uint8_t raw_b = (uint8_t)constrain(scaled_b[i] * pwr_scale, 0.0f, 255.0f);
@@ -217,43 +217,43 @@ namespace LedEffects {
 
         switch (notify_type) {
             case NOTIFY_CYAN_WAVE: {
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
                     stageBuf.set(i, 0.0f, norm_p * 180.0f, norm_p * 255.0f, 0.0f);
                 }
                 break;
             }
             case NOTIFY_FIRE: {
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
                     stageBuf.set(i, norm_p * 255.0f, norm_p * 60.0f, 0.0f, 0.0f);
                 }
                 break;
             }
             case NOTIFY_LIGHTNING: {
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
                     stageBuf.set(i, norm_p * 200.0f, norm_p * 220.0f, norm_p * 255.0f, norm_p * 80.0f);
                 }
                 break;
             }
             case NOTIFY_CAT: {
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
                     stageBuf.set(i, norm_p * 255.0f, norm_p * 120.0f, norm_p * 180.0f, 0.0f);
                 }
                 break;
             }
             case NOTIFY_UFO: {
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
                     stageBuf.set(i, norm_p * 50.0f, norm_p * 255.0f, norm_p * 50.0f, 0.0f);
                 }
                 break;
             }
             case NOTIFY_CROWN: {
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
                     stageBuf.set(i, norm_p * 255.0f, norm_p * 200.0f, 0.0f, norm_p * 40.0f);
                 }
                 break;
             }
             case NOTIFY_AMBILIGHT: {
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
                     stageBuf.set(i, (float)col_r, (float)col_g, (float)col_b, 0.0f);
                 }
                 break;
@@ -276,30 +276,42 @@ namespace LedEffects {
         const SpotifyTrackInfo* sp = nullptr,
         uint8_t custom_r = 255, uint8_t custom_g = 180, uint8_t custom_b = 80, uint8_t custom_w = 120,
         uint8_t screen_mode = 0, float screen_temp = 22.5f, float screen_pomo_prog = 0.0f, float screen_pres_diff = 0.0f,
-        float max_allowed_ma = 2200.0f
+        float max_allowed_ma = 2200.0f,
+        const LedLayoutConfig& layout = LedLayoutConfig(),
+        bool audio_playing = false,
+        float wifi_combo_prog = 0.0f,
+        int16_t touch_ripple_angle = -999,
+        uint32_t touch_ripple_elapsed_ms = 9999
     ) {
         stageBuf.clear();
         float speed_scale = constrain((float)anim_speed / 50.0f, 0.1f, 2.5f);
         float t = (float)step * 0.045f * speed_scale;
 
+        uint16_t total_cnt = layout.totalCount();
+        if (total_cnt == 0 || total_cnt > Config::MAX_LED_COUNT) total_cnt = 60;
+        uint16_t bot_cnt = layout.bottom_count;
+        uint16_t bak_cnt = layout.back_count;
+        if (bot_cnt == 0 || bot_cnt >= total_cnt) {
+            bot_cnt = (total_cnt * 3) / 5;
+            bak_cnt = total_cnt - bot_cnt;
+        }
+
         switch (mode) {
             case MODE_WARM_COZY: {
-                // Mode 0: Warm Cozy (2700K phosphor W baseline + gentle R/G warmth)
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < total_cnt; i++) {
                     stageBuf.set(i, 90.0f, 32.0f, 0.0f, 255.0f);
                 }
                 break;
             }
 
             case MODE_CANDLE: {
-                // Mode 1: Live Candle (Smooth multi-frequency draft waves, organic flame drift, zero raw random)
                 float wind = sinf(t * 0.45f) * 0.35f;
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < total_cnt; i++) {
                     float f1 = sinf(t * 1.5f + (float)i * 0.38f);
                     float f2 = sinf(t * 3.1f - (float)i * 0.22f + wind);
                     float f3 = sinf(t * 5.4f + (float)i * 0.52f) * 0.35f;
-                    float flame = (f1 + f2 + f3) / 2.35f; // -1..1
-                    float flame_norm = (flame + 1.0f) * 0.5f; // 0..1
+                    float flame = (f1 + f2 + f3) / 2.35f;
+                    float flame_norm = (flame + 1.0f) * 0.5f;
 
                     float w = 110.0f + flame_norm * 140.0f;
                     float r = 210.0f + flame_norm * 45.0f;
@@ -310,8 +322,7 @@ namespace LedEffects {
             }
 
             case MODE_AMBER_EMBER: {
-                // Mode 2: Amber Candle (Smooth hypnotic sine breathing)
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < total_cnt; i++) {
                     float breath = (sinf(t * 0.75f + (float)i * 0.18f) + 1.0f) * 0.5f;
                     float w = 35.0f + breath * 75.0f;
                     float r = 230.0f + breath * 25.0f;
@@ -322,28 +333,33 @@ namespace LedEffects {
             }
 
             case MODE_FIREPLACE: {
-                // Mode 3: Fireplace with Sparks (3 travelling continuous heat waves + travelling spark crests)
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                // Блок 2: Дно — розпечене вугілля; Задня стінка — язики полум'я та іскри на стіні
+                for (int i = 0; i < bot_cnt; i++) {
                     float base_w1 = sinf(t * 2.1f + (float)i * 0.32f);
                     float base_w2 = sinf(t * 1.2f - (float)i * 0.45f);
-                    float heat = (base_w1 + base_w2 + 2.0f) * 0.25f; // 0..1
-
-                    // Smooth travelling spark crests (power-of-6 sine kernel, smooth across adjacent LEDs)
-                    float spark_val = sinf(t * 3.6f + (float)i * 0.75f);
+                    float heat = (base_w1 + base_w2 + 2.0f) * 0.25f;
+                    float r = 190.0f + heat * 65.0f;
+                    float g = 25.0f + heat * 45.0f;
+                    float w = heat * 20.0f;
+                    stageBuf.set(i, r, g, 0.0f, w);
+                }
+                for (int i = bot_cnt; i < total_cnt; i++) {
+                    uint16_t k = i - bot_cnt;
+                    float v = (bak_cnt > 1) ? ((float)k / (float)(bak_cnt - 1)) : 0.5f;
+                    float dist_ctr = fabsf(v - 0.5f) * 2.0f;
+                    float spark_val = sinf(t * 3.8f + (float)k * 0.65f);
                     float spark = (spark_val > 0.0f) ? powf(spark_val, 6.0f) : 0.0f;
-
-                    float r = 180.0f + heat * 75.0f;
-                    float g = 30.0f + heat * 50.0f + spark * 70.0f;
-                    float w = heat * 15.0f + spark * 60.0f;
+                    float r = 160.0f + (1.0f - dist_ctr) * 80.0f + spark * 40.0f;
+                    float g = 20.0f + (1.0f - dist_ctr) * 45.0f + spark * 80.0f;
+                    float w = spark * 75.0f;
                     stageBuf.set(i, r, g, 0.0f, w);
                 }
                 break;
             }
 
             case MODE_SUNSET_VIBE: {
-                // Mode 4: Sunset Glow (W = 0, rich crimson-violet to warm golden horizon)
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
-                    float phase = sinf(t * 0.65f + ((float)i / (float)Config::NUM_LEDS) * 6.28318f);
+                for (int i = 0; i < total_cnt; i++) {
+                    float phase = sinf(t * 0.65f + ((float)i / (float)total_cnt) * 6.28318f);
                     float norm = (phase + 1.0f) * 0.5f;
                     float r = 240.0f + norm * 15.0f;
                     float g = 40.0f + norm * 135.0f;
@@ -354,8 +370,7 @@ namespace LedEffects {
             }
 
             case MODE_SAKURA_NEON: {
-                // Mode 5: Sakura Neon (W = 0, delicate cherry blossom magenta to violet plasma)
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < total_cnt; i++) {
                     float s1 = (sinf(t * 0.9f + (float)i * 0.28f) + 1.0f) * 0.5f;
                     float s2 = (sinf(t * 1.4f - (float)i * 0.19f) + 1.0f) * 0.5f;
                     float r = 220.0f + s1 * 35.0f;
@@ -367,12 +382,11 @@ namespace LedEffects {
             }
 
             case MODE_AURORA_WAVE: {
-                // Mode 6: Northern Lights (W = 0, multi-wave emerald & arctic blue ribbon plasma)
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < total_cnt; i++) {
                     float w1 = sinf(t * 0.75f + (float)i * 0.22f);
                     float w2 = sinf(t * 1.15f - (float)i * 0.34f);
                     float w3 = sinf(t * 0.45f + (float)i * 0.52f);
-                    float plasma = (w1 + w2 + w3 + 3.0f) / 6.0f; // 0..1
+                    float plasma = (w1 + w2 + w3 + 3.0f) / 6.0f;
 
                     float r = plasma * 25.0f;
                     float g = 90.0f + plasma * 165.0f;
@@ -383,8 +397,7 @@ namespace LedEffects {
             }
 
             case MODE_OCEAN_BREEZE: {
-                // Mode 7: Ocean Breeze (W = 0, deep navy to azure swells with crest highlights)
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < total_cnt; i++) {
                     float swell = (sinf(t * 0.85f + (float)i * 0.24f) + 1.0f) * 0.5f;
                     float r = swell * 15.0f;
                     float g = swell * 175.0f;
@@ -395,17 +408,16 @@ namespace LedEffects {
             }
 
             case MODE_CYBER_RUNNER: {
-                // Mode 8: Cyber Comet (W = 0, subpixel fractional anti-aliasing)
                 float speed_px_per_sec = 26.0f * speed_scale;
-                float head_pos = fmodf((float)step * (0.02f * speed_px_per_sec), (float)Config::NUM_LEDS);
+                float head_pos = fmodf((float)step * (0.02f * speed_px_per_sec), (float)total_cnt);
                 constexpr float TAIL_LEN = 18.0f;
 
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < total_cnt; i++) {
                     float dist = (float)i - head_pos;
-                    while (dist < 0.0f) dist += (float)Config::NUM_LEDS;
-                    while (dist >= (float)Config::NUM_LEDS) dist -= (float)Config::NUM_LEDS;
+                    while (dist < 0.0f) dist += (float)total_cnt;
+                    while (dist >= (float)total_cnt) dist -= (float)total_cnt;
 
-                    float tail_dist = (float)Config::NUM_LEDS - dist;
+                    float tail_dist = (float)total_cnt - dist;
                     float intensity = 0.0f;
                     if (tail_dist <= TAIL_LEN) {
                         intensity = tail_dist / TAIL_LEN;
@@ -420,9 +432,8 @@ namespace LedEffects {
             }
 
             case MODE_RAINBOW_FLOW: {
-                // Mode 9: Rainbow Flow (W = 0, continuous smooth plasma spectrum)
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
-                    float hue = fmodf(t * 0.35f + ((float)i / (float)Config::NUM_LEDS), 1.0f);
+                for (int i = 0; i < total_cnt; i++) {
+                    float hue = fmodf(t * 0.35f + ((float)i / (float)total_cnt), 1.0f);
                     float r, g, b;
                     hsv2rgb(hue, 1.0f, 1.0f, r, g, b);
                     stageBuf.set(i, r, g, b, 0.0f);
@@ -431,18 +442,23 @@ namespace LedEffects {
             }
 
             case MODE_LIGHT_OFF: {
-                // Mode 10: Off
                 stageBuf.clear();
                 break;
             }
 
             case MODE_SPOTIFY_AMBI: {
-                // Mode 11: AmbiLight 2.0 Multi-Zone Spatial Halo (W = 0 strictly)
+                // Блок 2: 2.5D Dual-Zone AmbiLight
                 uint32_t now = millis();
                 bool is_playing = (sp && sp->playing);
 
+                HsvColor c_prim = rgb2hsv(ambi_r, ambi_g, ambi_b);
+                HsvColor c_sec  = rgb2hsv(ambi2_r, ambi2_g, ambi2_b);
+                HsvColor c_acc  = rgb2hsv(ambi3_r, ambi3_g, ambi3_b);
+                c_prim.s = max(0.80f, c_prim.s); c_prim.v = 1.0f;
+                c_sec.s  = max(0.80f, c_sec.s);  c_sec.v = 1.0f;
+                c_acc.s  = max(0.85f, c_acc.s);  c_acc.v = 1.0f;
+
                 if (is_playing) {
-                    // --- Active Music Playback: 3-Zone Spatial Halo ---
                     uint16_t raw_bpm = (sp->bpm >= 40 && sp->bpm <= 240) ? sp->bpm : 120;
                     float track_energy = (sp->energy > 0) ? ((float)sp->energy / 100.0f) : 0.60f;
                     track_energy = constrain(track_energy, 0.20f, 1.00f);
@@ -457,135 +473,141 @@ namespace LedEffects {
                     float eff_bpm = (raw_bpm > 124) ? ((float)raw_bpm * 0.5f) : (float)raw_bpm;
                     float beat_period = 60000.0f / eff_bpm;
                     float beat_phase = fmodf((float)song_ms, beat_period) / beat_period;
-                    float s = sinf(beat_phase * 3.14159265f);
-                    float beat_swell = s * s * s * s; // sin^4 punch
+                    float beat_swell = powf(sinf(beat_phase * 3.14159265f), 4.0f);
 
-                    // HSV Color Palette: Primary, Secondary, Accent
-                    HsvColor c_prim = rgb2hsv(ambi_r, ambi_g, ambi_b);
-                    HsvColor c_sec  = rgb2hsv(ambi2_r, ambi2_g, ambi2_b);
-                    HsvColor c_acc  = rgb2hsv(ambi3_r, ambi3_g, ambi3_b);
+                    // 1. ЗОНА 1: Дно (Bottom Underglow) — стікання кольору з екрана на стіл + sin^4 біт-пульсація
+                    for (int i = 0; i < bot_cnt; i++) {
+                        int16_t rel = layout.reversed ? (layout.bottom_offset - i) : (i - layout.bottom_offset);
+                        while (rel < 0) rel += bot_cnt;
+                        rel %= bot_cnt;
+                        float frac = (float)rel / (float)bot_cnt;
+                        float rad = frac * 6.2831853f;
+                        float cos_front = cosf(rad); // +1.0 під екраном, -1.0 ззаду
 
-                    // Ensure high saturation & value
-                    c_prim.s = max(0.80f, c_prim.s); c_prim.v = 1.0f;
-                    c_sec.s  = max(0.80f, c_sec.s);  c_sec.v = 1.0f;
-                    c_acc.s  = max(0.85f, c_acc.s);  c_acc.v = 1.0f;
-
-                    // Organic rotation matching vinyl rotation angle
-                    float rot_offset = (float)song_ms * 0.00075f;
-
-                    for (int i = 0; i < Config::NUM_LEDS; i++) {
-                        float angle = (2.0f * 3.14159265f * (float)i) / (float)Config::NUM_LEDS + rot_offset;
-                        float cos_a = cosf(angle); // 1.0 = Front (under screen), -1.0 = Rear
-
-                        // Primary (Front under screen: cos_a > 0.1) vs Secondary (Sides/Rear: cos_a < 0.1)
-                        float blend_t = constrain((cos_a + 0.6f) / 1.4f, 0.0f, 1.0f);
+                        float spot_width = 0.30f + 0.40f * beat_swell * track_energy;
+                        float front_blend = constrain((cos_front + spot_width) / (1.0f + spot_width), 0.0f, 1.0f);
                         float r, g, b;
-                        interpolateHsv(c_sec, c_prim, blend_t, r, g, b);
+                        interpolateHsv(c_sec, c_prim, front_blend, r, g, b);
 
-                        // Accent wave pulsating upward through the ring
-                        float acc_wave = sinf(angle * 2.0f - (float)song_ms * 0.003f + beat_swell * 1.5f);
-                        float acc_intensity = max(0.0f, acc_wave) * (0.35f + 0.45f * track_energy * beat_swell);
+                        float boost = 1.0f + 0.32f * beat_swell * track_energy;
+                        r = constrain(r * boost, 0.0f, 255.0f);
+                        g = constrain(g * boost, 0.0f, 255.0f);
+                        b = constrain(b * boost, 0.0f, 255.0f);
+                        float w = (sp->is_mono) ? (35.0f * beat_swell) : 0.0f;
+                        stageBuf.set(i, r, g, b, w);
+                    }
 
-                        if (acc_intensity > 0.01f) {
-                            float ar, ag, ab;
-                            hsv2rgb(c_acc.h, c_acc.s, c_acc.v, ar, ag, ab);
-                            r = r * (1.0f - acc_intensity) + ar * acc_intensity;
-                            g = g * (1.0f - acc_intensity) + ag * acc_intensity;
-                            b = b * (1.0f - acc_intensity) + ab * acc_intensity;
-                        }
+                    // 2. ЗОНА 2: Задня стінка (Backlight Wall-Wash) — плазмові переливи c_sec/c_acc на стіну
+                    for (int i = bot_cnt; i < total_cnt; i++) {
+                        uint16_t k = i - bot_cnt;
+                        float v = (bak_cnt > 1) ? ((float)k / (float)(bak_cnt - 1)) : 0.5f;
+                        float plasma = sinf(t * 0.65f + v * 6.28318f) * 0.5f + sinf(t * 1.2f - v * 3.14159f) * 0.35f;
+                        float plasma_norm = constrain((plasma + 0.85f) / 1.7f, 0.0f, 1.0f);
 
-                        stageBuf.set(i, r, g, b, 0.0f);
+                        float r, g, b;
+                        interpolateHsv(c_sec, c_acc, plasma_norm, r, g, b);
+                        float valley = powf(sinf(v * 3.14159265f), 1.4f);
+                        float depth = 0.40f + 0.60f * valley;
+                        r *= depth; g *= depth; b *= depth;
+                        float w = (sp->is_mono) ? 15.0f : 0.0f;
+                        stageBuf.set(i, r, g, b, w);
                     }
                 } else {
-                    // --- Smart Screen AmbiLight Fallback (When Spotify/Media is Idle) ---
-                    switch (screen_mode) {
-                        case SCREEN_CLIMATE: {
-                            // Temperature gradient (cool sky blue to warm terracotta) + turquoise humidity swell
-                            float temp_factor = constrain((screen_temp - 18.0f) / 10.0f, 0.0f, 1.0f);
-                            HsvColor c_cool{0.55f, 0.85f, 1.0f}; // Calm Sky Blue
-                            HsvColor c_warm{0.07f, 0.90f, 1.0f}; // Terracotta / Amber Warmth
-                            float wave = (sinf(t * 0.7f) + 1.0f) * 0.5f;
-
-                            for (int i = 0; i < Config::NUM_LEDS; i++) {
-                                float p = (float)i / (float)Config::NUM_LEDS;
-                                float local_t = constrain(temp_factor + sinf(p * 6.28318f + t * 0.5f) * 0.25f, 0.0f, 1.0f);
-                                float r, g, b;
-                                interpolateHsv(c_cool, c_warm, local_t, r, g, b);
-                                // Humidity wave tint
-                                g = constrain(g + wave * 30.0f, 0.0f, 255.0f);
-                                stageBuf.set(i, r, g, b, 0.0f);
-                            }
-                            break;
-                        }
-
-                        case SCREEN_POMODORO: {
-                            // Radial progress ring (hot amber focus / emerald break)
-                            bool is_break = (screen_pomo_prog < 0.0f);
-                            float prog = fabsf(screen_pomo_prog);
-                            int lit_leds = (int)(prog * (float)Config::NUM_LEDS);
-
-                            HsvColor active_col = is_break ? HsvColor{0.42f, 0.90f, 1.0f} : HsvColor{0.09f, 0.95f, 1.0f};
-                            HsvColor dim_col    = is_break ? HsvColor{0.42f, 0.60f, 0.18f} : HsvColor{0.09f, 0.60f, 0.18f};
-
-                            for (int i = 0; i < Config::NUM_LEDS; i++) {
-                                float r, g, b;
-                                if (i <= lit_leds) {
-                                    hsv2rgb(active_col.h, active_col.s, active_col.v, r, g, b);
-                                } else {
-                                    hsv2rgb(dim_col.h, dim_col.s, dim_col.v, r, g, b);
-                                }
-                                stageBuf.set(i, r, g, b, 0.0f);
-                            }
-                            break;
-                        }
-
-                        case SCREEN_BAROMETER: {
-                            // Barometric sky: deep indigo falling, azure steady, golden rising
-                            HsvColor sky_col;
-                            if (screen_pres_diff < -0.6f) {
-                                sky_col = HsvColor{0.67f, 0.85f, 1.0f}; // Deep Indigo
-                            } else if (screen_pres_diff > 0.6f) {
-                                sky_col = HsvColor{0.12f, 0.90f, 1.0f}; // Radiant Golden
-                            } else {
-                                sky_col = HsvColor{0.54f, 0.85f, 1.0f}; // Calm Azure
-                            }
-
-                            for (int i = 0; i < Config::NUM_LEDS; i++) {
-                                float wave = (sinf(t * 0.6f + (float)i * 0.15f) + 1.0f) * 0.5f;
-                                float r, g, b;
-                                hsv2rgb(sky_col.h, sky_col.s * (0.85f + wave * 0.15f), 1.0f, r, g, b);
-                                stageBuf.set(i, r, g, b, 0.0f);
-                            }
-                            break;
-                        }
-
-                        default: {
-                            // Default idle AmbiLight: calm ambient halo from last known palette
-                            HsvColor c_prim = rgb2hsv(ambi_r, ambi_g, ambi_b);
-                            HsvColor c_sec  = rgb2hsv(ambi2_r, ambi2_g, ambi2_b);
-                            float breath = (sinf(t * 0.5f) + 1.0f) * 0.5f;
-
-                            for (int i = 0; i < Config::NUM_LEDS; i++) {
-                                float p = (float)i / (float)Config::NUM_LEDS;
-                                float frac = (sinf(p * 6.28318f + t * 0.3f) + 1.0f) * 0.5f;
-                                float r, g, b;
-                                interpolateHsv(c_sec, c_prim, frac, r, g, b);
-                                stageBuf.set(i, r * (0.85f + breath * 0.15f), g * (0.85f + breath * 0.15f), b * (0.85f + breath * 0.15f), 0.0f);
-                            }
-                            break;
-                        }
+                    // Fallback: затишний спокійний ореол при паузі
+                    float breath = (sinf(t * 0.5f) + 1.0f) * 0.5f;
+                    for (int i = 0; i < bot_cnt; i++) {
+                        float r, g, b;
+                        hsv2rgb(c_prim.h, c_prim.s, 1.0f, r, g, b);
+                        stageBuf.set(i, r * (0.8f + breath * 0.2f), g * (0.8f + breath * 0.2f), b * (0.8f + breath * 0.2f), 0.0f);
+                    }
+                    for (int i = bot_cnt; i < total_cnt; i++) {
+                        float r, g, b;
+                        hsv2rgb(c_sec.h, c_sec.s, 1.0f, r, g, b);
+                        stageBuf.set(i, r * (0.7f + breath * 0.3f), g * (0.7f + breath * 0.3f), b * (0.7f + breath * 0.3f), 0.0f);
                     }
                 }
                 break;
             }
 
             default: {
-                // Manual RGBW Mode
-                for (int i = 0; i < Config::NUM_LEDS; i++) {
+                for (int i = 0; i < total_cnt; i++) {
                     stageBuf.set(i, (float)custom_r, (float)custom_g, (float)custom_b, (float)custom_w);
                 }
                 break;
             }
+        }
+
+        // Блок 3 & 4: Оверлеї (Voice Envelope, Touch Ripple, Wi-Fi Combo)
+        // 1. Voice Envelope під час мовлення TTS
+        if (audio_playing) {
+            float voice_breath = (sinf((float)step * 0.22f) + 1.0f) * 0.5f;
+            for (int i = 0; i < bot_cnt; i++) {
+                int16_t rel = layout.reversed ? (layout.bottom_offset - i) : (i - layout.bottom_offset);
+                while (rel < 0) rel += bot_cnt;
+                rel %= bot_cnt;
+                float cos_f = cosf((float)rel * (6.2831853f / (float)bot_cnt));
+                if (cos_f > 0.1f) {
+                    float add_val = cos_f * voice_breath * 35.0f;
+                    stageBuf.r[i] = constrain(stageBuf.r[i] + add_val * 0.8f, 0.0f, 255.0f);
+                    stageBuf.g[i] = constrain(stageBuf.g[i] + add_val, 0.0f, 255.0f);
+                    stageBuf.b[i] = constrain(stageBuf.b[i] + add_val * 1.2f, 0.0f, 255.0f);
+                }
+            }
+            for (int i = bot_cnt; i < total_cnt; i++) {
+                uint16_t k = i - bot_cnt;
+                float v = (bak_cnt > 1) ? ((float)k / (float)(bak_cnt - 1)) : 0.5f;
+                float dist_ctr = fabsf(v - 0.5f) * 2.0f;
+                if (dist_ctr < 0.45f) {
+                    float add_val = (1.0f - dist_ctr / 0.45f) * voice_breath * 30.0f;
+                    stageBuf.r[i] = constrain(stageBuf.r[i] + add_val * 0.8f, 0.0f, 255.0f);
+                    stageBuf.g[i] = constrain(stageBuf.g[i] + add_val, 0.0f, 255.0f);
+                    stageBuf.b[i] = constrain(stageBuf.b[i] + add_val * 1.2f, 0.0f, 255.0f);
+                }
+            }
+        }
+
+        // 2. Touch Ripple хвиля від дотику до кнопок
+        if (touch_ripple_angle != -999 && touch_ripple_elapsed_ms < 1100) {
+            float btn_rad = ((float)touch_ripple_angle / 180.0f) * 3.14159265f;
+            float wave_dist_leds = (float)touch_ripple_elapsed_ms * 0.024f;
+            float fade = 1.0f - ((float)touch_ripple_elapsed_ms / 1100.0f);
+
+            for (int i = 0; i < bot_cnt; i++) {
+                int16_t rel = layout.reversed ? (layout.bottom_offset - i) : (i - layout.bottom_offset);
+                while (rel < 0) rel += bot_cnt;
+                rel %= bot_cnt;
+                float rad = (float)rel * (6.2831853f / (float)bot_cnt);
+                float diff = fabsf(rad - btn_rad);
+                if (diff > 3.14159265f) diff = 6.2831853f - diff;
+                float arc_leds = diff * ((float)bot_cnt / 6.2831853f);
+                float d = fabsf(arc_leds - wave_dist_leds);
+                if (d < 3.2f) {
+                    float intn = (1.0f - d / 3.2f) * fade;
+                    stageBuf.r[i] = constrain(stageBuf.r[i] + intn * 70.0f, 0.0f, 255.0f);
+                    stageBuf.g[i] = constrain(stageBuf.g[i] + intn * 190.0f, 0.0f, 255.0f);
+                    stageBuf.b[i] = constrain(stageBuf.b[i] + intn * 240.0f, 0.0f, 255.0f);
+                }
+            }
+        }
+
+        // 3. Wi-Fi Combo прогрес-бар (Emergency AP Reset)
+        if (wifi_combo_prog > 0.01f) {
+            uint16_t fill_leds = (uint16_t)(wifi_combo_prog * (float)bot_cnt);
+            for (int i = 0; i < bot_cnt; i++) {
+                int16_t rel = layout.reversed ? (layout.bottom_offset - i) : (i - layout.bottom_offset);
+                while (rel < 0) rel += bot_cnt;
+                rel %= bot_cnt;
+                if (rel <= fill_leds) {
+                    stageBuf.set(i, 0.0f, 210.0f, 255.0f, 0.0f);
+                } else if (rel == fill_leds + 1) {
+                    stageBuf.set(i, 220.0f, 255.0f, 255.0f, 0.0f); // Іскра на кінці
+                }
+            }
+        }
+
+        // 4. Повне гасіння незмонтованих діодів
+        for (int i = total_cnt; i < Config::MAX_LED_COUNT; i++) {
+            stageBuf.set(i, 0.0f, 0.0f, 0.0f, 0.0f);
         }
 
         commitFrameWithBudgetAndGamma(strip, stageBuf, brightness_factor, max_allowed_ma);

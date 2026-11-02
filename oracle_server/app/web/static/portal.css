@@ -740,3 +740,14 @@ body.theme-chernobyl .mood-pill.active {
   border-color: var(--accent-warm);
   background: var(--bg-surface-active);
 }
+
+@media (max-width: 768px) {
+  .tabs-header {
+    display: none !important;
+  }
+}
+@media (min-width: 769px) {
+  .bottom-dock {
+    display: none !important;
+  }
+}

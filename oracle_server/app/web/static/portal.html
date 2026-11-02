@@ -78,9 +78,7 @@
           <b id="onlineTxt" style="font-size:13px;letter-spacing:0.4px">MAGICBOX SOVEREIGN</b>
           <span class="mono" style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8" id="verBadge">v5.6.0 ⚡ Live</span>
         </div>
-        <div class="mono" style="font-size:10px;color:var(--text-secondary);margin-top:2px">
-          FW: <span id="fwBadge">--</span> | RAM: <b id="ramTxt" style="color:var(--accent-success)">-- MB</b> | Диск: <b id="diskTxt">-- MB</b> | Черга: <b id="queueTxt">0</b>
-        </div>
+
       </div>
     </div>
     <div style="display:flex;gap:6px;align-items:center">
@@ -393,35 +391,43 @@
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Активні діоди (1..60):</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Зона 1: Дно (Underglow):</div>
             <div style="display:flex;align-items:center;gap:6px">
-              <input type="number" id="cfgLedCount" min="1" max="60" value="60" class="input" style="padding:4px 8px;font-size:13px;width:70px;text-align:center" onchange="applyTopologyFromUi()">
-              <span class="mono" style="font-size:12px">шт</span>
+              <input type="number" id="cfgBottomCount" min="1" max="60" value="36" class="input" style="padding:4px 8px;font-size:13px;width:70px;text-align:center" onchange="applyTopologyFromUi()">
+              <span class="mono" style="font-size:12px">LED</span>
             </div>
           </div>
           <div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Зміщення 12-год (Offset):</div>
-            <div style="display:flex;align-items:center;gap:4px">
-              <button class="btn" style="padding:4px 8px;font-size:12px" onclick="adjustOffset(-1)">-1</button>
-              <input type="number" id="cfgLedOffset" min="0" max="59" value="0" class="input" style="padding:4px 4px;font-size:13px;width:50px;text-align:center" onchange="applyTopologyFromUi()">
-              <button class="btn" style="padding:4px 8px;font-size:12px" onclick="adjustOffset(1)">+1</button>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Зона 2: Задня стінка (Wall-Wash):</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <input type="number" id="cfgBackCount" min="0" max="60" value="24" class="input" style="padding:4px 8px;font-size:13px;width:70px;text-align:center" onchange="applyTopologyFromUi()">
+              <span class="mono" style="font-size:12px">LED</span>
             </div>
           </div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center;margin-bottom:10px">
           <div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Центр передньої дуги:</div>
+            <div style="display:flex;align-items:center;gap:4px">
+              <button class="btn" style="padding:4px 8px;font-size:12px" onclick="adjustOffset(-1)">-1</button>
+              <input type="number" id="cfgFrontOffset" min="0" max="59" value="0" class="input" style="padding:4px 4px;font-size:13px;width:50px;text-align:center" onchange="applyTopologyFromUi()">
+              <button class="btn" style="padding:4px 8px;font-size:12px" onclick="adjustOffset(1)">+1</button>
+            </div>
+          </div>
+          <div>
             <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Напрямок обходу:</div>
             <button class="btn" id="btnLedReverse" style="width:100%;padding:5px 8px;font-size:11px" onclick="toggleLedReverse()">
               🔄 За годинниковою (CW)
             </button>
           </div>
-          <div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">
-              Ліміт струму: <b class="mono" id="cfgMaxMaVal">2000 мА</b>
-            </div>
-            <input type="range" id="cfgMaxMa" min="500" max="2500" step="100" value="2000" style="width:100%" oninput="onMaxMaInput(this.value)" onchange="applyTopologyFromUi()">
+        </div>
+
+        <div style="margin-bottom:10px">
+          <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">
+            Ліміт струму: <b class="mono" id="cfgMaxMaVal">2000 мА</b>
           </div>
+          <input type="range" id="cfgMaxMa" min="500" max="2500" step="100" value="2000" style="width:100%" oninput="onMaxMaInput(this.value)" onchange="applyTopologyFromUi()">
         </div>
 
         <button class="btn btn-primary" style="width:100%;padding:7px;font-size:12px" onclick="applyTopologyFromUi()">
@@ -604,6 +610,33 @@
 
   <!-- TAB 5: ⚙️ СИСТЕМА & МЕДІА -->
   <div id="view-system" class="tab-view" style="display:none">
+    <!-- Системний статус & Залізо MagicBox -->
+    <div class="card" style="background:radial-gradient(ellipse at top right, rgba(56,189,248,0.06), transparent 70%), var(--bg-elevated)">
+      <h3><span>⚙️ Стан Системи & Пам'ять (ESP32-S3)</span></h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:8px;margin-bottom:8px">
+        <div style="background:var(--bg-surface);padding:8px;border-radius:8px;border:1px solid var(--border-hairline)">
+          <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase">Прошивка (FW)</div>
+          <b class="mono" style="font-size:12px;color:var(--accent-cool)" id="fwBadge">v5.6-Sovereign</b>
+        </div>
+        <div style="background:var(--bg-surface);padding:8px;border-radius:8px;border:1px solid var(--border-hairline)">
+          <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase">Вільна RAM</div>
+          <b class="mono" style="font-size:12px;color:var(--accent-success)" id="ramTxt">-- KB</b>
+        </div>
+        <div style="background:var(--bg-surface);padding:8px;border-radius:8px;border:1px solid var(--border-hairline)">
+          <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase">Вільна PSRAM</div>
+          <b class="mono" style="font-size:12px;color:var(--accent-warm)" id="diskTxt">-- KB</b>
+        </div>
+        <div style="background:var(--bg-surface);padding:8px;border-radius:8px;border:1px solid var(--border-hairline)">
+          <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase">Черга команд</div>
+          <b class="mono" style="font-size:12px;color:var(--text-primary)" id="queueTxt">0</b>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);display:flex;justify-content:space-between">
+        <span>RTOS Task Watchdog: <b style="color:var(--accent-success)">20s Active</b></span>
+        <span>Wi-Fi Reset: <b>Left + Right 10s</b></span>
+      </div>
+    </div>
+
     <!-- Студія Гіфок (.mbx AmbiLight) -->
     <div class="card">
       <h3>

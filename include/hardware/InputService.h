@@ -25,6 +25,11 @@ private:
 
     ButtonTracker btns[3];
 
+    // 10s Combo tracking (Left + Right for Emergency Wi-Fi Reset / AP)
+    uint32_t combo_start_ms = 0;
+    bool     combo_active   = false;
+    bool     combo_fired    = false;
+
     static volatile bool isr_pin_changed[3];
     static void isr_btn_left()  { isr_pin_changed[0] = true; }
     static void isr_btn_top()   { isr_pin_changed[1] = true; }
@@ -50,8 +55,9 @@ public:
 
     void update() override {
         uint32_t now = millis();
+
+        // 1. Опитування та оновлення стану кожної кнопки
         for (int i = 0; i < 3; i++) {
-            // Опитуємо піни лише якщо апаратне переривання зафіксувало edge, або клавіша утримується
             if (!isr_pin_changed[i] && !btns[i].last_state) {
                 continue;
             }
@@ -64,20 +70,72 @@ public:
             if (i == 2) state.btn_r_pressed = cur;
 
             if (cur && !btns[i].last_state && (now - btns[i].last_release > 120)) {
+                // Leading edge press
                 btns[i].press_time = now;
                 btns[i].long_fired = false;
+
+                // Блок 3: Touch Ripple на дотик до сенсорів
+                if (i == 0) state.triggerTouchRipple(-90);
+                else if (i == 1) state.triggerTouchRipple(0);
+                else if (i == 2) state.triggerTouchRipple(90);
+
             } else if (cur && btns[i].last_state && !btns[i].long_fired) {
+                // Утримання клавіші
                 if (now - btns[i].press_time >= 850) {
-                    btns[i].long_fired = true;
-                    state.sendEvent(btns[i].long_evt);
+                    // Якщо зараз затиснуті обидві кнопки (Left + Right), не запускаємо звичайний long_evt!
+                    bool both_lr_down = (state.btn_l_pressed && state.btn_r_pressed);
+                    if ((i == 0 || i == 2) && both_lr_down) {
+                        // Очікуємо Wi-Fi combo
+                    } else {
+                        btns[i].long_fired = true;
+                        state.sendEvent(btns[i].long_evt);
+                    }
                 }
             } else if (!cur && btns[i].last_state) {
+                // Відпускання клавіші
                 btns[i].last_release = now;
                 if (!btns[i].long_fired && (now - btns[i].press_time >= 35)) {
                     state.sendEvent(btns[i].short_evt);
                 }
             }
             btns[i].last_state = cur;
+        }
+
+        // 2. Блок 4: Обробка 10-секундного комбо Left + Right (Emergency AP Mode)
+        bool lr_down = (state.btn_l_pressed && state.btn_r_pressed);
+        if (lr_down) {
+            if (!combo_active) {
+                combo_active = true;
+                combo_fired = false;
+                combo_start_ms = now;
+            }
+
+            uint32_t hold_time = now - combo_start_ms;
+            if (hold_time >= 1500) {
+                // Пригнічуємо будь-які поодинокі кліки
+                btns[0].long_fired = true;
+                btns[2].long_fired = true;
+
+                if (hold_time < 10000) {
+                    float prog = (float)(hold_time - 1500) / 8500.0f;
+                    state.combo_wifi_prog = (prog > 1.0f) ? 1.0f : prog;
+                } else {
+                    state.combo_wifi_prog = 1.0f;
+                    if (!combo_fired) {
+                        combo_fired = true;
+                        state.sendEvent(EventType::BTN_COMBO_WIFI_RESET);
+                    }
+                }
+            } else {
+                state.combo_wifi_prog = 0.0f;
+            }
+        } else {
+            if (combo_active) {
+                combo_active = false;
+                combo_fired = false;
+                combo_start_ms = 0;
+                state.combo_wifi_prog = 0.0f;
+            }
         }
     }
 };

@@ -252,7 +252,7 @@ public:
                  "\"ack\":%s,\"ping\":%u,"
                  "\"ota\":%u,\"ws_rec\":%u,\"scr_ang\":%d,"
                  "\"stk_net\":%lu,\"stk_cld\":%lu,\"stk_led\":%lu,"
-                 "\"led_cnt\":%u,\"led_off\":%u,\"led_rev\":%s,\"led_ma\":%u}",
+                 "\"led_bot\":%u,\"led_bak\":%u,\"led_cnt\":%u,\"led_off\":%u,\"led_rev\":%s,\"led_ma\":%u}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, state.pressure, state.pressure_diff, state.light_percent,
                  state.light_mode, getModeNameUa(state.light_mode),
@@ -273,8 +273,9 @@ public:
                  state.ota_in_progress ? 1 : 0, (unsigned int)state.ws_reconnect_cnt,
                  (int)state.screen_angle,
                  (unsigned long)state.stk_net, (unsigned long)state.stk_cloud, (unsigned long)state.stk_led,
-                 (unsigned int)state.led_layout.active_led_count, (unsigned int)state.led_layout.start_offset,
-                 state.led_layout.reverse_dir ? "true" : "false",
+                 (unsigned int)state.led_layout.bottom_count, (unsigned int)state.led_layout.back_count,
+                 (unsigned int)state.led_layout.totalCount(), (unsigned int)state.led_layout.bottom_offset,
+                 state.led_layout.reversed ? "true" : "false",
                  (unsigned int)(state.led_layout.max_current_ma_div10 * 10));
     }
 

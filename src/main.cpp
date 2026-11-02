@@ -213,18 +213,32 @@ void processEvents() {
                 break;
 
             case EventType::BTN_LEFT_LONG:
-                if (appState.screen_mode == SCREEN_POMODORO) {
-                    // З екрана Pomodoro довгий клік перемикає на наступний екран кільця
-                    appState.screen_mode = (appState.screen_mode + 1) % SCREEN_COUNT;
-                } else if (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG) {
-                    // Якщо вже на екрані діагностики — довге утримання примусово вмикає Emergency AP Hotspot!
-                    appState.cmd_start_ap = true;
-                    audioService.playBootChord();
-                    appState.triggerLedNotification(NOTIFY_CYAN_WAVE, true);
+                if (appState.screen_mode == SCREEN_SMART_HUB) {
+                    // На екрані Spotify/Smart Hub перемикаємо режим світіння між AmbiLight та Затишним теплим
+                    if (appState.light_mode == MODE_SPOTIFY_AMBI) {
+                        CommandRouter::setLightMode(appState, MODE_WARM_COZY);
+                        appState.showHudToast("Light", "Warm Cozy");
+                    } else {
+                        CommandRouter::setLightMode(appState, MODE_SPOTIFY_AMBI);
+                        appState.showHudToast("Light", "Spotify Ambi");
+                    }
+                } else if (appState.screen_mode == SCREEN_POMODORO) {
+                    // З екрана Pomodoro довгий клік повертає на головний годинник
+                    appState.screen_mode = SCREEN_CLIMATE;
                 } else {
-                    // Довге утримання лівої кнопки відкриває/закриває сервісний екран Web Studio та діагностики
-                    appState.sys_ui_state = SystemUiState::SYS_NETWORK_DIAG;
+                    // З будь-якого іншого екрана довге утримання лівої кнопки перемикає на Pomodoro
+                    appState.screen_mode = SCREEN_POMODORO;
                 }
+                appState.registerActivity();
+                break;
+
+            case EventType::BTN_COMBO_WIFI_RESET:
+                // Блок 4: 10-секундне утримання Left + Right -> аварійний скид та запуск точки доступу
+                appState.sys_ui_state = SystemUiState::SYS_NETWORK_DIAG;
+                appState.cmd_start_ap = true;
+                audioService.playBootChord();
+                appState.triggerLedNotification(NOTIFY_CYAN_WAVE, true);
+                appState.showHudToast("Emergency AP", "Setup Mode Active");
                 appState.registerActivity();
                 break;
 

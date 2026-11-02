@@ -172,7 +172,7 @@ class TelegramBotService:
             ],
             [
                 {"text": "🖼 Екран & Заставка", "callback_data": "hub:screen"},
-                {"text": "🔄 Поворот екрана", "callback_data": "menu:rotate"},
+                {"text": "📡 Змінити Wi-Fi (Точка доступу)", "callback_data": "cmd:start_ap"},
             ],
             [
                 self._web_button("📱 Web Studio"),
@@ -1092,6 +1092,24 @@ class TelegramBotService:
                 "reply_markup": self._dnd_inline_kb(),
             })
 
+        elif data in ("cmd:start_ap", "wifi:ap"):
+            state_service.enqueue_raw({"sys_cmd": "start_ap"})
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "📡 Точку доступу MagicBox-AP активовано!"})
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": "📡 <b>ТОЧКА ДОСТУПУ MAGICBOX АКТИВОВАНА!</b>\n\n"
+                        "Шкатулка перейшла в сервісний режим налаштування мережі:\n"
+                        "📶 Wi-Fi мережа: <b>MagicBox-AP</b>\n"
+                        "🔑 Пароль: <i>відкрита (без пароля)</i>\n"
+                        "🌐 Портал налаштування: <code>http://192.168.4.1</code>\n\n"
+                        "<b>Що робити:</b>\n"
+                        "1. Підключіться з телефону або ноутбука до мережі <b>MagicBox-AP</b>.\n"
+                        "2. Дочекайтеся відкриття вікна або перейдіть у браузері за посиланням вище.\n"
+                        "3. Оберіть домашній Wi-Fi та збережіть пароль.\n\n"
+                        "<i>Підказка: якщо немає зв'язку з ботом, затисніть обидві бічні сенсорні кнопки на 10 секунд!</i>",
+                "parse_mode": "HTML",
+            })
+
         elif data.startswith("rot:") or data.startswith("rot_set:") or data == "menu:rotate":
             cur_telemetry = state_service.latest_telemetry
             cur_angle = int(cur_telemetry.get("scr_ang", 0) or 0)
@@ -1596,6 +1614,22 @@ class TelegramBotService:
 
         active_kb = ADMIN_KB if is_admin else GIRL_KB
         online_note = "" if state_service.is_online() else "\n🌙 (Лампа офлайн — команду збережено, спрацює при появі живлення)"
+
+        # 0. Прийом відеоповідомлень (Video Note / «Кружечки» Telegram)
+        if "video_note" in msg:
+            vn = msg["video_note"]
+            file_id = vn.get("file_id")
+            if file_id:
+                raw_bytes = await self._download_tg_file(file_id)
+                if raw_bytes:
+                    save_tag = text or f"circle_{int(time.time())}"
+                    meta = await media_service.process_video_note_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
+                    await self._api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"🎥 Відео-кружечок «{meta['name']}» запущено на круглому екрані лампи!{online_note}",
+                        "reply_markup": self._media_control_inline_kb(meta["name"]),
+                    })
+                    return
 
         # 1. Прийом GIF-анімацій
         if "animation" in msg or ("document" in msg and str(msg["document"].get("file_name", "")).lower().endswith(".gif")):

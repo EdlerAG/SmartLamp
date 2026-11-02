@@ -591,14 +591,26 @@ private:
             state.showHudToast("🔧 LED Калібратор", sub, 1800);
         }
 
-        if (doc["led_count"].is<int>() || doc["led_offset"].is<int>() || doc["led_reverse"].is<bool>() || doc["led_max_ma"].is<int>()) {
-            if (doc["led_count"].is<int>())   state.led_layout.active_led_count     = (uint16_t)constrain(doc["led_count"].as<int>(), 1, (int)Config::NUM_LEDS);
-            if (doc["led_offset"].is<int>())  state.led_layout.start_offset         = (uint8_t)(doc["led_offset"].as<int>() % Config::NUM_LEDS);
-            if (doc["led_reverse"].is<bool>()) state.led_layout.reverse_dir          = doc["led_reverse"].as<bool>();
-            if (doc["led_max_ma"].is<int>())  state.led_layout.max_current_ma_div10 = (uint8_t)constrain(doc["led_max_ma"].as<int>() / 10, 50, 250);
+        if (doc["led_count"].is<int>() || doc["led_offset"].is<int>() || doc["led_reverse"].is<bool>() || doc["led_max_ma"].is<int>() ||
+            doc["bottom_count"].is<int>() || doc["back_count"].is<int>() || doc["front_offset"].is<int>() || doc["reversed"].is<bool>() ||
+            (doc["cmd"].is<const char*>() && strcmp(doc["cmd"].as<const char*>(), "set_led_topology") == 0)) {
+            if (doc["bottom_count"].is<int>()) state.led_layout.bottom_count = (uint16_t)constrain(doc["bottom_count"].as<int>(), 1, 90);
+            if (doc["back_count"].is<int>())   state.led_layout.back_count   = (uint16_t)constrain(doc["back_count"].as<int>(), 0, 90);
+            if (doc["front_offset"].is<int>()) state.led_layout.bottom_offset = (uint8_t)constrain(doc["front_offset"].as<int>(), 0, 89);
+            if (doc["led_offset"].is<int>())   state.led_layout.bottom_offset = (uint8_t)constrain(doc["led_offset"].as<int>(), 0, 89);
+            if (doc["reversed"].is<bool>())    state.led_layout.reversed = doc["reversed"].as<bool>();
+            if (doc["led_reverse"].is<bool>()) state.led_layout.reversed = doc["led_reverse"].as<bool>();
+            if (doc["led_max_ma"].is<int>())   state.led_layout.max_current_ma_div10 = (uint8_t)constrain(doc["led_max_ma"].as<int>() / 10, 50, 250);
+            if (doc["max_ma"].is<int>())       state.led_layout.max_current_ma_div10 = (uint8_t)constrain(doc["max_ma"].as<int>() / 10, 50, 250);
+            if (doc["led_count"].is<int>() && !doc["bottom_count"].is<int>()) {
+                uint16_t c_val = (uint16_t)doc["led_count"].as<int>();
+                if (c_val > 24) { state.led_layout.bottom_count = c_val - 24; state.led_layout.back_count = 24; }
+                else { state.led_layout.bottom_count = c_val; state.led_layout.back_count = 0; }
+            }
+            state.led_layout.syncLegacy();
             state.led_layout_dirty = true;
             if (storage_srv) storage_srv->saveLedLayout(state.led_layout);
-            state.showHudToast("🔧 Топологія LED", "Налаштування оновлено", 1800);
+            state.showHudToast("🔧 Топологія LED", "Дно + Стінка оновлено", 1800);
         }
 
         if (doc["screen_angle"].is<int>()) {

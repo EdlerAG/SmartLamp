@@ -12,14 +12,33 @@ struct LedZone {
 };
 
 struct LedLayoutConfig {
-    uint16_t active_led_count     = 60;   // 1..60
-    uint8_t  start_offset         = 0;    // 0..59
-    bool     reverse_dir          = false;// false = CW, true = CCW
-    uint8_t  max_current_ma_div10 = 200;  // 200 => 2000 mA (50..250 = 500..2500 mA)
+    uint16_t bottom_count         = Config::DEFAULT_BOTTOM_LEDS; // Зона 1: Дно (Underglow, за замовчуванням 36)
+    uint16_t back_count           = Config::DEFAULT_BACK_LEDS;   // Зона 2: Задня стінка (Wall-Wash, за замовчуванням 24)
+    uint8_t  bottom_offset        = 0;                           // Індекс центру передньої дуги під екраном
+    bool     reversed             = false;                       // true = інверсія обходу стрічки
+    uint8_t  max_current_ma_div10 = 200;                         // 200 => 2000 мА
+
+    // Зворотна сумісність з API v5.0
+    uint16_t active_led_count     = 60;
+    uint8_t  start_offset         = 0;
+    bool     reverse_dir          = false;
     LedZone  zone_top             = {0, 15};
     LedZone  zone_right           = {15, 15};
     LedZone  zone_bottom          = {30, 15};
     LedZone  zone_left            = {45, 15};
+
+    uint16_t totalCount() const {
+        uint16_t total = bottom_count + back_count;
+        if (total == 0) total = 60;
+        if (total > Config::MAX_LED_COUNT) total = Config::MAX_LED_COUNT;
+        return total;
+    }
+
+    void syncLegacy() {
+        active_led_count = totalCount();
+        start_offset = bottom_offset;
+        reverse_dir = reversed;
+    }
 };
 
 struct AppState {
@@ -364,6 +383,16 @@ struct AppState {
     // Черги URL для OTA, Аудіо (I2S) та Анімацій (.mbx / .rgb565)
     volatile bool    ota_in_progress = false;
     volatile uint8_t ota_progress    = 0;
+
+    // Touch Ripple & WiFi Combo states (v5.6)
+    volatile int16_t  touch_ripple_angle = -999; // -90 (Left), 0 (Top), +90 (Right)
+    volatile uint32_t touch_ripple_ms    = 0;
+    volatile float    combo_wifi_prog    = 0.0f; // 0.0f .. 1.0f прогрес комбо Wi-Fi скидання
+
+    void triggerTouchRipple(int16_t angle) {
+        touch_ripple_angle = angle;
+        touch_ripple_ms = millis();
+    }
 
     char pending_ota_url[160]        = "";
     char pending_ota_sha256[65]      = "";

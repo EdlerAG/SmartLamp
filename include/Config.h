@@ -67,8 +67,11 @@ namespace Config {
     constexpr int8_t  PIN_I2S_DOUT    = 17;
     constexpr uint8_t DEFAULT_VOLUME  = 12; // 0..21 (комфортний рівень за замовчуванням v4.5)
 
-    // Параметри LED стрічки SK6812 RGBW
-    constexpr uint16_t NUM_LEDS       = 60;
+    // Параметри LED стрічки SK6812 RGBW (Дводіапазонна топологія: Дно + Задня стінка)
+    constexpr uint16_t MAX_LED_COUNT  = 120; // Максимальний апаратний буфер NeoPixelBus
+    constexpr uint16_t NUM_LEDS       = MAX_LED_COUNT; // Зворотна сумісність
+    constexpr uint16_t DEFAULT_BOTTOM_LEDS = 36;  // Зона 1: Дно (Underglow)
+    constexpr uint16_t DEFAULT_BACK_LEDS   = 24;  // Зона 2: Задня стінка (Wall-Wash)
     constexpr uint8_t  MAX_SAFE_BRT   = 145;
     constexpr uint8_t  MIN_SAFE_BRT   = 14;
 
