@@ -216,18 +216,25 @@ void processEvents() {
                 if (appState.screen_mode == SCREEN_POMODORO) {
                     // З екрана Pomodoro довгий клік перемикає на наступний екран кільця
                     appState.screen_mode = (appState.screen_mode + 1) % SCREEN_COUNT;
+                } else if (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG) {
+                    // Якщо вже на екрані діагностики — довге утримання примусово вмикає Emergency AP Hotspot!
+                    appState.cmd_start_ap = true;
+                    audioService.playBootChord();
+                    appState.triggerLedNotification(NOTIFY_CYAN_WAVE, true);
                 } else {
                     // Довге утримання лівої кнопки відкриває/закриває сервісний екран Web Studio та діагностики
-                    appState.sys_ui_state = (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG)
-                                            ? SystemUiState::SYS_NORMAL
-                                            : SystemUiState::SYS_NETWORK_DIAG;
+                    appState.sys_ui_state = SystemUiState::SYS_NETWORK_DIAG;
                 }
                 appState.registerActivity();
                 break;
 
             case EventType::BTN_TOP_SHORT:
                 if (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG) {
-                    appState.sys_ui_state = SystemUiState::SYS_NORMAL;
+                    // Натискання на кришку на екрані діагностики вмикає точку доступу MagicBox-Setup
+                    appState.cmd_start_ap = true;
+                    audioService.playBootChord();
+                    appState.triggerLedNotification(NOTIFY_CYAN_WAVE, true);
+                    return;
                 } else if (appState.anim_frames_count > 0) {
                     // Якщо зараз крутиться активна гіфка/наліпка — скидаємо показ за дотиком до кришки
                     appState.stopActiveMedia();

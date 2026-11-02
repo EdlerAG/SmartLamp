@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <esp_ota_ops.h>
+#include <esp_task_wdt.h>
 #include <mbedtls/sha256.h>
 
 /**
@@ -114,7 +115,8 @@ public:
         }
 
         constexpr size_t CHUNK_SIZE = 4096;
-        uint8_t* buff = (uint8_t*)(psramFound() ? ps_malloc(CHUNK_SIZE) : malloc(CHUNK_SIZE));
+        uint8_t* buff = (uint8_t*)heap_caps_malloc(CHUNK_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (!buff) buff = (uint8_t*)malloc(CHUNK_SIZE);
         if (!buff) {
             http.end();
             if (err_out) *err_out = "Недостатньо RAM/PSRAM для буфера OTA.";
@@ -136,6 +138,7 @@ public:
         if (cb) cb(1, "Перевірка заголовка...");
 
         while (http.connected() && (total_len > 0 ? (written < (size_t)total_len) : true)) {
+            esp_task_wdt_reset();
             size_t avail = stream->available();
             if (avail > 0) {
                 last_data_ms = millis();
@@ -154,7 +157,7 @@ public:
                         return false;
                     }
 
-                    if (!Update.begin(total_len > 0 ? total_len : UPDATE_SIZE_UNKNOWN)) {
+                    if (!Update.begin(total_len > 0 ? total_len : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
                         mbedtls_sha256_free(&sha_ctx);
                         http.end();
                         free(buff);
@@ -165,6 +168,7 @@ public:
 
                 mbedtls_sha256_update(&sha_ctx, buff, c);
 
+                esp_task_wdt_reset();
                 if (Update.write(buff, c) != (size_t)c) {
                     Update.abort();
                     mbedtls_sha256_free(&sha_ctx);
@@ -196,6 +200,7 @@ public:
                     if (err_out) *err_out = "Тайм-аут завантаження (15 с без даних).";
                     return false;
                 }
+                esp_task_wdt_reset();
                 vTaskDelay(pdMS_TO_TICKS(2));
             }
         }

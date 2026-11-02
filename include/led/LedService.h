@@ -226,6 +226,22 @@ private:
         float brt_factor = (float)state.manual_brt_pct / 100.0f;
         brt_factor = constrain(brt_factor, 0.01f, 1.0f);
 
+        // 0. OTA Firmware flashing visual progress
+        if (state.ota_in_progress) {
+            if (now - last_anim_ms >= 35) {
+                last_anim_ms = now;
+                uint16_t total_leds = state.led_layout.active_led_count > 0 ? state.led_layout.active_led_count : Config::NUM_LEDS;
+                uint16_t filled = (uint16_t)((state.ota_progress * total_leds) / 100);
+                strip.ClearTo(RgbwColor(0, 0, 0, 0));
+                for (uint16_t i = 0; i < filled; i++) {
+                    uint16_t mapped_idx = mapLogicalToPhysical(i);
+                    strip.SetPixelColor(mapped_idx, RgbwColor(0, 45, 65, 12));
+                }
+                showWithLatchGuard(true);
+            }
+            return;
+        }
+
         // 1. Notification overlay
         if (notify_frames > 0) {
             if (now - last_anim_ms >= 16) {

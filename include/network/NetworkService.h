@@ -2,6 +2,7 @@
 #include "core/IService.h"
 #include "Config.h"
 #include "core/AppState.h"
+#include "core/BootSafetyGuard.h"
 #include "core/StorageService.h"
 #include "network/WifiScanner.h"
 #include "network/PortalServer.h"
@@ -179,7 +180,10 @@ public:
         storage.loadWifiCredentials(saved_ssid, saved_pass);
         configTzTime(Config::TZ_INFO, Config::NTP_SERVER);
 
-        if (saved_ssid.length() > 0) {
+        if (BootSafetyGuard::isForceApRecovery()) {
+            Serial.println("[Network] 🛠️ Hardware Emergency AP requested by BootSafetyGuard!");
+            enterApPortalMode();
+        } else if (saved_ssid.length() > 0) {
             startStaConnection();
         } else {
             enterApPortalMode();

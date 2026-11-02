@@ -199,8 +199,10 @@ public:
                 state.ota_in_progress = true;
                 state.ota_progress = 0;
                 state.registerActivity();
-                Update.begin(UPDATE_SIZE_UNKNOWN);
+                esp_task_wdt_reset();
+                Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
             } else if (upload.status == UPLOAD_FILE_WRITE) {
+                esp_task_wdt_reset();
                 if (!ota_header_checked && upload.currentSize > 0) {
                     ota_header_checked = true;
                     if (upload.buf[0] != 0xE9) {
@@ -217,6 +219,7 @@ public:
                     }
                 }
             } else if (upload.status == UPLOAD_FILE_END) {
+                esp_task_wdt_reset();
                 Update.end(true);
                 state.ota_in_progress = false;
             } else if (upload.status == UPLOAD_FILE_ABORTED) {
