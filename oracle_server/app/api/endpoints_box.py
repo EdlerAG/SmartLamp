@@ -306,6 +306,19 @@ async def download_spotify_vinyl(
     )
 
 
+@router.get("/api/v5/spotify/offset")
+async def get_spotify_lyric_offset():
+    """Повертає поточний час випередження слів пісні в мілісекундах."""
+    return {"ok": True, "offset_ms": spotify_service.get_lyric_offset_ms()}
+
+
+@router.post("/api/v5/spotify/offset")
+async def set_spotify_lyric_offset(ms: int = Query(..., description="Зсув випередження в мс (наприклад 2500 або 3000)")):
+    """Встановлює зсув випередження слів пісні для ідеальної синхронізації з аудіо."""
+    spotify_service.set_lyric_offset_ms(ms)
+    return {"ok": True, "offset_ms": ms, "message": f"Зсув слів пісні встановлено на {ms} мс"}
+
+
 @router.get("/api/v5/media/live.mbx")
 async def download_live_mbx():
     """Віддає активну мультикадрову анімацію .mbx із RAM-диска (/dev/shm)."""

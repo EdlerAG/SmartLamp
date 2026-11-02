@@ -631,7 +631,21 @@ namespace ScreenRenderer {
         if (scroll_duration_ms < 600) scroll_duration_ms = 600;
         uint32_t total_cycle_ms = pause_start_ms + scroll_duration_ms + pause_end_ms + scroll_duration_ms;
 
-        uint32_t cycle_t = now % total_cycle_ms;
+        // Відстеження зміни тексту для плавного перезапуску циклу з початковою паузою
+        static uint32_t s_last_hash[2] = {0, 0};
+        static uint32_t s_start_time[2] = {0, 0};
+        int slot = (y >= 185) ? 1 : 0; // 0 = Title (Y~171), 1 = Lyric/Artist (Y~193)
+        uint32_t h = 5381;
+        for (const char* p = text; *p; ++p) {
+            h = ((h << 5) + h) + (uint8_t)(*p);
+        }
+        if (s_last_hash[slot] != h) {
+            s_last_hash[slot] = h;
+            s_start_time[slot] = now;
+        }
+
+        uint32_t elapsed = now - s_start_time[slot];
+        uint32_t cycle_t = elapsed % total_cycle_ms;
         float offset = 0.0f;
 
         if (cycle_t < pause_start_ms) {

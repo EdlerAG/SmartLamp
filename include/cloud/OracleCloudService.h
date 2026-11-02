@@ -503,10 +503,12 @@ private:
         if (doc["spotify"].is<JsonObject>()) {
             JsonObject sp = doc["spotify"];
             portENTER_CRITICAL(&state.mux);
-            bool new_playing = sp["playing"] | false;
-            if (new_playing != state.spotify.playing) {
-                state.spotify.playing = new_playing;
-                state.spotify.last_sync_millis = millis();
+            if (sp["playing"].is<bool>()) {
+                bool new_playing = sp["playing"].as<bool>();
+                if (new_playing != state.spotify.playing) {
+                    state.spotify.playing = new_playing;
+                    state.spotify.last_sync_millis = millis();
+                }
             }
 
             const char* tr_id = sp["track_id"] | "";
@@ -550,8 +552,12 @@ private:
             if (sp["energy"].is<uint8_t>()) state.spotify.energy = sp["energy"].as<uint8_t>();
             if (sp["lyric"].is<const char*>()) {
                 const char* lyr = sp["lyric"].as<const char*>();
-                strncpy(state.spotify.lyric, lyr ? lyr : "", sizeof(state.spotify.lyric) - 1);
-                state.spotify.lyric[sizeof(state.spotify.lyric) - 1] = '\0';
+                const char* safe_lyr = lyr ? lyr : "";
+                if (strcmp(state.spotify.lyric, safe_lyr) != 0) {
+                    strncpy(state.spotify.lyric, safe_lyr, sizeof(state.spotify.lyric) - 1);
+                    state.spotify.lyric[sizeof(state.spotify.lyric) - 1] = '\0';
+                    state.ui_force_dirty = true;
+                }
             }
             state.spotify.optimistic_until_ms = 0;
 

@@ -40,6 +40,8 @@ class SpotifyService:
         "_current_lyrics",
         "_bpm_cache",
         "_hub_active",
+        "_lyrics_task",
+        "_last_pushed_lyric",
     )
 
     SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state"
@@ -87,6 +89,8 @@ class SpotifyService:
         self._current_lyrics: List[Dict[str, Any]] = []
         self._bpm_cache: Dict[str, int] = {}
         self._hub_active: bool = False
+        self._lyrics_task: Optional[asyncio.Task] = None
+        self._last_pushed_lyric: str = ""
 
     def _get_redirect_uri(self, base_url: str = "") -> str:
         if settings.SPOTIFY_REDIRECT_URI:
@@ -689,6 +693,7 @@ class SpotifyService:
                         await asyncio.gather(bpm_t, lrc_t, return_exceptions=True)
                         await asyncio.sleep(0.3)
                         if self._last_track_id == tid:
+                            self._ensure_lyrics_sync_task()
                             upd_st = self.get_cached_state()
                             try:
                                 from app.core.events import realtime_hub
@@ -705,6 +710,10 @@ class SpotifyService:
 
                 prev_playing = self._cached_state.get("playing", False)
                 self._cached_state["playing"] = is_playing
+                if is_playing:
+                    self._ensure_lyrics_sync_task()
+                elif self._lyrics_task and not self._lyrics_task.done():
+                    self._lyrics_task.cancel()
                 self._cached_state["progress_ms"] = progress_ms
                 self._cached_state["duration_ms"] = duration_ms
                 self._cached_state["bpm"] = bpm
@@ -755,6 +764,87 @@ class SpotifyService:
             return self.get_cached_state()
 
         return await self.fetch_current_playback()
+
+    def get_lyric_offset_ms(self) -> int:
+        """Повертає час випередження слів пісні в мс (за замовчуванням 2500 мс для компенсації буфера Spotify Connect)."""
+        try:
+            val = db_service.get_setting("spotify_lyric_offset_ms", "2500")
+            return int(val)
+        except Exception:
+            return 2500
+
+    def set_lyric_offset_ms(self, offset_ms: int) -> None:
+        """Зберігає налаштування випередження тексту пісні у SQLite WAL."""
+        db_service.set_setting("spotify_lyric_offset_ms", str(int(offset_ms)))
+        self._last_pushed_lyric = ""
+        self._ensure_lyrics_sync_task()
+
+    def _ensure_lyrics_sync_task(self) -> None:
+        """Гарантує роботу фонового таймера своєчасного відправлення слів пісні."""
+        if self._cached_state.get("playing") and self._current_lyrics:
+            if self._lyrics_task is None or self._lyrics_task.done():
+                try:
+                    self._lyrics_task = asyncio.create_task(self._lyrics_sync_loop())
+                except RuntimeError:
+                    pass
+
+    async def _lyrics_sync_loop(self) -> None:
+        """
+        Високоточний фоновий таймер синхронізації слів пісні (LRCLIB):
+        - Розраховує локальний прогрес з урахуванням випередження (offset_ms ~2500 мс).
+        - Спить точно до моменту настання наступного рядка (0.08..1.0 с).
+        - Щойно рядок змінюється — миттєво пушить оновлений стан через WebSocket (< 15 мс latency).
+        """
+        try:
+            while True:
+                if not self._cached_state.get("playing") or not self._current_lyrics:
+                    break
+
+                now = time.time()
+                elapsed_ms = int((now - self._last_poll_time) * 1000) if self._last_poll_time > 0 else 0
+                dur = self._cached_state.get("duration_ms", 0)
+                base_prog = self._cached_state.get("progress_ms", 0)
+                cur_prog = base_prog + elapsed_ms
+                if dur > 0 and cur_prog >= dur:
+                    break
+
+                offset_ms = self.get_lyric_offset_ms()
+                eff_prog_sec = (cur_prog + offset_ms) / 1000.0
+
+                active_lyric = ""
+                next_sec: Optional[float] = None
+                for item in self._current_lyrics:
+                    sec = item["sec"]
+                    if sec <= eff_prog_sec:
+                        active_lyric = item["text"]
+                    else:
+                        next_sec = sec
+                        break
+
+                if active_lyric != self._last_pushed_lyric:
+                    self._last_pushed_lyric = active_lyric
+                    self._cached_state["lyric"] = active_lyric
+                    try:
+                        from app.core.events import realtime_hub
+                        cur_st = self.get_cached_state(include_lyrics=False)
+                        realtime_hub.emit_spotify_to_box(cur_st)
+                        realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
+                    except Exception as emit_err:
+                        logger.debug("Lyrics loop emit error: %s", emit_err)
+
+                if next_sec is not None:
+                    time_to_next = next_sec - eff_prog_sec
+                    sleep_sec = max(0.08, min(time_to_next, 1.0))
+                else:
+                    sleep_sec = 1.0
+
+                await asyncio.sleep(sleep_sec)
+        except asyncio.CancelledError:
+            pass
+        except Exception as loop_err:
+            logger.debug("Lyrics loop error: %s", loop_err)
+        finally:
+            self._lyrics_task = None
 
     async def _fetch_lyrics(self, track_id: str, title: str, artist: str, duration_sec: int) -> None:
         if track_id in self._lyrics_cache:
@@ -808,7 +898,8 @@ class SpotifyService:
     def _get_active_lyric(self, progress_ms: int) -> str:
         if not self._current_lyrics:
             return ""
-        cur_sec = progress_ms / 1000.0
+        offset_ms = self.get_lyric_offset_ms()
+        cur_sec = (progress_ms + offset_ms) / 1000.0
         active = ""
         for item in self._current_lyrics:
             if item["sec"] <= cur_sec:
