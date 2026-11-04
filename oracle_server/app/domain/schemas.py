@@ -54,6 +54,7 @@ class CommandPayload(BaseModel):
     custom_w: Optional[int] = Field(None, ge=0, le=255)
     set_brt: Optional[str] = Field(None, description="'auto' або '0'..'3'")
     screen_angle: Optional[int] = Field(None, ge=0, le=359, description="Кут повороту екрана 0..359°")
+    set_screen: Optional[int] = Field(None, ge=0, le=3, description="Номер активного екрана 0..3")
     sleep: Optional[int] = Field(None, ge=0, le=180)
     volume: Optional[int] = Field(None, ge=0, le=21)
     muted: Optional[bool] = None

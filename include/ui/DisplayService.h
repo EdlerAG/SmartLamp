@@ -161,6 +161,7 @@ public:
                (state.screen_mode == SCREEN_POMODORO && state.pomo_active && !state.pomo_paused) ||
                (state.screen_mode == SCREEN_LIVING_GIF && state.saver_loaded) ||
                (state.screen_mode == SCREEN_SMART_HUB && (state.spotify.playing || state.tg_unread)) ||
+               (now - state.last_screen_switch_ms < 350) ||
                (now - state.last_user_activity_ms < 3000) ||
                state.btn_l_pressed || state.btn_t_pressed || state.btn_r_pressed;
     }
@@ -182,7 +183,7 @@ public:
         state.updatePomodoroLifecycle(now);
 
         bool high_perf = isHighFpsNeeded() || state.audio_playing || state.ota_in_progress;
-        updateCpuPerformance(high_perf);
+        // CPU частота керується виключно в main.cpp з RMT-захистом
 
         if (state.isHudActive(now) && state.current_lcd_brt == 0) {
             state.current_lcd_brt = 120;
@@ -358,7 +359,7 @@ public:
 
         // Динамічний розрахунок FPS для 5 основних вікон
         uint32_t target_fps = 10;
-        if (state.isHudActive(now)) {
+        if (state.isHudActive(now) || (now - state.last_screen_switch_ms < 250)) {
             target_fps = 30; // 30 FPS для плавного відображення преміального HUD-тосту
         } else if (state.screen_mode == SCREEN_POMODORO) {
             target_fps = (state.pomo_active && !state.pomo_paused) ? 10 : 4;

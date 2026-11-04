@@ -552,14 +552,14 @@ class SpotifyService:
         return bpm
 
     def _calc_song_energy(self, bpm: int, progress_ms: int, duration_ms: int) -> int:
-        """
-        Розрахунок реальної енергії треку (0..100) через щільність вокалу LRCLIB:
-        - Без слів або довга пауза > 6.5 с (інтро, яма, соло, аутро): energy = 25 (0.25)
-        - Звичайний темп рядків 3.5..6.0 с (куплет): energy = 55 (0.55)
-        - Щільні рядки 1.0..3.2 с або повторення рядків (приспів, дроп, речитатив): energy = 90 (0.90)
-        """
-        if not self._current_lyrics or len(self._current_lyrics) < 2:
-            return 25
+        """Розрахунок динамічної енергії треку (30..95) за BPM та прогресом пісні."""
+        if duration_ms <= 0:
+            return 50
+        import math
+        prog_frac = max(0.0, min(1.0, float(progress_ms) / float(duration_ms)))
+        base = int(min(70, max(30, (bpm or 120) * 0.45)))
+        arc = int(math.sin(prog_frac * math.pi) * 25.0)
+        return min(95, max(25, base + arc))
 
         cur_sec = progress_ms / 1000.0
         lyrics = self._current_lyrics
@@ -814,135 +814,18 @@ class SpotifyService:
         self._ensure_lyrics_sync_task()
 
     def _ensure_lyrics_sync_task(self) -> None:
-        """Гарантує роботу фонового таймера своєчасного відправлення слів пісні."""
-        if self._cached_state.get("playing") and self._current_lyrics:
-            if self._lyrics_task is None or self._lyrics_task.done():
-                try:
-                    self._lyrics_task = asyncio.create_task(self._lyrics_sync_loop())
-                except RuntimeError:
-                    pass
+        pass
 
     async def _lyrics_sync_loop(self) -> None:
-        """
-        Високоточний фоновий таймер синхронізації слів пісні (LRCLIB):
-        - Розраховує локальний прогрес з урахуванням випередження (offset_ms ~2500 мс).
-        - Спить точно до моменту настання наступного рядка (0.08..1.0 с).
-        - Щойно рядок змінюється — миттєво пушить оновлений стан через WebSocket (< 15 мс latency).
-        """
-        try:
-            while True:
-                if not self._cached_state.get("playing") or not self._current_lyrics:
-                    break
-
-                now = time.time()
-                elapsed_ms = int((now - self._last_poll_time) * 1000) if self._last_poll_time > 0 else 0
-                dur = self._cached_state.get("duration_ms", 0)
-                base_prog = self._cached_state.get("progress_ms", 0)
-                cur_prog = base_prog + elapsed_ms
-                if dur > 0 and cur_prog >= dur:
-                    break
-
-                offset_ms = self.get_lyric_offset_ms()
-                eff_prog_sec = (cur_prog + offset_ms) / 1000.0
-
-                active_lyric = ""
-                next_sec: Optional[float] = None
-                for item in self._current_lyrics:
-                    sec = item["sec"]
-                    if sec <= eff_prog_sec:
-                        active_lyric = item["text"]
-                    else:
-                        next_sec = sec
-                        break
-
-                if active_lyric != self._last_pushed_lyric:
-                    self._last_pushed_lyric = active_lyric
-                    self._cached_state["lyric"] = active_lyric
-                    try:
-                        from app.core.events import realtime_hub
-                        cur_st = self.get_cached_state(include_lyrics=False)
-                        realtime_hub.emit_spotify_to_box(cur_st)
-                        realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
-                    except Exception as emit_err:
-                        logger.debug("Lyrics loop emit error: %s", emit_err)
-
-                if next_sec is not None:
-                    time_to_next = next_sec - eff_prog_sec
-                    sleep_sec = max(0.08, min(time_to_next, 1.0))
-                else:
-                    sleep_sec = 1.0
-
-                await asyncio.sleep(sleep_sec)
-        except asyncio.CancelledError:
-            pass
-        except Exception as loop_err:
-            logger.debug("Lyrics loop error: %s", loop_err)
-        finally:
-            self._lyrics_task = None
+        pass
 
     async def _fetch_lyrics(self, track_id: str, title: str, artist: str, duration_sec: int) -> None:
-        if track_id in self._lyrics_cache:
-            if self._last_track_id == track_id:
-                self._current_lyrics = self._lyrics_cache[track_id]
-                try:
-                    from app.core.events import realtime_hub
-                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": self.get_cached_state()})
-                except Exception:
-                    pass
-            return
-        clean_title = re.sub(r"\s*\(.*?\)|\s*\[.*?\]", "", title).strip()
-        first_artist = artist.split(",")[0].strip()
-        params = {
-            "track_name": clean_title,
-            "artist_name": first_artist,
-        }
-        if duration_sec > 10:
-            params["duration"] = str(duration_sec)
-        try:
-            resp = await http_pool.get().get("https://lrclib.net/api/get", params=params, timeout=5.0)
-            if resp.status_code == 200:
-                data = resp.json()
-                synced = data.get("syncedLyrics") or ""
-                parsed = []
-                for line in synced.splitlines():
-                    m = re.match(r"\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)", line)
-                    if m:
-                        sec = int(m.group(1)) * 60 + float(m.group(2))
-                        txt = m.group(3).strip()
-                        if txt:
-                            parsed.append({"sec": sec, "text": txt})
-                if len(self._lyrics_cache) > 20:
-                    self._lyrics_cache.pop(next(iter(self._lyrics_cache)))
-                self._lyrics_cache[track_id] = parsed
-                if self._last_track_id == track_id:
-                    self._current_lyrics = parsed
-                    try:
-                        from app.core.events import realtime_hub
-                        realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": self.get_cached_state()})
-                    except Exception:
-                        pass
-            else:
-                if self._last_track_id == track_id:
-                    self._current_lyrics = []
-        except Exception as lrc_err:
-            logger.debug("Lyrics fetch error from lrclib: %s", lrc_err)
-            if self._last_track_id == track_id:
-                self._current_lyrics = []
+        pass
 
     def _get_active_lyric(self, progress_ms: int) -> str:
-        if not self._current_lyrics:
-            return ""
-        offset_ms = self.get_lyric_offset_ms()
-        cur_sec = (progress_ms + offset_ms) / 1000.0
-        active = ""
-        for item in self._current_lyrics:
-            if item["sec"] <= cur_sec:
-                active = item["text"]
-            else:
-                break
-        return active
+        return ""
 
-    def get_cached_state(self, include_lyrics: bool = True) -> Dict[str, Any]:
+    def get_cached_state(self, include_lyrics: bool = False) -> Dict[str, Any]:
         st = dict(self._cached_state)
         st["linked"] = self.is_linked()
         if st.get("playing") and self._last_poll_time > 0:
@@ -953,12 +836,8 @@ class SpotifyService:
                 st["progress_ms"] = min(orig_prog + elapsed_ms, dur)
             else:
                 st["progress_ms"] = orig_prog + elapsed_ms
-        cur_prog = st.get("progress_ms", 0)
-        active_l = self._get_active_lyric(cur_prog)
-        if active_l:
-            st["lyric"] = active_l
-        if include_lyrics:
-            st["lyrics"] = self._current_lyrics
+        st["lyric"] = ""
+        st["lyrics"] = []
         return st
 
 

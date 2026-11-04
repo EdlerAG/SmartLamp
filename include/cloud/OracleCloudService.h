@@ -460,6 +460,17 @@ private:
         state.oracle_manages_bot  = doc["bot_managed"] | false;
         state.has_more_cloud_cmds = doc["has_more"] | false;
 
+        // Миттєва синхронізація часу з сервера (< 0.5 с без очікування NTP)
+        if (doc["ts"].is<uint32_t>()) {
+            uint32_t srv_ts = doc["ts"].as<uint32_t>();
+            time_t now_loc = time(nullptr);
+            if (srv_ts > 1700000000UL && (now_loc < 1700000000UL || abs((long)(srv_ts - now_loc)) > 3)) {
+                struct timeval tv = { .tv_sec = (time_t)srv_ts, .tv_usec = 0 };
+                settimeofday(&tv, NULL);
+                state.time_synced = true;
+            }
+        }
+
         // Майстер налаштування Onboarding (su бітмаска)
         if (doc["su"].is<uint8_t>()) {
             state.setup_bitmask = doc["su"].as<uint8_t>();
@@ -642,6 +653,14 @@ private:
         if (doc["screen_angle"].is<int>()) {
             CommandRouter::setScreenAngle(state, doc["screen_angle"].as<int16_t>());
             if (storage_srv) storage_srv->saveScreenAngle(state.screen_angle);
+        }
+
+        if (doc["set_screen"].is<int>()) {
+            uint8_t sc = (uint8_t)constrain(doc["set_screen"].as<int>(), 0, MAIN_SCREEN_COUNT - 1);
+            state.screen_mode = sc;
+            state.last_screen_switch_ms = millis();
+            state.ui_force_dirty = true;
+            state.markSettingsDirty();
         }
 
         if (!doc["set_brt"].isNull()) {

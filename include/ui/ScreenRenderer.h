@@ -417,15 +417,20 @@ namespace ScreenRenderer {
 
     // ВІКНО 1: SCREEN_CLIMATE (Luxury Swiss Horology & Climate Desk Clock — 10 FPS)
     inline void drawClimate(LGFX_Sprite& canvas, AppState& state) {
-        // 1. Делікатне радіальне світіння у колір поточної теми
-        uint8_t aur_r = state.ambi_r / 20;
-        uint8_t aur_g = state.ambi_g / 20;
-        uint8_t aur_b = state.ambi_b / 20;
+        // 1. Делікатне радіальне світіння у колір поточної теми з живим диханням (~0.3 Гц)
+        uint32_t c_now = millis();
+        float breathe = (sinf((float)c_now * 0.002f) + 1.0f) * 0.5f;
+        uint8_t aur_r = (uint8_t)((state.ambi_r / 20) * (0.8f + breathe * 0.4f));
+        uint8_t aur_g = (uint8_t)((state.ambi_g / 20) * (0.8f + breathe * 0.4f));
+        uint8_t aur_b = (uint8_t)((state.ambi_b / 20) * (0.8f + breathe * 0.4f));
         if (aur_r == 0 && aur_g == 0 && aur_b == 0) {
-            aur_r = 14; aur_g = 10; aur_b = 6; // Теплий бурштиновий відблиск
+            aur_r = (uint8_t)(14 * (0.8f + breathe * 0.4f)); 
+            aur_g = (uint8_t)(10 * (0.8f + breathe * 0.4f)); 
+            aur_b = (uint8_t)(6 * (0.8f + breathe * 0.4f));
         }
-        canvas.fillSmoothCircle(120, 112, 64, canvas.color565(aur_r, aur_g, aur_b));
-        canvas.fillSmoothCircle(120, 112, 44, canvas.color565(aur_r * 2, aur_g * 2, aur_b * 2));
+        int rad_outer = 60 + (int)(breathe * 6.0f);
+        canvas.fillSmoothCircle(120, 112, rad_outer, canvas.color565(aur_r, aur_g, aur_b));
+        canvas.fillSmoothCircle(120, 112, 42, canvas.color565(min(255, aur_r * 2), min(255, aur_g * 2), min(255, aur_b * 2)));
 
         // 2. Зовнішнє кільце (Радіус 112..118 px): 60 засічок з бурштиновою секундною точкою
         int sec = 0;
@@ -737,8 +742,8 @@ namespace ScreenRenderer {
             float target_b = (state.spotify.ambi_r > 0 || state.spotify.ambi_g > 0 || state.spotify.ambi_b > 0) ? (float)state.spotify.ambi_b : (float)state.ambi_b;
 
             float target_r2 = (state.spotify.ambi2_r > 0 || state.spotify.ambi2_g > 0 || state.spotify.ambi2_b > 0) ? (float)state.spotify.ambi2_r : (float)state.ambi2_r;
-            float target_g2 = (state.spotify.ambi2_r > 0 || state.spotify.ambi2_g > 0 || state.spotify.ambi2_b > 0) ? (float)state.spotify.ambi2_r : (float)state.ambi2_r;
-            float target_b2 = (state.spotify.ambi2_r > 0 || state.spotify.ambi2_g > 0 || state.spotify.ambi2_b > 0) ? (float)state.spotify.ambi2_r : (float)state.ambi2_r;
+            float target_g2 = (state.spotify.ambi2_r > 0 || state.spotify.ambi2_g > 0 || state.spotify.ambi2_b > 0) ? (float)state.spotify.ambi2_g : (float)state.ambi2_g;
+            float target_b2 = (state.spotify.ambi2_r > 0 || state.spotify.ambi2_g > 0 || state.spotify.ambi2_b > 0) ? (float)state.spotify.ambi2_b : (float)state.ambi2_b;
 
             if (target_r == 0.0f && target_g == 0.0f && target_b == 0.0f) {
                 target_r = 56.0f; target_g = 189.0f; target_b = 248.0f;

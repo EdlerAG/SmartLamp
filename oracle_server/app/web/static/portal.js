@@ -2036,6 +2036,26 @@ scheduleAdaptivePoll();
 
 // ⚡️ REAL-TIME WEBSOCKET SUITE (15ms latency, 0% CPU, Zero HTTP Polling)
 
+function setScreenMode(mode) {
+  sendCmd({ set_screen: mode });
+  updateScreenButtons(mode);
+}
+
+function updateScreenButtons(activeMode) {
+  for (let i = 0; i <= 3; i++) {
+    const btn = getEl('scrBtn' + i);
+    if (btn) {
+      if (i === activeMode) {
+        btn.classList.add('btn-emerald');
+        btn.style.boxShadow = '0 0 8px rgba(16,185,129,0.4)';
+      } else {
+        btn.classList.remove('btn-emerald');
+        btn.style.boxShadow = '';
+      }
+    }
+  }
+}
+
 function applyTelemetryInPlace(t) {
   if (!t) return;
   if (t.fw || t.rssi) {
@@ -2050,6 +2070,7 @@ function applyTelemetryInPlace(t) {
   setCachedText('kHum', hStr);
   setCachedText('kPres', pStr);
   setCachedText('kMode', mStr);
+  if (t.scr !== undefined) updateScreenButtons(t.scr);
 
   setCachedText('kTempCard', tStr);
   setCachedText('kHumCard', hStr);

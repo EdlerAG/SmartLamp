@@ -209,7 +209,7 @@ private:
         uint8_t eff_a_g = (uint8_t)constrain((int)(cur_a_g + 0.5f), 0, 255);
         uint8_t eff_a_b = (uint8_t)constrain((int)(cur_a_b + 0.5f), 0, 255);
 
-        float brt_factor = (float)state.manual_brt_pct / 100.0f;
+        float brt_factor = (float)state.current_led_brt / (float)Config::MAX_SAFE_BRT;
         brt_factor = constrain(brt_factor, 0.01f, 1.0f);
 
         // 0. OTA Firmware flashing visual progress
@@ -351,10 +351,7 @@ public:
 
         if (now - last_brt_ms >= 35) {
             last_brt_ms = now;
-            uint8_t target_pct = state.manual_brt_pct;
             uint8_t target_lcd = state.current_lcd_brt;
-
-            target_pct = state.manual_brt_pct;
             uint8_t idx = state.manual_brt_idx % 4;
             target_lcd = lcd_levels[idx];
 
@@ -364,17 +361,26 @@ public:
                 } else if (now - state.last_user_activity_ms > 20000) {
                     target_lcd = 18;
                 }
+            } else {
+                bool is_sp = (state.screen_mode == SCREEN_SMART_HUB && state.spotify.playing);
+                if (!is_sp && (now - state.last_user_activity_ms > 120000)) {
+                    target_lcd = min(target_lcd, (uint8_t)60);
+                }
             }
 
+            uint8_t eff_pct = state.manual_brt_pct;
+            if (!state.oracle_online && !state.wifi_connected && eff_pct > 40) {
+                eff_pct = 40; // Енергозбереження під час блекауту на павербанку
+            }
             if (state.sleep_timer_active && state.sleep_timer_total_ms > 0) {
                 int32_t rem = max((int32_t)0, (int32_t)(state.sleep_timer_end_ms - now));
                 float fade = constrain((float)rem / (float)state.sleep_timer_total_ms, 0.05f, 1.0f);
-                target_pct = max((uint8_t)4, (uint8_t)(target_pct * fade));
+                eff_pct = max((uint8_t)4, (uint8_t)(eff_pct * fade));
             }
 
-            if (state.manual_brt_pct != target_pct) {
-                state.manual_brt_pct += (target_pct > state.manual_brt_pct) ? 1 : -1;
-                state.current_led_brt = (uint8_t)((state.manual_brt_pct * Config::MAX_SAFE_BRT) / 100);
+            uint8_t target_led_brt = (uint8_t)((eff_pct * Config::MAX_SAFE_BRT) / 100);
+            if (state.current_led_brt != target_led_brt) {
+                state.current_led_brt += (target_led_brt > state.current_led_brt) ? 1 : -1;
                 brt_changed = true;
             }
 

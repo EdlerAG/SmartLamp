@@ -126,6 +126,7 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
     # 8. Компактна бітова маска кроків налаштування ('su') та активна тема ('mood')
     resp["su"] = setup_service.get_setup_bitmask()
     resp["mood"] = db_service.get_setting("box_active_mood", "ocean")
+    resp["ts"] = int(time.time())
 
     return resp
 

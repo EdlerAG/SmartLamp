@@ -501,11 +501,12 @@ void loop() {
                 last_freq_change_ms = loop_now;
             }
         } else {
-            // Зниження до 80 МГц лише при стійкому спокої (>= 15 с безперервного спокою)
-            if (current_hw_mhz > 80 && 
+            // Зниження частоти: якщо світло вимкнено — тримаємо мінімум 160 МГц, щоб не відключався павербанк
+            uint32_t min_freq = (appState.light_mode == MODE_LIGHT_OFF) ? 160 : 80;
+            if (current_hw_mhz > min_freq && 
                 (loop_now - high_demand_last_seen_ms >= 15000UL) && 
                 (loop_now - last_freq_change_ms >= 3000UL)) {
-                setCpuFrequencyMhz(80);
+                setCpuFrequencyMhz(min_freq);
                 last_freq_change_ms = loop_now;
             }
         }

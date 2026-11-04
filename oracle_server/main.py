@@ -78,7 +78,14 @@ app.include_router(api_router)
 # Підключення статичних ресурсів (CSS, JS, PWA icons, SW)
 STATIC_DIR = Path(__file__).resolve().parent / "app" / "web" / "static"
 if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+        class CachedStaticFiles(StaticFiles):
+        async def get_response(self, path: str, scope):
+            resp = await super().get_response(path, scope)
+            if path.endswith((".css", ".js", ".svg", ".png", ".woff2")):
+                resp.headers["Cache-Control"] = "public, max-age=3600"
+            return resp
+
+    app.mount("/static", CachedStaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.api_route("/manifest.json", methods=["GET", "HEAD"], include_in_schema=False)
     async def get_manifest():
