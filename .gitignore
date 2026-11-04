@@ -40,3 +40,10 @@ include/[sS]ecrets.h
 credentials.h
 wifi_credentials.*
 !include/Secrets.example.h
+
+# Scratch & Local Utilities
+scratch/
+
+# Keys and certs
+*.key
+*.pem
