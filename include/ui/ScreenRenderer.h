@@ -770,30 +770,52 @@ namespace ScreenRenderer {
             uint16_t screen_bg_col = canvas.color565(bg_r, bg_g, bg_b);
             canvas.fillScreen(screen_bg_col);
 
-            // Багатошарова дихаюча аура (Radial Ambient Glow) позаду вінілу
+            // 1. Динамічний орбітальний спектро-еквалайзер (40 радіальних барів навколо платівки)
+            // Замінює грубі монолітні круги на живий музичний спектр у стилі преміального аудіоінтерфейсу
             float bpm_speed = (state.spotify.bpm >= 60 && state.spotify.bpm <= 200) ? (state.spotify.bpm / 120.0f) : 1.0f;
-            float halo_pulse = 1.0f + 0.06f * sinf((float)now * 0.005f * bpm_speed);
+            float energy_boost = (state.spotify.energy > 0) ? (0.6f + (float)state.spotify.energy * 0.008f) : 1.0f;
 
-            // Зовнішнє ніжне розсіяне сяйво (R = 112 px)
-            int outer_r = (int)(112.0f * halo_pulse);
-            uint16_t col_outer = canvas.color565((uint8_t)(cur_r * 0.11f), (uint8_t)(cur_g * 0.11f), (uint8_t)(cur_b * 0.11f));
-            canvas.fillCircle(120, 84, outer_r, col_outer);
+            uint16_t dim_primary = canvas.color565((uint8_t)(cur_r * 0.22f), (uint8_t)(cur_g * 0.22f), (uint8_t)(cur_b * 0.22f));
 
-            // Середня аура (R = 92 px)
-            int mid_r = (int)(92.0f * halo_pulse);
-            uint16_t col_mid = canvas.color565((uint8_t)(cur_r * 0.18f), (uint8_t)(cur_g * 0.18f), (uint8_t)(cur_b * 0.18f));
-            canvas.fillCircle(120, 84, mid_r, col_mid);
+            for (int i = 0; i < 40; i++) {
+                float angle_deg = (float)i * 9.0f;
+                float rad = angle_deg * 0.0174532925f;
+                float cos_a = cosf(rad);
+                float sin_a = sinf(rad);
 
-            // Внутрішній насичений ореол (R = 75 px)
-            int inner_r = (int)(75.0f * halo_pulse);
-            uint16_t col_inner = canvas.color565((uint8_t)(cur_r * 0.28f), (uint8_t)(cur_g * 0.28f), (uint8_t)(cur_b * 0.28f));
-            canvas.fillCircle(120, 84, inner_r, col_inner);
+                float wave1 = sinf(rad * 3.0f + (float)now * 0.007f * bpm_speed);
+                float wave2 = cosf(rad * 5.0f - (float)now * 0.005f);
+                float intensity = constrain((wave1 * 0.55f + wave2 * 0.45f + 1.0f) * 0.5f, 0.0f, 1.0f);
 
-            // 1. Обертання вінілової платівки 136x136 px у центрі (X = 120, Y = 84)
+                int bar_len = state.spotify.playing ? (int)(intensity * 7.5f * energy_boost) + 2 : 1;
+                bar_len = constrain(bar_len, 1, 10);
+
+                int r_in = 74;
+                int r_out = r_in + bar_len;
+
+                int x1 = 120 + (int)(cos_a * (float)r_in);
+                int y1 = 84  + (int)(sin_a * (float)r_in);
+                int x2 = 120 + (int)(cos_a * (float)r_out);
+                int y2 = 84  + (int)(sin_a * (float)r_out);
+
+                uint16_t b_col;
+                if (!state.spotify.playing) {
+                    b_col = dim_primary;
+                } else if (intensity > 0.62f) {
+                    b_col = secondary_col;
+                } else {
+                    b_col = primary_col;
+                }
+
+                canvas.drawLine(x1, y1, x2, y2, b_col);
+            }
+
+            // 2. Обертання вінілової платівки 136x136 px у центрі (X = 120, Y = 84)
+            // Прискорено до реальних 33⅓ RPM (~6.4 градуси/кадр при 30 FPS = ~192°/с)
             static float s_vinyl_speed = 0.0f;
-            float target_speed = state.spotify.playing ? 1.8f : 0.0f;
-            if (state.spotify.isSwitchingOptimistic(now)) target_speed = 4.5f; // Швидке обертання при перемиканні
-            float inertia_factor = state.spotify.playing ? 0.082f : 0.045f;
+            float target_speed = state.spotify.playing ? 6.4f : 0.0f;
+            if (state.spotify.isSwitchingOptimistic(now)) target_speed = 13.0f; // Стрімкий розгін при перемиканні
+            float inertia_factor = state.spotify.playing ? 0.09f : 0.045f;
             s_vinyl_speed += (target_speed - s_vinyl_speed) * inertia_factor;
             if (s_vinyl_speed > 0.005f) {
                 vinyl_angle += s_vinyl_speed;
@@ -801,12 +823,11 @@ namespace ScreenRenderer {
             }
             vinylSprite.pushRotateZoomWithAA(&canvas, 120, 84, vinyl_angle, 1.0f, 1.0f, (uint16_t)0x0000);
 
-            // 2. Кругова дуга прогресу треку навколо вінілу (R = 72..70 на X = 120, Y = 84)
+            // 3. Кругова дуга прогресу треку навколо вінілу (R = 72..70 на X = 120, Y = 84)
             uint32_t cur_prog = state.getLocalSpotifyProgressMs();
             float prog_frac = (state.spotify.duration_ms > 0) ? ((float)cur_prog / (float)state.spotify.duration_ms) : 0.0f;
             prog_frac = constrain(prog_frac, 0.0f, 1.0f);
 
-            uint16_t dim_primary = canvas.color565((uint8_t)(cur_r * 0.25f), (uint8_t)(cur_g * 0.25f), (uint8_t)(cur_b * 0.25f));
             canvas.drawArc(120, 84, 72, 70, 0, 360, dim_primary);
             int prog_deg = (int)(prog_frac * 360.0f);
             if (prog_deg > 0) {
@@ -816,6 +837,43 @@ namespace ScreenRenderer {
                 int dot_y = 84  + (int)(sinf(rad) * 71.0f);
                 canvas.fillCircle(dot_x, dot_y, 3, primary_col);
                 canvas.fillCircle(dot_x, dot_y, 1, TFT_WHITE);
+            }
+
+            // 4. Механічний тонарм програвача (Hi-Fi Tonearm з плавною кінематикою)
+            static float s_arm_lerp = 0.0f;
+            float target_arm = state.spotify.playing ? 1.0f : 0.0f;
+            s_arm_lerp += (target_arm - s_arm_lerp) * 0.08f;
+
+            if (s_arm_lerp > 0.02f) {
+                int pivot_x = 208, pivot_y = 30;
+                float groove_r = 64.0f - prog_frac * 28.0f;
+                float needle_angle_rad = 0.58f; // ~33 градуси вниз-вправо від центру вінілу
+                float on_x = 120.0f + cosf(needle_angle_rad) * groove_r;
+                float on_y = 84.0f  + sinf(needle_angle_rad) * groove_r;
+
+                float rest_x = 204.0f, rest_y = 68.0f;
+                float rest_elbow_x = 212.0f, rest_elbow_y = 48.0f;
+                float on_elbow_x = 188.0f, on_elbow_y = 54.0f;
+
+                int cur_arm_x = (int)(rest_x + (on_x - rest_x) * s_arm_lerp);
+                int cur_arm_y = (int)(rest_y + (on_y - rest_y) * s_arm_lerp);
+                int cur_elb_x = (int)(rest_elbow_x + (on_elbow_x - rest_elbow_x) * s_arm_lerp);
+                int cur_elb_y = (int)(rest_elbow_y + (on_elbow_y - rest_elbow_y) * s_arm_lerp);
+
+                canvas.fillCircle(pivot_x, pivot_y, 4, canvas.color565(75, 85, 99));
+                canvas.drawCircle(pivot_x, pivot_y, 4, canvas.color565(156, 163, 175));
+                canvas.drawLine(pivot_x, pivot_y, cur_elb_x, cur_elb_y, canvas.color565(156, 163, 175));
+                canvas.drawLine(cur_elb_x, cur_elb_y, cur_arm_x, cur_arm_y, canvas.color565(209, 213, 219));
+                canvas.fillRect(cur_arm_x - 2, cur_arm_y - 2, 5, 5, primary_col);
+                canvas.drawPixel(cur_arm_x, cur_arm_y, TFT_WHITE);
+            }
+
+            // 5. Елегантний індикатор паузи ⏸ на вінілі при зупинці
+            if (!state.spotify.playing && s_vinyl_speed < 0.6f) {
+                canvas.fillRoundRect(102, 72, 36, 24, 8, canvas.color565(15, 18, 26));
+                canvas.drawRoundRect(102, 72, 36, 24, 8, primary_col);
+                canvas.fillRect(112, 78, 4, 12, TFT_WHITE);
+                canvas.fillRect(124, 78, 4, 12, TFT_WHITE);
             }
 
             // 3. Рядок 1 (Y = 167): Назва пісні (UkrainianFont16Bold, чистий білий #FFFFFF, плавний marquee)
