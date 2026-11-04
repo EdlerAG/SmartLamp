@@ -108,15 +108,6 @@
       <span>Режим:</span>
       <b id="kMode" style="color:var(--text-primary)">--</b>
     </div>
-
-  <!-- Quick Screen Switcher -->
-  <div style="display:flex;align-items:center;gap:6px;margin:8px 0 14px 0;background:var(--bg-elevated);padding:6px 10px;border-radius:12px;border:1px solid var(--border-hairline);overflow-x:auto">
-    <span style="font-size:11px;color:var(--text-muted);font-weight:600;margin-right:4px;white-space:nowrap">📺 Екран:</span>
-    <button class="btn" id="scrBtn0" onclick="setScreenMode(0)" style="padding:4px 10px;font-size:11px;border-radius:8px">🌡 Клімат</button>
-    <button class="btn" id="scrBtn1" onclick="setScreenMode(1)" style="padding:4px 10px;font-size:11px;border-radius:8px">⏱ Pomodoro</button>
-    <button class="btn" id="scrBtn2" onclick="setScreenMode(2)" style="padding:4px 10px;font-size:11px;border-radius:8px">🖼 Гіфка</button>
-    <button class="btn" id="scrBtn3" onclick="setScreenMode(3)" style="padding:4px 10px;font-size:11px;border-radius:8px">🎵 Spotify</button>
-  </div>
   </div>
 
   <!-- Quick Screen Switcher -->
@@ -497,22 +488,22 @@
 
   <!-- TAB 3: 📊 КЛІМАТ & ДІМ -->
   <div id="view-climate" class="tab-view" style="display:none">
-    <!-- Повні датчики -->
-    <div class="grid-3" style="margin-bottom:12px">
-      <div class="card" style="text-align:center;padding:16px 12px">
-        <div style="font-size:24px;margin-bottom:4px">🌡️</div>
-        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Температура</div>
-        <b style="font-size:26px;color:var(--accent-cool);font-family:var(--font-mono);display:block;margin-top:4px" id="kTempCard">--.- °C</b>
+    <!-- Компактні показники мікроклімату -->
+    <div class="card" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;padding:12px 6px;margin-bottom:12px">
+      <div>
+        <div style="font-size:18px">🌡️</div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Темп</div>
+        <b style="font-size:17px;color:var(--accent-cool);font-family:var(--font-mono);display:block;margin-top:2px" id="kTempCard">--.- °C</b>
       </div>
-      <div class="card" style="text-align:center;padding:16px 12px">
-        <div style="font-size:24px;margin-bottom:4px">💧</div>
-        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Вологість</div>
-        <b style="font-size:26px;color:var(--accent-success);font-family:var(--font-mono);display:block;margin-top:4px" id="kHumCard">-- %</b>
+      <div>
+        <div style="font-size:18px">💧</div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Вологість</div>
+        <b style="font-size:17px;color:var(--accent-success);font-family:var(--font-mono);display:block;margin-top:2px" id="kHumCard">-- %</b>
       </div>
-      <div class="card" style="text-align:center;padding:16px 12px">
-        <div style="font-size:24px;margin-bottom:4px">🧭</div>
-        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Барометр</div>
-        <b style="font-size:22px;color:var(--accent-warm);font-family:var(--font-mono);display:block;margin-top:4px" id="kPresCard">--- мм</b>
+      <div>
+        <div style="font-size:18px">🧭</div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Тиск</div>
+        <b style="font-size:17px;color:var(--accent-warm);font-family:var(--font-mono);display:block;margin-top:2px" id="kPresCard">--- мм</b>
       </div>
     </div>
 

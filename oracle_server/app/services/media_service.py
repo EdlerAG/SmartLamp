@@ -170,11 +170,22 @@ class MediaService:
     ) -> Dict[str, Any]:
         from PIL import Image
 
+        # Автоматичне визначення відеоконтейнерів (Telegram передає GIF як MP4 або WebM)
+        is_video = (len(raw_bytes) > 8 and raw_bytes[4:8] == b"ftyp") or raw_bytes[:4] == b"\x1a\x45\xdf\xa3"
+        if is_video:
+            return cls._process_video_note_sync(raw_bytes, save_name, reaction_slot)
+
         frames_bytes: List[bytes] = []
         ambi_rgb: Tuple[int, int, int] = (56, 189, 248)
         fps = settings.GIF_DEFAULT_FPS
 
-        with Image.open(io.BytesIO(raw_bytes)) as img:
+        try:
+            img = Image.open(io.BytesIO(raw_bytes))
+        except Exception as img_err:
+            logger.info("Image.open failed (%s), attempting video/ffmpeg extraction...", img_err)
+            return cls._process_video_note_sync(raw_bytes, save_name, reaction_slot)
+
+        with img:
             is_anim = getattr(img, "is_animated", False) and getattr(img, "n_frames", 1) > 1
             total_src_frames = getattr(img, "n_frames", 1) if is_anim else 1
 

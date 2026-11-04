@@ -1636,12 +1636,48 @@ class TelegramBotService:
                 raw_bytes = await self._download_tg_file(file_id)
                 if raw_bytes:
                     save_tag = text or f"gif_{int(time.time())}"
-                    meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
-                    await self._api("sendMessage", {
-                        "chat_id": chat_id,
-                        "text": f"🎞 Анімацію «{meta['name']}» запущено на екрані лампи!{online_note}",
-                        "reply_markup": self._media_control_inline_kb(meta["name"]),
-                    })
+                    try:
+                        meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
+                        await self._api("sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"🎞 Анімацію «{meta['name']}» запущено на екрані лампи!{online_note}",
+                            "reply_markup": self._media_control_inline_kb(meta["name"]),
+                        })
+                    except Exception as err:
+                        logger.error("Error processing animation: %s", err)
+                        await self._api("sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"⚠️ Не вдалося обробити анімацію: {err}",
+                        })
+                    return
+
+        # 1.5. Прийом стікерів (Stickers: статичні WebP, відео-стікери WebM, прев'ю TGS)
+        if "sticker" in msg:
+            stk = msg["sticker"]
+            file_id = stk.get("file_id")
+            if stk.get("is_animated") and stk.get("thumbnail"):
+                file_id = stk["thumbnail"].get("file_id")
+            elif stk.get("is_video"):
+                file_id = stk.get("file_id")
+
+            if file_id:
+                raw_bytes = await self._download_tg_file(file_id)
+                if raw_bytes:
+                    emoji = stk.get("emoji", "🌟")
+                    save_tag = text or f"stk_{int(time.time())}"
+                    try:
+                        meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
+                        await self._api("sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"🌟 Наліпку {emoji} «{meta['name']}» виведено на дисплей лампи!{online_note}",
+                            "reply_markup": self._media_control_inline_kb(meta["name"]),
+                        })
+                    except Exception as err:
+                        logger.error("Error processing sticker: %s", err)
+                        await self._api("sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"⚠️ Не вдалося обробити стікер: {err}",
+                        })
                     return
 
         # 2. Прийом фотографій
