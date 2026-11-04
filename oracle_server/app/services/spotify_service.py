@@ -462,16 +462,19 @@ class SpotifyService:
         ring_mask = (dist > 4.0) & (dist <= 6.0)
         canvas_arr[ring_mask] = ambi_rgb
 
-        # 3. Vinyl rim: 54.0 < r <= 67.0 px -> dark vinyl (#0C0E14) + concentric grooves + sheen
+        # 3. Custom-pressed Colored Vinyl Rim: 54.0 < r <= 67.0 px -> tinted luxury vinyl
         vinyl_mask = (dist > 54.0) & (dist <= 67.0)
-        sheen = 8.0 * (np.cos(2.0 * theta - 0.785398) ** 4)
-        base_r = 12.0 + sheen
-        base_g = 14.0 + sheen * 1.05
-        base_b = 20.0 + sheen * 1.15
+        sheen = 9.0 * (np.cos(2.0 * theta - 0.785398) ** 4)
+        tint_r = float(ambi_rgb[0]) * 0.22
+        tint_g = float(ambi_rgb[1]) * 0.22
+        tint_b = float(ambi_rgb[2]) * 0.22
+        base_r = 14.0 + tint_r + sheen
+        base_g = 14.0 + tint_g + sheen * 1.05
+        base_b = 16.0 + tint_b + sheen * 1.15
 
-        canvas_arr[vinyl_mask, 0] = np.clip(base_r[vinyl_mask], 10.0, 32.0)
-        canvas_arr[vinyl_mask, 1] = np.clip(base_g[vinyl_mask], 12.0, 34.0)
-        canvas_arr[vinyl_mask, 2] = np.clip(base_b[vinyl_mask], 16.0, 42.0)
+        canvas_arr[vinyl_mask, 0] = np.clip(base_r[vinyl_mask], 10.0, 80.0)
+        canvas_arr[vinyl_mask, 1] = np.clip(base_g[vinyl_mask], 10.0, 80.0)
+        canvas_arr[vinyl_mask, 2] = np.clip(base_b[vinyl_mask], 10.0, 80.0)
 
         # Concentric grooves at r = 59.0 and r = 63.0
         gr_59 = (dist >= 58.6) & (dist <= 59.4)
@@ -714,14 +717,11 @@ class SpotifyService:
                     except Exception as p_err:
                         logger.debug("Vinyl and state push to box error: %s", p_err)
 
-                    # Phase 2 (Background task): Асинхронне підвантаження BPM (Deezer) та LRCLIB лірики з другим пушем через 300 мс
+                    # Phase 2 (Background task): Асинхронне підвантаження BPM (Deezer) без лірики LRCLIB
                     async def _bg_enrich_and_update(tid: str, ttl: str, art: str, dur_sec: int):
-                        bpm_t = asyncio.create_task(self._fetch_track_bpm(tid, ttl, art))
-                        lrc_t = asyncio.create_task(self._fetch_lyrics(tid, ttl, art, dur_sec))
-                        await asyncio.gather(bpm_t, lrc_t, return_exceptions=True)
-                        await asyncio.sleep(0.3)
+                        await self._fetch_track_bpm(tid, ttl, art)
+                        await asyncio.sleep(0.1)
                         if self._last_track_id == tid:
-                            self._ensure_lyrics_sync_task()
                             upd_st = self.get_cached_state()
                             try:
                                 from app.core.events import realtime_hub

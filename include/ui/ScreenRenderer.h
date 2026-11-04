@@ -611,9 +611,9 @@ namespace ScreenRenderer {
         uint16_t color,
         const GFXfont* font,
         uint32_t now,
-        uint32_t pause_start_ms = 1800,
-        uint32_t pause_end_ms = 1200,
-        float px_per_sec = 26.0f
+        uint32_t pause_start_ms = 2200,
+        uint32_t pause_end_ms = 1500,
+        float px_per_sec = 28.0f
     ) {
         if (!text || text[0] == '\0') return;
         canvas.setFont(font);
@@ -629,12 +629,14 @@ namespace ScreenRenderer {
         int overflow = text_w - max_w;
         uint32_t scroll_duration_ms = (uint32_t)((float)overflow / px_per_sec * 1000.0f);
         if (scroll_duration_ms < 600) scroll_duration_ms = 600;
-        uint32_t total_cycle_ms = pause_start_ms + scroll_duration_ms + pause_end_ms + scroll_duration_ms;
+        uint32_t return_duration_ms = (uint32_t)((float)overflow / 45.0f * 1000.0f);
+        if (return_duration_ms < 400) return_duration_ms = 400;
 
-        // Відстеження зміни тексту для плавного перезапуску циклу з початковою паузою
+        uint32_t total_cycle_ms = pause_start_ms + scroll_duration_ms + pause_end_ms + return_duration_ms;
+
         static uint32_t s_last_hash[2] = {0, 0};
         static uint32_t s_start_time[2] = {0, 0};
-        int slot = (y >= 185) ? 1 : 0; // 0 = Title (Y~171), 1 = Lyric/Artist (Y~193)
+        int slot = (y >= 185) ? 1 : 0;
         uint32_t h = 5381;
         for (const char* p = text; *p; ++p) {
             h = ((h << 5) + h) + (uint8_t)(*p);
@@ -651,16 +653,15 @@ namespace ScreenRenderer {
         if (cycle_t < pause_start_ms) {
             offset = 0.0f;
         } else if (cycle_t < (pause_start_ms + scroll_duration_ms)) {
+            // Суворо лінійна, рівномірна швидкість (пікселі за секунду) без ривків!
             float progress = (float)(cycle_t - pause_start_ms) / (float)scroll_duration_ms;
-            float ease = 0.5f * (1.0f - cosf(progress * 3.14159265f));
-            offset = ease * (float)overflow;
+            offset = progress * (float)overflow;
         } else if (cycle_t < (pause_start_ms + scroll_duration_ms + pause_end_ms)) {
             offset = (float)overflow;
         } else {
             uint32_t return_t = cycle_t - (pause_start_ms + scroll_duration_ms + pause_end_ms);
-            float progress = (float)return_t / (float)scroll_duration_ms;
-            float ease = 0.5f * (1.0f - cosf(progress * 3.14159265f));
-            offset = (1.0f - ease) * (float)overflow;
+            float progress = (float)return_t / (float)return_duration_ms;
+            offset = (1.0f - progress) * (float)overflow;
         }
 
         int clip_x = center_x - (max_w / 2);
@@ -675,6 +676,7 @@ namespace ScreenRenderer {
     inline void drawSmartHub(
         LGFX_Sprite& canvas,
         LGFX_Sprite& vinylSprite,
+        LGFX_Sprite& bgSprite,
         AppState& state,
         float& vinyl_angle,
         uint32_t now
@@ -762,16 +764,46 @@ namespace ScreenRenderer {
             uint16_t primary_col = canvas.color565(cur_r, cur_g, cur_b);
             uint16_t secondary_col = (cur_r2 > 35 || cur_g2 > 35 || cur_b2 > 35) ? canvas.color565(cur_r2, cur_g2, cur_b2) : primary_col;
 
-            // 0. Преміальна колірна адаптація дисплея під колір обкладинки (Ambient Canvas Atmosphere)
-            // Фон дисплея плавно набуває глибокого вишуканого відтінку альбому (8% яскравості Primary)
-            uint8_t bg_r = (uint8_t)(cur_r * 0.08f);
-            uint8_t bg_g = (uint8_t)(cur_g * 0.08f);
-            uint8_t bg_b = (uint8_t)(cur_b * 0.08f);
-            uint16_t screen_bg_col = canvas.color565(bg_r, bg_g, bg_b);
-            canvas.fillScreen(screen_bg_col);
+            // 0. Преміальний кешований діагональний градієнт Primary -> Secondary з радіальною віньєткою
+            static uint32_t s_last_bg_hash = 0;
+            uint32_t cur_bg_hash = ((uint32_t)cur_r << 24) | ((uint32_t)cur_g << 16) | ((uint32_t)cur_r2 << 8) | (uint32_t)cur_g2;
+
+            if (cur_bg_hash != s_last_bg_hash) {
+                s_last_bg_hash = cur_bg_hash;
+                // Генеруємо діагональний плавний градієнт Primary (top-left) -> Secondary (bottom-right)
+                // з м'якою віньєткою по колу (240x240) один раз у PSRAM спрайт
+                for (int y = 0; y < 240; y++) {
+                    float v_ratio = (float)y / 239.0f;
+                    int dy = y - 120;
+                    for (int x = 0; x < 240; x++) {
+                        float h_ratio = (float)x / 239.0f;
+                        float diag = (h_ratio + v_ratio) * 0.5f;
+
+                        int dx = x - 120;
+                        float r_dist = sqrtf((float)(dx * dx + dy * dy));
+
+                        if (r_dist >= 120.0f) {
+                            bgSprite.writePixel(x, y, 0x0000);
+                            continue;
+                        }
+
+                        // Віньєтка: 1.0 у центрі, плавно спадає до 0.25 на зовнішніх краях
+                        float vig = (r_dist <= 80.0f) ? 1.0f : (1.0f - (r_dist - 80.0f) / 40.0f * 0.75f);
+                        vig = constrain(vig, 0.25f, 1.0f);
+
+                        // Інтерполяція кольору між Primary (верхній лівий кут) та Secondary (нижній правий кут)
+                        float r_blend = ((float)cur_r * (1.0f - diag) + (float)cur_r2 * diag) * 0.20f * vig;
+                        float g_blend = ((float)cur_g * (1.0f - diag) + (float)cur_g2 * diag) * 0.20f * vig;
+                        float b_blend = ((float)cur_b * (1.0f - diag) + (float)cur_b2 * diag) * 0.20f * vig;
+
+                        uint16_t pix_col = canvas.color565((uint8_t)r_blend, (uint8_t)g_blend, (uint8_t)b_blend);
+                        bgSprite.writePixel(x, y, pix_col);
+                    }
+                }
+            }
+            bgSprite.pushSprite(&canvas, 0, 0);
 
             // 1. Динамічний орбітальний спектро-еквалайзер (40 радіальних барів навколо платівки)
-            // Замінює грубі монолітні круги на живий музичний спектр у стилі преміального аудіоінтерфейсу
             float bpm_speed = (state.spotify.bpm >= 60 && state.spotify.bpm <= 200) ? (state.spotify.bpm / 120.0f) : 1.0f;
             float energy_boost = (state.spotify.energy > 0) ? (0.6f + (float)state.spotify.energy * 0.008f) : 1.0f;
 
@@ -811,17 +843,23 @@ namespace ScreenRenderer {
             }
 
             // 2. Обертання вінілової платівки 136x136 px у центрі (X = 120, Y = 84)
-            // Прискорено до реальних 33⅓ RPM (~6.4 градуси/кадр при 30 FPS = ~192°/с)
-            static float s_vinyl_speed = 0.0f;
-            float target_speed = state.spotify.playing ? 6.4f : 0.0f;
-            if (state.spotify.isSwitchingOptimistic(now)) target_speed = 13.0f; // Стрімкий розгін при перемиканні
-            float inertia_factor = state.spotify.playing ? 0.09f : 0.045f;
-            s_vinyl_speed += (target_speed - s_vinyl_speed) * inertia_factor;
-            if (s_vinyl_speed > 0.005f) {
-                vinyl_angle += s_vinyl_speed;
+            // Плавне обертання за фізичним часом (dt): ~108 град/с (~18 RPM feel, без стробування та без ривків)
+            static uint32_t s_last_rot_ms = 0;
+            uint32_t dt_ms = (s_last_rot_ms == 0) ? 33 : (now - s_last_rot_ms);
+            s_last_rot_ms = now;
+            if (dt_ms > 100) dt_ms = 33;
+
+            static float s_vinyl_speed_dps = 0.0f;
+            float target_speed_dps = state.spotify.playing ? 108.0f : 0.0f;
+            if (state.spotify.isSwitchingOptimistic(now)) target_speed_dps = 320.0f;
+            s_vinyl_speed_dps += (target_speed_dps - s_vinyl_speed_dps) * 0.12f;
+
+            if (s_vinyl_speed_dps > 0.1f) {
+                vinyl_angle += s_vinyl_speed_dps * ((float)dt_ms / 1000.0f);
                 if (vinyl_angle >= 360.0f) vinyl_angle -= 360.0f;
             }
-            vinylSprite.pushRotateZoomWithAA(&canvas, 120, 84, vinyl_angle, 1.0f, 1.0f, (uint16_t)0x0000);
+            // Швидкий pushRotateZoom (цілочисельний раструвальник) замість важкого pushRotateZoomWithAA
+            vinylSprite.pushRotateZoom(&canvas, 120, 84, vinyl_angle, 1.0f, 1.0f, (uint16_t)0x0000);
 
             // 3. Кругова дуга прогресу треку навколо вінілу (R = 72..70 на X = 120, Y = 84)
             uint32_t cur_prog = state.getLocalSpotifyProgressMs();
@@ -869,25 +907,25 @@ namespace ScreenRenderer {
             }
 
             // 5. Елегантний індикатор паузи ⏸ на вінілі при зупинці
-            if (!state.spotify.playing && s_vinyl_speed < 0.6f) {
+            if (!state.spotify.playing && s_vinyl_speed_dps < 6.0f) {
                 canvas.fillRoundRect(102, 72, 36, 24, 8, canvas.color565(15, 18, 26));
                 canvas.drawRoundRect(102, 72, 36, 24, 8, primary_col);
                 canvas.fillRect(112, 78, 4, 12, TFT_WHITE);
                 canvas.fillRect(124, 78, 4, 12, TFT_WHITE);
             }
 
-            // 3. Рядок 1 (Y = 167): Назва пісні (UkrainianFont16Bold, чистий білий #FFFFFF, плавний marquee)
+            // 3. Рядок 1 (Y = 167): Назва пісні (UkrainianFont16Bold, чистий білий #FFFFFF, плавний лінійний marquee)
             const char* title_str = state.spotify.isSwitchingOptimistic(now) ? ">> Перемикання..." : (state.spotify.title[0] != '\0' ? state.spotify.title : "Spotify");
-            drawSmoothMarquee(canvas, title_str, 120, 167, 192, TFT_WHITE, &UkrainianFont16Bold, now, 1800, 1200, 26.0f);
+            drawSmoothMarquee(canvas, title_str, 120, 167, 196, TFT_WHITE, &UkrainianFont16Bold, now, 2200, 1500, 28.0f);
 
-            // 4. Рядок 2 (Y = 187): Виконавець або рядок LRCLIB у пастельному відтінку Primary (45% білого)
+            // 4. Рядок 2 (Y = 187): Виключно виконавець (без слів пісні, які відставали!)
             uint8_t pastel_r = (uint8_t)((cur_r * 55 + 255 * 45) / 100);
             uint8_t pastel_g = (uint8_t)((cur_g * 55 + 255 * 45) / 100);
             uint8_t pastel_b = (uint8_t)((cur_b * 55 + 255 * 45) / 100);
             uint16_t pastel_col = canvas.color565(pastel_r, pastel_g, pastel_b);
 
-            const char* sub_str = (state.spotify.lyric[0] != '\0') ? state.spotify.lyric : (state.spotify.artist[0] != '\0' ? state.spotify.artist : "Unknown Artist");
-            drawSmoothMarquee(canvas, sub_str, 120, 187, 182, pastel_col, &UkrainianFont12Bold, now, 1800, 1200, 24.0f);
+            const char* artist_str = (state.spotify.artist[0] != '\0') ? state.spotify.artist : "Unknown Artist";
+            drawSmoothMarquee(canvas, artist_str, 120, 187, 186, pastel_col, &UkrainianFont12Bold, now, 2200, 1500, 26.0f);
 
             // 5. Рядок 3 (Y = 207): Кристально чистий таймер MM:SS / MM:SS на стильному напівпрозорому бейджі
             uint32_t prog_sec = cur_prog / 1000UL;
@@ -897,7 +935,7 @@ namespace ScreenRenderer {
                      (unsigned)(prog_sec / 60), (unsigned)(prog_sec % 60),
                      (unsigned)(dur_sec / 60), (unsigned)(dur_sec % 60));
 
-            uint16_t pill_bg = canvas.color565((uint8_t)(bg_r * 2.2f), (uint8_t)(bg_g * 2.2f), (uint8_t)(bg_b * 2.2f));
+            uint16_t pill_bg = canvas.color565((uint8_t)(cur_r * 0.16f), (uint8_t)(cur_g * 0.16f), (uint8_t)(cur_b * 0.16f));
             uint16_t pill_border = canvas.color565((uint8_t)(cur_r * 0.35f), (uint8_t)(cur_g * 0.35f), (uint8_t)(cur_b * 0.35f));
             canvas.fillRoundRect(56, 199, 128, 17, 8, pill_bg);
             canvas.drawRoundRect(56, 199, 128, 17, 8, pill_border);
