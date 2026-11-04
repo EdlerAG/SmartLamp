@@ -46,8 +46,9 @@ class OtaService:
         memory_guard.trim_ram()
 
         host = state_service.resolve_public_url(base_url)
-        if "ngrok" in host and host.startswith("http://"):
-            host = "https://" + host[7:]
+        # Для стабільного OTA без блокувань ngrok віддаємо прямий HTTP URL сервера
+        if "89.168.126.103" not in host:
+            host = "http://89.168.126.103:8000"
         ota_url = f"{host}/api/v1/ota/firmware.bin?sha={self.last_sha256[:10]}"
         state_service.enqueue_raw({"ota_url": ota_url, "ota_sha256": self.last_sha256})
 
