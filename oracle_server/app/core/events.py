@@ -131,8 +131,8 @@ class RealtimeHub:
                                 self.emit_spotify_to_box(cur_st)
                     except Exception as poll_err:
                         logger.debug("Spotify poll error in realtime worker: %s", poll_err)
-                # Швидкий адаптивний інтервал: 1.0с під час відтворення, 4.0с на паузі
-                poll_delay = 1.0 if last_playing else 4.0
+                # Швидкий адаптивний інтервал: 0.8с під час відтворення, 2.5с на паузі
+                poll_delay = 0.8 if last_playing else 2.5
                 await asyncio.sleep(poll_delay)
         except asyncio.CancelledError:
             pass

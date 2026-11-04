@@ -610,7 +610,7 @@ class SpotifyService:
             return self.get_cached_state()
 
         now = time.time()
-        min_poll_interval = 1.0 if (self._cached_state.get("playing") or self._hub_active) else 3.0
+        min_poll_interval = 0.5 if (self._cached_state.get("playing") or self._hub_active) else 2.5
         if not force and (now - self._last_poll_time < min_poll_interval):
             return self.get_cached_state()
         self._last_poll_time = now
@@ -675,7 +675,7 @@ class SpotifyService:
                         if art_url:
                             art_resp = await http_pool.get().get(art_url, timeout=5.0)
                             if art_resp.status_code == 200:
-                                vinyl_bytes, ambi, ambi2, ambi3, is_mono = self._create_vinyl_art_bytes(art_resp.content)
+                                vinyl_bytes, ambi, ambi2, ambi3, is_mono = await asyncio.to_thread(self._create_vinyl_art_bytes, art_resp.content)
                                 self._last_ambi3_rgb = ambi3
                                 self._last_ambi_rgb = ambi
                                 self._last_ambi2_rgb = ambi2

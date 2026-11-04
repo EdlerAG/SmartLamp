@@ -656,7 +656,7 @@ private:
         }
 
         if (doc["set_screen"].is<int>()) {
-            uint8_t sc = (uint8_t)constrain(doc["set_screen"].as<int>(), 0, MAIN_SCREEN_COUNT - 1);
+            uint8_t sc = (uint8_t)constrain(doc["set_screen"].as<int>(), 0, SCREEN_COUNT - 1);
             state.screen_mode = sc;
             state.last_screen_switch_ms = millis();
             state.ui_force_dirty = true;
