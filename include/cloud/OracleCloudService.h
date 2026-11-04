@@ -38,6 +38,7 @@ private:
         OracleCloudService* self = (OracleCloudService*)handler_args;
         if (!self) return;
         esp_websocket_event_data_t *data = (esp_websocket_event_data_t *)event_data;
+        if (self->state.ota_in_progress) return;
         if (event_id == WEBSOCKET_EVENT_CONNECTED) {
             Serial.printf("[OracleCloud] ✅ WS Connected to %s!\n", self->ws_url.c_str());
             self->state.oracle_online = true;
@@ -877,10 +878,22 @@ public:
         char ota_url_buf[160];
         char ota_sha_buf[65];
         if (state.popPendingOtaUrl(ota_url_buf, sizeof(ota_url_buf), ota_sha_buf, sizeof(ota_sha_buf))) {
+            // Зупиняємо WebSocket на час OTA, щоб повністю звільнити пам'ять та шину
+            if (ws_client) {
+                esp_websocket_client_stop(ws_client);
+                ws_connected = false;
+            }
             String err = "";
-            if (CloudOtaService::flashFromUrl(state, String(ota_url_buf), err, ota_sha_buf)) {
+            bool ok = CloudOtaService::flashFromUrl(state, String(ota_url_buf), err, ota_sha_buf);
+            if (ok) {
                 vTaskDelay(pdMS_TO_TICKS(500));
                 ESP.restart();
+            } else {
+                Serial.printf("[OracleCloud] ❌ OTA Failed: %s\n", err.c_str());
+                // Якщо сталася помилка — відновлюємо фоновий WebSocket канал
+                if (ws_client) {
+                    esp_websocket_client_start(ws_client);
+                }
             }
         }
 

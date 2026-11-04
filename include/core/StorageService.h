@@ -258,6 +258,7 @@ public:
     }
 
     void checkDelayedSave(AppState& state) {
+        if (state.ota_in_progress) return; // Заборонено писати в NVS Flash під час OTA!
         if (state.audio_settings_dirty) {
             state.audio_settings_dirty = false;
             saveAudioSettings(state.audio_volume, state.audio_muted, state.touch_beep_enabled);

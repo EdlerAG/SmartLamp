@@ -325,6 +325,19 @@ public:
 
     void update() override {
         uint32_t now = millis();
+
+        if (state.ota_in_progress) {
+            // Під час OTA знижуємо частоту оновлення LED до 10 Гц (100 мс)
+            // і показуємо спокійний пульсуючий індикатор прогресу, щоб не навантажувати шину RMT
+            if (now - last_anim_ms >= 100) {
+                last_anim_ms = now;
+                uint8_t val = (uint8_t)(state.ota_progress * 2.5f);
+                strip.ClearTo(RgbwColor(0, (uint8_t)(state.ota_progress * 1.5f), val, 0));
+                strip.Show();
+            }
+            return;
+        }
+
         bool brt_changed = false;
 
         if (state.sleep_timer_active) {

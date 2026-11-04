@@ -191,7 +191,7 @@ public:
     }
 
     void update() override {
-        storage.checkDelayedSave(state);
+        // storage.checkDelayedSave(state) викликається виключно в main.cpp на Core 1
         updateInternalRtcClock();
 
         if (state.cmd_start_ap) {

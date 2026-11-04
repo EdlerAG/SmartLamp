@@ -93,6 +93,8 @@ public:
         http.setConnectTimeout(10000);
         http.setTimeout(25000);
         http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+        http.addHeader("ngrok-skip-browser-warning", "1");
+        http.addHeader("User-Agent", "MagicBox-OTA/5.6");
 
         bool begun = is_https ? http.begin(sec_client, str_url) : http.begin(net_client, str_url);
         if (!begun) {
@@ -137,8 +139,19 @@ public:
 
         if (cb) cb(1, "Перевірка заголовка...");
 
+        uint32_t ota_global_start_ms = millis();
+
         while (http.connected() && (total_len > 0 ? (written < (size_t)total_len) : true)) {
             esp_task_wdt_reset();
+
+            if (millis() - ota_global_start_ms > 120000) {
+                Update.abort();
+                mbedtls_sha256_free(&sha_ctx);
+                http.end();
+                free(buff);
+                if (err_out) *err_out = "Загальний тайм-аут OTA перевищено (120 с).";
+                return false;
+            }
             size_t avail = stream->available();
             if (avail > 0) {
                 last_data_ms = millis();

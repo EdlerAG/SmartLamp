@@ -277,9 +277,11 @@ public:
         // РІВЕНЬ Б: ОСНОВНІ 4 ВІКНА-ЗАСТАВКИ
         // ====================================================================
 
-        // 1. Пріоритет: OTA оновлення
+        // 1. Пріоритет: OTA оновлення (оновлюємо лише при зміні відсотка або >=500мс, щоб не забивати шину SPI)
         if (state.ota_in_progress) {
-            if (now - last_frame_ms >= 33) {
+            static uint8_t s_last_rendered_ota_pct = 255;
+            if (s_last_rendered_ota_pct != state.ota_progress || (now - last_frame_ms >= 500)) {
+                s_last_rendered_ota_pct = state.ota_progress;
                 last_frame_ms = now;
                 ScreenRenderer::drawOta(canvas, state);
                 pushCanvas();
