@@ -158,6 +158,9 @@ public:
 
     void loadUserSettings(AppState& state) {
         state.onboarded        = isOnboarded();
+        if (state.onboarded) {
+            state.sys_ui_state = SystemUiState::SYS_NORMAL;
+        }
         state.saver_crc        = getSaverCrc();
         state.saver_show_clock = getSaverShowClock();
 
@@ -176,7 +179,14 @@ public:
             if (prefs.isKey("l_mode"))  state.light_mode     = prefs.getUChar("l_mode", 0) % TOTAL_LIGHT_MODES;
             state.auto_brt = false; // LDR sensor removed
             if (prefs.isKey("m_brt"))   state.manual_brt_idx = prefs.getUChar("m_brt", 2) % 4;
+            if (prefs.isKey("m_pct"))   state.manual_brt_pct = prefs.getUChar("m_pct", 65);
             if (prefs.isKey("scr_ang")) state.screen_angle   = (prefs.getShort("scr_ang", 0) % 360 + 360) % 360;
+            if (prefs.isKey("scr_mod")) state.screen_mode    = prefs.getUChar("scr_mod", SCREEN_CLIMATE) % MAIN_SCREEN_COUNT;
+            if (prefs.isKey("sp_lnk"))  state.sp_linked      = prefs.getBool("sp_lnk", false);
+            if (prefs.isKey("c_r"))     state.custom_r       = prefs.getUChar("c_r", 255);
+            if (prefs.isKey("c_g"))     state.custom_g       = prefs.getUChar("c_g", 180);
+            if (prefs.isKey("c_b"))     state.custom_b       = prefs.getUChar("c_b", 80);
+            if (prefs.isKey("c_w"))     state.custom_w       = prefs.getUChar("c_w", 120);
 
             if (prefs.isKey("a_vol"))  state.audio_volume       = prefs.getUChar("a_vol", Config::DEFAULT_VOLUME);
             if (prefs.isKey("a_mut"))  state.audio_muted        = prefs.getBool("a_mut", false);
@@ -292,13 +302,20 @@ public:
             saveLedLayout(state.led_layout);
         }
 
-        if (state.settings_dirty && (millis() - state.settings_change_ms >= 5000)) {
+        if (state.settings_dirty && (millis() - state.settings_change_ms >= 2000)) {
             state.settings_dirty = false;
             if (prefs.begin("box_state", false)) {
                 prefs.putUChar("l_mode", state.light_mode);
                 prefs.putBool("a_brt", state.auto_brt);
                 prefs.putUChar("m_brt", state.manual_brt_idx);
                 prefs.putShort("scr_ang", state.screen_angle);
+                prefs.putUChar("m_pct", state.manual_brt_pct);
+                prefs.putUChar("scr_mod", state.screen_mode % MAIN_SCREEN_COUNT);
+                prefs.putBool("sp_lnk", state.sp_linked);
+                prefs.putUChar("c_r", state.custom_r);
+                prefs.putUChar("c_g", state.custom_g);
+                prefs.putUChar("c_b", state.custom_b);
+                prefs.putUChar("c_w", state.custom_w);
                 prefs.end();
             }
         }

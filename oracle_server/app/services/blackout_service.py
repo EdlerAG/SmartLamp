@@ -74,13 +74,14 @@ class BlackoutService:
 
         if self.in_blackout and self.blackout_started_at > 0:
             duration = round(now - self.blackout_started_at, 1)
-            db_service.record_outage(self.blackout_started_at, now, duration)
             self.in_blackout = False
-            mins = max(1, int(duration // 60))
-            await self.send_tg_alert(
-                f"⚡ Світло та домашній Wi-Fi увімкнули! Шкатулка онлайн.\n"
-                f"⏱ Тривалість відключення: ~{mins} хв ({int(duration)} с)."
-            )
+            if duration >= 60.0:
+                db_service.record_outage(self.blackout_started_at, now, duration)
+                mins = max(1, int(duration // 60))
+                await self.send_tg_alert(
+                    f"⚡ Світло та домашній Wi-Fi увімкнули! Шкатулка онлайн.\n"
+                    f"⏱ Тривалість відключення: ~{mins} хв ({int(duration)} с)."
+                )
 
         if ack:
             await self.send_tg_alert("✅ Настя торкнулася кришки шкатулки — твоє повідомлення прочитано! 🔥")

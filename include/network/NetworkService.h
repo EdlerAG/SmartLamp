@@ -120,7 +120,7 @@ private:
             state.cmd_send_power_restore = true;
         }
 
-        state.screen_mode = SCREEN_CLIMATE;
+        // Зберігаємо поточний screen_mode при перепідключенні Wi-Fi
         state.registerActivity();
         drop_start_ms = 0;
         net_mode = NetMode::CONNECTED;
@@ -234,7 +234,7 @@ public:
                     if (drop_start_ms == 0) {
                         drop_start_ms = millis();
                         WiFi.reconnect();
-                    } else if (millis() - drop_start_ms >= 30000) {
+                    } else if (millis() - drop_start_ms >= 60000) {
                         state.had_blackout_drop = true;
                         enterBlackoutEcoMode();
                     }

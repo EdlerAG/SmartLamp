@@ -200,6 +200,7 @@ public:
     static void pushMessage(AppState& state, const char* sender, const char* text) {
         state.setTelegramData(sender, text);
         state.screen_mode = SCREEN_SMART_HUB;
+        state.markSettingsDirty();
         state.triggerLedNotification(NOTIFY_CYAN_WAVE, false);
     }
 

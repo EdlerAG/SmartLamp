@@ -113,7 +113,13 @@ public:
         vinylSprite.drawCircle(68, 68, 6, HallmarkTheme::BORDER_HAIRLINE);
 
         // Вітальний екран
-        ScreenRenderer::drawBootSplash(canvas, 0, Config::BOOT_SPLASH_MS);
+        if (state.onboarded && !state.ap_mode_active) {
+            state.sys_ui_state = SystemUiState::SYS_NORMAL;
+            state.ui_force_dirty = true;
+        } else {
+            ScreenRenderer::drawBootSplash(canvas, 0, Config::BOOT_SPLASH_MS);
+            pushCanvas();
+        }
         pushCanvas();
     }
 
@@ -198,6 +204,11 @@ public:
         // РІВЕНЬ А: СИСТЕМНІ СТАНИ ЗАПУСКУ ТА ДІАГНОСТИКИ
         // ====================================================================
         if (state.sys_ui_state == SystemUiState::SYS_BOOT_SPLASH) {
+            if (state.onboarded && !state.ap_mode_active) {
+                state.sys_ui_state = SystemUiState::SYS_NORMAL;
+                state.ui_force_dirty = true;
+            }
+        } else {
             uint32_t elapsed = now - state.boot_splash_start_ms;
             if (elapsed < Config::BOOT_SPLASH_MS) {
                 if (now - last_frame_ms >= 16) {

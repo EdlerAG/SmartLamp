@@ -75,8 +75,8 @@ class Settings:
     VOICE_CLONE_ID: str = os.getenv("VOICE_CLONE_ID", "")
     TTS_EDGE_VOICE: str = os.getenv("TTS_EDGE_VOICE", "uk-UA-OstapNeural") # "uk-UA-OstapNeural" (чоловічий), "uk-UA-PolinaNeural" (жіночий)
 
-    # Таймінги блекауту та синхронізації
-    BLACKOUT_TIMEOUT_SEC: float = float(os.getenv("BLACKOUT_TIMEOUT_SEC", "25.0"))
+    # Таймінги блекауту та синхронізації (ігноруємо мікро-перезавантаження павербанка до 65 с)
+    BLACKOUT_TIMEOUT_SEC: float = float(os.getenv("BLACKOUT_TIMEOUT_SEC", "65.0"))
 
     # Погода та Кастомний ШІ
     WEATHER_LAT: float = float(os.getenv("WEATHER_LAT", "49.68"))

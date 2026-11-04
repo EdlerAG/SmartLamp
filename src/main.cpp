@@ -207,10 +207,12 @@ void processEvents() {
                         appState.pomoAdjustMinutes(-1);
                     } else {
                         appState.screen_mode = SCREEN_CLIMATE;
+                        appState.markSettingsDirty();
                     }
                 } else {
                     appState.screen_mode = (appState.screen_mode + 1) % MAIN_SCREEN_COUNT;
                     appState.last_screen_switch_ms = millis();
+                    appState.markSettingsDirty();
                 }
                 appState.registerActivity();
                 break;
@@ -228,9 +230,11 @@ void processEvents() {
                 } else if (appState.screen_mode == SCREEN_POMODORO) {
                     // З екрана Pomodoro довгий клік повертає на головний годинник
                     appState.screen_mode = SCREEN_CLIMATE;
+                    appState.markSettingsDirty();
                 } else {
                     // З будь-якого іншого екрана довге утримання лівої кнопки перемикає на Pomodoro
                     appState.screen_mode = SCREEN_POMODORO;
+                    appState.markSettingsDirty();
                 }
                 appState.registerActivity();
                 break;
@@ -416,8 +420,7 @@ void setup() {
     // 5. Хмарні сервіси (Oracle Cloud Gateway) на Core 0
     core0CloudServices.add(&oracleService);
 
-    // Гармонійний процедурний акорд старту (якщо звук не вимкнено)
-    audioService.playBootChord();
+    // Безшумний миттєвий старт (без акорду) для непомітного перемикання живлення від павербанка
 
     xTaskCreatePinnedToCore(backgroundCore0Task, "Core0Net",   8192,  nullptr, 2, &s_netTaskHandle,   0);
     xTaskCreatePinnedToCore(cloudCore0Task,      "Core0Cloud", 10240, nullptr, 1, &s_cloudTaskHandle, 0);

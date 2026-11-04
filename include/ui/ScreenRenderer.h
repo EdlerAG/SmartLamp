@@ -724,7 +724,9 @@ namespace ScreenRenderer {
         }
 
         // --- ПРІОРИТЕТ 2: Spotify (Hallmark Luxury Vinyl Deck — 30 FPS) ---
-        bool has_spotify_deck = (state.spotify.playing || (state.spotify.track_id[0] != '\0' && (now - state.spotify.last_sync_ms < 60000UL)));
+        bool has_spotify_deck = (state.spotify.playing || 
+                                (state.spotify.track_id[0] != '\0' && (now - state.spotify.last_sync_ms < 60000UL)) ||
+                                (now < 12000UL && state.sp_linked));
         if (has_spotify_deck) {
             // Динамічна плавна RGB інтерполяція кольорів обкладинки (lerp ~500 мс)
             static float s_lerp_r = 56.0f, s_lerp_g = 189.0f, s_lerp_b = 248.0f;

@@ -467,7 +467,11 @@ private:
 
         // Статус підключення Spotify від сервера (для майстра Onboarding та плеєра)
         if (doc["sp_linked"].is<bool>()) {
-            state.sp_linked = doc["sp_linked"].as<bool>();
+            bool sp = doc["sp_linked"].as<bool>();
+            if (sp != state.sp_linked) {
+                state.sp_linked = sp;
+                state.markSettingsDirty();
+            }
         }
 
         // Обробка тихих годин та режиму DND для Насті
