@@ -354,22 +354,9 @@ public:
             uint8_t target_pct = state.manual_brt_pct;
             uint8_t target_lcd = state.current_lcd_brt;
 
-            if (state.auto_brt) {
-                float factor = constrain((state.smooth_ldr - 200.0f) / 3500.0f, 0.0f, 1.0f);
-                uint8_t desired_pct = (uint8_t)(10 + factor * 90.0f);
-                uint8_t desired_lcd = (uint8_t)(40 + factor * 215.0f);
-
-                if (abs((int)desired_pct - (int)state.manual_brt_pct) >= 3) {
-                    target_pct = desired_pct;
-                }
-                if (abs((int)desired_lcd - (int)state.current_lcd_brt) >= 4) {
-                    target_lcd = desired_lcd;
-                }
-            } else {
-                target_pct = state.manual_brt_pct;
-                uint8_t idx = state.manual_brt_idx % 4;
-                target_lcd = lcd_levels[idx];
-            }
+            target_pct = state.manual_brt_pct;
+            uint8_t idx = state.manual_brt_idx % 4;
+            target_lcd = lcd_levels[idx];
 
             if (state.light_mode == MODE_LIGHT_OFF) {
                 if (state.quiet_hours_active && (now - state.last_user_activity_ms > 120000)) {

@@ -402,7 +402,7 @@ async def dashboard_websocket(ws: WebSocket):
                     state_service.enqueue_raw({
                         "dnd": new_dnd,
                         "muted": new_dnd,
-                        "set_brt": "0" if new_dnd else "auto",
+                        "set_brt": "0" if new_dnd else "2",
                     })
                     await ws.send_text(orjson.dumps({"type": "dnd_ack", "ok": True, "dnd": new_dnd}).decode("utf-8"))
 
@@ -854,7 +854,7 @@ async def toggle_dnd(enabled: Optional[bool] = None, _: str = Depends(verify_acc
     state_service.enqueue_raw({
         "dnd": new_dnd,
         "muted": new_dnd,
-        "set_brt": "0" if new_dnd else "auto",
+        "set_brt": "0" if new_dnd else "2",
     })
     return {"ok": True, "dnd": new_dnd}
 

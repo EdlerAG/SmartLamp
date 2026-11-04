@@ -66,11 +66,11 @@ struct AppState {
     float   pressure_hist[24]   = {0};
     uint8_t pressure_hist_count = 0;
 
-    // Освітленість та яскравість
-    volatile int     raw_ldr         = 2000;
-    volatile float   smooth_ldr      = 2000.0f;
-    volatile int     light_percent   = 50;
-    volatile bool    auto_brt        = true;
+    // Освітленість та яскравість (LDR видалено — керування суворо фіксованими рівнями)
+    volatile int     raw_ldr         = 0;
+    volatile float   smooth_ldr      = 0.0f;
+    volatile int     light_percent   = 0;
+    volatile bool    auto_brt        = false;
     volatile uint8_t manual_brt_idx  = 2;
     volatile uint8_t manual_brt_pct  = 65; // 1..100% плавне регулювання
     volatile uint8_t current_led_brt = 65;

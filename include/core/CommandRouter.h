@@ -104,46 +104,25 @@ public:
         state.showHudToast("🔆 Яскравість", sub);
     }
 
-    static void setBrightnessPreset(AppState& state, bool auto_mode, uint8_t preset_idx = 2) {
-        state.auto_brt = auto_mode;
-        if (!auto_mode) {
-            state.manual_brt_idx = preset_idx % 4;
-            static const uint8_t pct_map[4] = {15, 35, 65, 100};
-            state.manual_brt_pct = pct_map[state.manual_brt_idx];
-        }
+    static void setBrightnessPreset(AppState& state, bool /*auto_mode*/, uint8_t preset_idx = 2) {
+        state.auto_brt = false;
+        state.manual_brt_idx = preset_idx % 4;
+        static const uint8_t pct_map[4] = {15, 35, 65, 100};
+        state.manual_brt_pct = pct_map[state.manual_brt_idx];
         state.markSettingsDirty();
         char sub[32];
-        if (auto_mode) {
-            snprintf(sub, sizeof(sub), "Авто (LDR) • %u%%", state.getLedBrightnessPercent());
-        } else {
-            snprintf(sub, sizeof(sub), "%s", getBrightnessPresetName(false, state.manual_brt_idx));
-        }
+        snprintf(sub, sizeof(sub), "%s", getBrightnessPresetName(false, state.manual_brt_idx));
         state.showHudToast("🔆 Яскравість", sub);
     }
 
     static void cycleBrightness(AppState& state) {
-        if (state.auto_brt) {
-            state.auto_brt = false;
-            state.manual_brt_idx = 0;
-            state.manual_brt_pct = 15;
-        } else {
-            state.manual_brt_idx++;
-            if (state.manual_brt_idx >= 4) {
-                state.auto_brt = true;
-                state.manual_brt_idx = 2;
-                state.manual_brt_pct = 65;
-            } else {
-                static const uint8_t pct_map[4] = {15, 35, 65, 100};
-                state.manual_brt_pct = pct_map[state.manual_brt_idx];
-            }
-        }
+        state.auto_brt = false;
+        state.manual_brt_idx = (state.manual_brt_idx + 1) % 4;
+        static const uint8_t pct_map[4] = {15, 35, 65, 100};
+        state.manual_brt_pct = pct_map[state.manual_brt_idx];
         state.markSettingsDirty();
         char sub[32];
-        if (state.auto_brt) {
-            snprintf(sub, sizeof(sub), "Авто (LDR) • %u%%", state.getLedBrightnessPercent());
-        } else {
-            snprintf(sub, sizeof(sub), "%s", getBrightnessPresetName(false, state.manual_brt_idx));
-        }
+        snprintf(sub, sizeof(sub), "%s", getBrightnessPresetName(false, state.manual_brt_idx));
         state.showHudToast("🔆 Яскравість", sub);
     }
 

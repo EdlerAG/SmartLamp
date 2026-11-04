@@ -211,18 +211,16 @@ class TelegramBotService:
     @staticmethod
     def _brt_inline_kb() -> Dict[str, Any]:
         d = state_service.latest_telemetry
-        auto_b = d.get("auto_b", True)
         b_idx = d.get("b_idx", 2)
         return {
             "inline_keyboard": [
-                [{"text": f"{'✅ ' if auto_b else ''}🤖 Автоматична (Фоторезистор)", "callback_data": "brt:auto"}],
                 [
-                    {"text": f"{'✅ ' if not auto_b and b_idx == 0 else ''}🌙 15% Нічник", "callback_data": "brt:0"},
-                    {"text": f"{'✅ ' if not auto_b and b_idx == 1 else ''}☕ 35% М'яко", "callback_data": "brt:1"},
+                    {"text": f"{'✅ ' if b_idx == 0 else ''}🌙 15% Нічник", "callback_data": "brt:0"},
+                    {"text": f"{'✅ ' if b_idx == 1 else ''}☕ 35% М'яко", "callback_data": "brt:1"},
                 ],
                 [
-                    {"text": f"{'✅ ' if not auto_b and b_idx == 2 else ''}✨ 65% Робота", "callback_data": "brt:2"},
-                    {"text": f"{'✅ ' if not auto_b and b_idx == 3 else ''}☀️ 100% Максимум", "callback_data": "brt:3"},
+                    {"text": f"{'✅ ' if b_idx == 2 else ''}✨ 65% Робота", "callback_data": "brt:2"},
+                    {"text": f"{'✅ ' if b_idx == 3 else ''}☀️ 100% Максимум", "callback_data": "brt:3"},
                 ],
                 [
                     {"text": "💡 До вибору режимів", "callback_data": "hub:light"},
@@ -534,7 +532,7 @@ class TelegramBotService:
         pomo_line = f"⏱ Фокус Pomodoro: <b>{pomo_st['remaining_min']} хв ({pomo_st['mode'].upper()})</b>" if pomo_st["active"] else "⏱ Фокус Pomodoro: <b>Вимкнено</b>"
 
         vol_str = "🔇 MUTE" if muted or vol == 0 else f"{int(vol * 100 / 21)}% ({vol}/21)"
-        brt_str = "Авто" if auto_b else f"Ручна ({b_pct}%)"
+        brt_str = f"{b_pct}%"
 
         sp_st = spotify_service.get_cached_state()
         sp_line = f"🎵 Spotify: {sp_st['title']} — {sp_st['artist']}" if sp_st.get("playing") else "🎵 Spotify: Пауза / Не активний"
@@ -545,8 +543,7 @@ class TelegramBotService:
             f"📡 Зв'язок: {status_line} (Wi-Fi: {rssi} dBm)\n"
             f"🌡 Температура: <b>{t_val:.1f}°C</b>\n"
             f"💧 Вологість: <b>{h_val:.0f}%</b> ({hum_eval})\n"
-            f"🧭 Атмосферний тиск: <b>{p_val:.0f} мм рт. ст.</b> ({trend_sym})\n"
-            f"☀️ Освітленість у кімнаті: <b>{l_pct}%</b>\n\n"
+            f"🧭 Атмосферний тиск: <b>{p_val:.0f} мм рт. ст.</b> ({trend_sym})\n\n"
             f"💡 Освітлення: <b>{m_name}</b> ({brt_str})\n"
             f"{pomo_line}\n"
             f"🌙 Режим DND: <b>{'Увімкнено 🌙' if dnd else 'Вимкнено'}</b>\n"
@@ -819,7 +816,7 @@ class TelegramBotService:
             state_service.enqueue_raw({
                 "dnd": new_dnd,
                 "muted": new_dnd,
-                "set_brt": "0" if new_dnd else "auto",
+                "set_brt": "0" if new_dnd else "2",
             })
             ans = "🌙 Режим DND увімкнено (Нічник + MUTE)" if new_dnd else "☀️ Режим DND вимкнено"
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans})

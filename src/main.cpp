@@ -167,7 +167,6 @@ void handleOnboardingButton(EventType ev_type) {
 
 void processEvents() {
     AppEvent ev;
-    static uint8_t next_meme_cycle = NOTIFY_CAT;
 
     while (xQueueReceive(appState.eventQueue, &ev, 0) == pdTRUE) {
         // Тактильний звуковий клік на будь-яке натискання сенсора (якщо увімкнено та не MUTE)
@@ -263,7 +262,7 @@ void processEvents() {
                     // Дотик до кришки позначає вхідне повідомлення прочитаним
                     appState.tg_unread = false;
                     appState.cmd_send_tg_ack = true;
-                    appState.triggerLedNotification(NOTIFY_FIRE, true);
+                    appState.triggerLedNotification(NOTIFY_FIRE, false);
                 } else if (appState.screen_mode == SCREEN_SMART_HUB && (appState.spotify.playing || appState.spotify.track_id[0] != '\0')) {
                     // Play / Pause для Spotify за дотиком до сенсорної кришки
                     appState.cmd_spotify_action = 3;
@@ -319,15 +318,9 @@ void processEvents() {
                 } else if (appState.screen_mode == SCREEN_SMART_HUB && (appState.spotify.playing || appState.spotify.track_id[0] != '\0')) {
                     // Попередній трек Spotify за довгим кліком правої кнопки
                     appState.cmd_spotify_action = 2;
-                } else {
-                    appState.cmd_send_meme_ping = next_meme_cycle;
-                    appState.triggerLedNotification((NotifyLedType)next_meme_cycle, true);
-                    audioService.playReactionSynth(next_meme_cycle);
-                    next_meme_cycle++;
-                    if (next_meme_cycle > NOTIFY_CROWN) next_meme_cycle = NOTIFY_FIRE;
                 }
+                appState.registerActivity();
                 break;
-
             default:
                 break;
         }

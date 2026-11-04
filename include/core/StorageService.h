@@ -174,7 +174,7 @@ public:
 
         if (prefs.begin("box_state", false)) {
             if (prefs.isKey("l_mode"))  state.light_mode     = prefs.getUChar("l_mode", 0) % TOTAL_LIGHT_MODES;
-            if (prefs.isKey("a_brt"))   state.auto_brt       = prefs.getBool("a_brt", true);
+            state.auto_brt = false; // LDR sensor removed
             if (prefs.isKey("m_brt"))   state.manual_brt_idx = prefs.getUChar("m_brt", 2) % 4;
             if (prefs.isKey("scr_ang")) state.screen_angle   = (prefs.getShort("scr_ang", 0) % 360 + 360) % 360;
 

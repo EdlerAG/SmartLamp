@@ -180,7 +180,7 @@ public:
 
     void init() override {
         analogReadResolution(12);
-        analogSetPinAttenuation(Config::PIN_LDR, ADC_11db);
+        // analogSetPinAttenuation(Config::PIN_LDR, ADC_11db); // LDR removed
 
         Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL, 400000);
         Wire.setTimeOut(25);
@@ -232,27 +232,12 @@ public:
 
     void update() override {
         uint32_t now = millis();
-
-        // Адаптивне опитування: під час DND/тихих годин знижуємо частоту опитування для 0% саморозігріву
         bool is_quiet = state.dnd_mode || state.quiet_hours_active;
-        uint32_t ldr_interval = is_quiet ? 1000 : (state.auto_brt ? 60 : 300);
-        if (now - last_ldr_ms >= ldr_interval) {
-            last_ldr_ms = now;
-            int raw = analogRead(Config::PIN_LDR);
-            state.raw_ldr = raw;
-            // Асиметричний EMA-фільтр з вікном гістерезису:
-            // плавне затемнення (alpha=0.045f) проти тіней руки, плавне освітлення (alpha=0.085f)
-            float diff = (float)raw - state.smooth_ldr;
-            if (fabsf(diff) > 45.0f) {
-                float alpha = (diff < 0.0f) ? 0.045f : 0.085f;
-                state.smooth_ldr += diff * alpha;
-            }
-            int new_pct = constrain((int)((state.smooth_ldr / 4095.0f) * 100.0f), 0, 100);
-            if (abs(new_pct - state.light_percent) >= 3) {
-                state.light_percent = new_pct;
-                state.ui_force_dirty = true;
-            }
-        }
+
+        // Опитування фоторезистора (LDR) видалено за апаратними вимогами
+        state.raw_ldr = 0;
+        state.smooth_ldr = 0.0f;
+        state.light_percent = 0;
 
         if (sht_waiting_data && (now - sht_cmd_ms >= 20)) {
             sht_waiting_data = false;
