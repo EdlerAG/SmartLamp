@@ -192,7 +192,7 @@ class MediaService:
             if is_anim:
                 duration_ms = img.info.get("duration", 66) or 66
                 fps = max(6, min(25, int(round(1000.0 / max(20.0, float(duration_ms))))))
-                max_f = settings.GIF_MAX_FRAMES
+                max_f = min(settings.GIF_MAX_FRAMES, 18)
                 step = max(1, total_src_frames // max_f)
                 frame_indices = list(range(0, total_src_frames, step))[:max_f]
 
@@ -287,11 +287,11 @@ class MediaService:
                 f.write(raw_bytes)
             out_pattern = os.path.join(tmpdir, "frame_%03d.png")
 
-            # Екстракція до 36 кадрів при 12 fps, обрізка під коло 240x240 через ffmpeg
+            # Екстракція до 18 кадрів при 10 fps (ліміт PSRAM/LittleFS 2.0MB)
             cmd = [
                 "ffmpeg", "-y", "-i", in_mp4,
-                "-vf", "fps=12,scale=240:240:force_original_aspect_ratio=increase,crop=240:240",
-                "-frames:v", "36",
+                "-vf", "fps=10,scale=240:240:force_original_aspect_ratio=increase,crop=240:240",
+                "-frames:v", "18",
                 out_pattern
             ]
             try:
@@ -319,7 +319,7 @@ class MediaService:
                     frames_bytes.append(cls._rgb_array_to_rgb565_bytes(arr))
 
             num_frames = len(frames_bytes)
-            fps = 12
+            fps = 10
 
             mid_frame = frames_bytes[num_frames // 2]
             with open(cls.RAM_FRAME_PATH, "wb") as f:

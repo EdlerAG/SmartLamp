@@ -1637,7 +1637,7 @@ class TelegramBotService:
                 if raw_bytes:
                     save_tag = text or f"gif_{int(time.time())}"
                     try:
-                        meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
+                        meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag, set_as_saver=True)
                         await self._api("sendMessage", {
                             "chat_id": chat_id,
                             "text": f"🎞 Анімацію «{meta['name']}» запущено на екрані лампи!{online_note}",
@@ -1666,7 +1666,7 @@ class TelegramBotService:
                     emoji = stk.get("emoji", "🌟")
                     save_tag = text or f"stk_{int(time.time())}"
                     try:
-                        meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag)
+                        meta = await media_service.process_and_enqueue(raw_bytes, settings.PUBLIC_SERVER_URL, save_name=save_tag, set_as_saver=True)
                         await self._api("sendMessage", {
                             "chat_id": chat_id,
                             "text": f"🌟 Наліпку {emoji} «{meta['name']}» виведено на дисплей лампи!{online_note}",

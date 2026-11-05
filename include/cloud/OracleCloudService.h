@@ -242,7 +242,7 @@ private:
         WiFiClientSecure m_sec;
 
         mbx_http.setConnectTimeout(4000);
-        mbx_http.setTimeout(10000);
+        mbx_http.setTimeout(20000);
 
         state.tls_in_flight = true;
         bool begun = url.startsWith("https://")
@@ -274,7 +274,7 @@ private:
         uint32_t start_ms = millis();
         size_t target_len = (content_len > 0) ? (size_t)content_len : max_buf;
 
-        while (mbx_http.connected() && total_read < target_len && (millis() - start_ms < 10000)) {
+        while (mbx_http.connected() && total_read < target_len && (millis() - start_ms < 20000)) {
             size_t avail = stream->available();
             if (avail > 0) {
                 size_t to_read = min(avail, target_len - total_read);
