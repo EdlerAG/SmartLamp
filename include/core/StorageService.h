@@ -1,3 +1,4 @@
+#include <esp_task_wdt.h>
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
@@ -129,6 +130,7 @@ public:
         size_t written = 0;
         const size_t chunk_sz = 4096;
         while (written < len) {
+            esp_task_wdt_reset();
             size_t to_write = min(chunk_sz, len - written);
             size_t w = f.write(data + written, to_write);
             if (w == 0) break;

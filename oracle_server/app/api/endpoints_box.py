@@ -360,6 +360,7 @@ async def receive_batch_telemetry(payload: Dict[str, Any], _=Depends(verify_acce
 async def download_named_mbx(name: str):
     """Віддає збережену кастомну гіфку/наліпку з каталогу."""
     safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", name)[:28].lower()
+    logger.info("Box requested MBX download: %s", safe_name)
     info = db_service.get_media_by_name(safe_name)
     if info and os.path.exists(info["file_path"]):
         return FileResponse(info["file_path"], media_type="application/octet-stream", filename=f"{safe_name}.mbx")

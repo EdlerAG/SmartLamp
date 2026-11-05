@@ -1,3 +1,4 @@
+#include <esp_task_wdt.h>
 #pragma once
 #include "core/IService.h"
 #include "Config.h"
@@ -273,6 +274,7 @@ private:
         size_t target_len = (content_len > 0) ? (size_t)content_len : max_buf;
 
         while (mbx_http.connected() && total_read < target_len && (millis() - start_ms < 20000)) {
+            esp_task_wdt_reset();
             size_t avail = stream->available();
             if (avail > 0) {
                 size_t to_read = min(avail, target_len - total_read);
@@ -292,7 +294,9 @@ private:
             if (memcmp(hdr->magic, "MBX5", 4) == 0 && hdr->num_frames > 0) {
                 // Захист від битих кадрів: перевірка контрольної суми CRC32
                 if (hdr->crc32 != 0 && total_read > sizeof(MbxHeader)) {
+                    esp_task_wdt_reset();
                     uint32_t calc_crc = Crc32::calculate(state.psram_anim_buf + sizeof(MbxHeader), total_read - sizeof(MbxHeader));
+                    esp_task_wdt_reset();
                     if (calc_crc != hdr->crc32) {
                         return false;
                     }

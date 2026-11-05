@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include <esp_task_wdt.h>
 
 /**
  * Стандартний IEEE 802.3 CRC32 розрахунок для валідації цілісності файлів MBX5.
@@ -15,7 +16,11 @@ public:
             for (uint8_t j = 0; j < 8; j++) {
                 crc = (crc >> 1) ^ (0xEDB88320 & (-(int32_t)(crc & 1)));
             }
+            if ((i & 0x7FFF) == 0) {
+                esp_task_wdt_reset();
+            }
         }
+        esp_task_wdt_reset();
         return ~crc;
     }
 };
