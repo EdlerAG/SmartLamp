@@ -120,9 +120,21 @@ public:
 
     bool saveSaverFile(const uint8_t* data, size_t len) {
         if (!fs_mounted && !initFs()) return false;
+        size_t free_fs = (LittleFS.totalBytes() > LittleFS.usedBytes()) ? (LittleFS.totalBytes() - LittleFS.usedBytes()) : 0;
+        if (len > free_fs && LittleFS.exists(Config::SAVER_FILE_PATH)) {
+            LittleFS.remove(Config::SAVER_FILE_PATH);
+        }
         File f = LittleFS.open(Config::SAVER_FILE_PATH, "w");
         if (!f) return false;
-        size_t written = f.write(data, len);
+        size_t written = 0;
+        const size_t chunk_sz = 4096;
+        while (written < len) {
+            size_t to_write = min(chunk_sz, len - written);
+            size_t w = f.write(data + written, to_write);
+            if (w == 0) break;
+            written += w;
+            vTaskDelay(pdMS_TO_TICKS(1)); // Запобігає спрацьовуванню TASK_WDT під час запису флешу LittleFS
+        }
         f.flush();
         f.close();
         return written == len;
