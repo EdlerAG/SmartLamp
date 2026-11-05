@@ -556,7 +556,8 @@ namespace ScreenRenderer {
 
     // ВІКНО 2: SCREEN_LIVING_GIF    // ВІКНО 2: SCREEN_LIVING_GIF (Постійна GIF-Заставка LittleFS + Процедурний маятник Hallmark)
     inline void drawLivingGif(LGFX_Sprite& canvas, AppState& state, uint32_t now) {
-        if (!state.saver_loaded || state.saver_num_frames == 0) {
+        bool has_frames = (state.saver_loaded && state.saver_num_frames > 0) || (state.anim_frames_count > 0);
+        if (!has_frames) {
             // Процедурна заставка в стилі швейцарського орбітального маятника Braun
             drawPerimeterTicks(canvas);
             canvas.drawCircle(120, 120, 72, HallmarkTheme::BORDER_HAIRLINE);

@@ -396,6 +396,14 @@ public:
                     }
                     const uint8_t* frame_ptr = state.psram_saver_buf + sizeof(MbxHeader) + ((size_t)cur_saver_frame * Config::FRAME_BYTES_RGB565);
                     memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
+                } else if (state.psram_anim_buf && state.anim_frames_count > 0 && state.shared_canvas_buf) {
+                    uint32_t anim_delay = 1000 / (state.anim_fps > 0 ? state.anim_fps : 12);
+                    if (now - last_saver_tick_ms >= anim_delay) {
+                        last_saver_tick_ms = now;
+                        cur_saver_frame = (cur_saver_frame + 1) % state.anim_frames_count;
+                    }
+                    const uint8_t* frame_ptr = state.psram_anim_buf + sizeof(MbxHeader) + ((size_t)cur_saver_frame * Config::FRAME_BYTES_RGB565);
+                    memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
                 }
                 ScreenRenderer::drawLivingGif(canvas, state, now);
                 break;

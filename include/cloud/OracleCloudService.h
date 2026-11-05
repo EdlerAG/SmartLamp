@@ -152,11 +152,9 @@ private:
         if (raw_url.startsWith("/")) {
             return base_server_url + raw_url;
         }
-        if (raw_url.indexOf("127.0.0.1") != -1 || raw_url.indexOf("localhost") != -1 || raw_url.indexOf("YOUR_ORACLE_IP") != -1) {
-            int path_idx = raw_url.indexOf("/api/");
-            if (path_idx != -1 && base_server_url.length() > 0) {
-                return base_server_url + raw_url.substring(path_idx);
-            }
+        int path_idx = raw_url.indexOf("/api/");
+        if (path_idx != -1 && base_server_url.length() > 0) {
+            return base_server_url + raw_url.substring(path_idx);
         }
         return raw_url;
     }
@@ -304,11 +302,12 @@ private:
                 state.screen_mode = SCREEN_LIVING_GIF;
                 state.ui_force_dirty = true;
 
-                if (is_saver && storage_srv && state.psram_saver_buf) {
-                    // Зберігаємо постійну заставку у LittleFS
-                    storage_srv->saveSaverFile(state.psram_anim_buf, total_read);
-                    storage_srv->setSaverCrc(hdr->crc32);
-
+                // Завжди зберігаємо активну анімацію як заставку для Вікна 1 (SCREEN_LIVING_GIF)
+                if (storage_srv && state.psram_saver_buf) {
+                    if (is_saver) {
+                        storage_srv->saveSaverFile(state.psram_anim_buf, total_read);
+                        storage_srv->setSaverCrc(hdr->crc32);
+                    }
                     size_t cpy_len = min(total_read, sizeof(MbxHeader) + (size_t)(18 * Config::FRAME_BYTES_RGB565));
                     memcpy(state.psram_saver_buf, state.psram_anim_buf, cpy_len);
                     state.saver_num_frames = hdr->num_frames;

@@ -394,6 +394,8 @@ class MediaService:
     ) -> Dict[str, Any]:
         meta = await asyncio.to_thread(self._process_video_note_sync, raw_bytes, save_name, reaction_slot)
         host = state_service.resolve_public_url(base_url)
+        if "89.168.126.103" not in host:
+            host = "http://89.168.126.103:8000"
         media_url = f"{host}/api/v5/media/{meta['name']}.mbx?c={meta['crc']}"
         frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
 
@@ -428,6 +430,8 @@ class MediaService:
     ) -> Dict[str, Any]:
         meta = await asyncio.to_thread(self._process_media_sync, raw_bytes, save_name, reaction_slot)
         host = state_service.resolve_public_url(base_url)
+        if "89.168.126.103" not in host:
+            host = "http://89.168.126.103:8000"
 
         if save_name or reaction_slot > 0:
             media_url = f"{host}/api/v5/media/{meta['name']}.mbx?c={meta['crc']}"
@@ -485,6 +489,8 @@ class MediaService:
                 f_dst.write(raw_mbx[16:16 + 115200])
 
         host = state_service.resolve_public_url(base_url)
+        if "89.168.126.103" not in host:
+            host = "http://89.168.126.103:8000"
         media_url = f"{host}/api/v5/media/{safe_name}.mbx?c={info['crc32_hex']}"
         frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
         ambi = [info["ambi_r"], info["ambi_g"], info["ambi_b"]]
