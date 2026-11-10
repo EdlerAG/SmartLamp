@@ -1,8 +1,7 @@
 # Файл: oracle_server/app/services/setup_service.py
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
-from app.core.logger import logger
 from app.services.database_service import db_service
 from app.services.spotify_service import spotify_service
 from app.services.google_calendar_service import google_calendar_service

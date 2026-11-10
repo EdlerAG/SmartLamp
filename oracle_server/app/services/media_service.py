@@ -162,92 +162,41 @@ class MediaService:
         p, _, _ = MediaService._extract_ambilight_triad(arr)
         return p
     @classmethod
-    def _process_media_sync(
+    def _finalize_and_store_mbx(
         cls,
-        raw_bytes: bytes,
-        save_name: str = "",
-        reaction_slot: int = 0,
+        frames_bytes: List[bytes],
+        fps: int,
+        ambi_rgb: Tuple[int, int, int],
+        ambi2_rgb: Tuple[int, int, int],
+        ambi3_rgb: Tuple[int, int, int],
+        media_type: str,
+        save_name: str,
+        reaction_slot: int,
+        persist_without_name: bool = False,
     ) -> Dict[str, Any]:
-        from PIL import Image
-
-        # Автоматичне визначення відеоконтейнерів (Telegram передає GIF як MP4 або WebM)
-        is_video = (len(raw_bytes) > 8 and raw_bytes[4:8] == b"ftyp") or raw_bytes[:4] == b"\x1a\x45\xdf\xa3"
-        if is_video:
-            return cls._process_video_note_sync(raw_bytes, save_name, reaction_slot)
-
-        frames_bytes: List[bytes] = []
-        ambi_rgb: Tuple[int, int, int] = (56, 189, 248)
-        ambi2_rgb: Tuple[int, int, int] = (248, 113, 113)
-        ambi3_rgb: Tuple[int, int, int] = (250, 204, 21)
-        fps = settings.GIF_DEFAULT_FPS
-
-        try:
-            img = Image.open(io.BytesIO(raw_bytes))
-        except Exception as img_err:
-            logger.info("Image.open failed (%s), attempting video/ffmpeg extraction...", img_err)
-            return cls._process_video_note_sync(raw_bytes, save_name, reaction_slot)
-
-        with img:
-            is_anim = getattr(img, "is_animated", False) and getattr(img, "n_frames", 1) > 1
-            total_src_frames = getattr(img, "n_frames", 1) if is_anim else 1
-
-            if is_anim:
-                duration_ms = img.info.get("duration", 66) or 66
-                fps = max(6, min(25, int(round(1000.0 / max(20.0, float(duration_ms))))))
-                max_f = min(settings.GIF_MAX_FRAMES, 18)
-                step = max(1, total_src_frames // max_f)
-                frame_indices = list(range(0, total_src_frames, step))[:max_f]
-
-                for idx_pos, f_idx in enumerate(frame_indices):
-                    img.seek(f_idx)
-                    arr = cls._fit_and_composite_frame(img)
-                    if idx_pos == len(frame_indices) // 2:
-                        p, s, a = cls._extract_ambilight_triad(arr)
-                        ambi_rgb, ambi2_rgb, ambi3_rgb = p, s, a
-                    frames_bytes.append(cls._rgb_array_to_rgb565_bytes(arr))
-            else:
-                arr = cls._fit_and_composite_frame(img)
-                p, s, a = cls._extract_ambilight_triad(arr)
-                ambi_rgb, ambi2_rgb, ambi3_rgb = p, s, a
-                frames_bytes.append(cls._rgb_array_to_rgb565_bytes(arr))
-
         num_frames = len(frames_bytes)
-        media_type = "gif" if num_frames > 1 else "sticker"
-
-        mid_frame = frames_bytes[num_frames // 2]
         with open(cls.RAM_FRAME_PATH, "wb") as f:
-            f.write(mid_frame)
+            f.write(frames_bytes[num_frames // 2])
 
         body_blob = b"".join(frames_bytes)
         crc_val = zlib.crc32(body_blob) & 0xFFFFFFFF
         crc_hex = f"{crc_val:08x}"
-
         header = struct.pack(
             "<4sBBBBBBBBI",
-            b"MBX5",
-            5,
-            num_frames,
-            fps,
-            0,
-            ambi_rgb[0],
-            ambi_rgb[1],
-            ambi_rgb[2],
-            0,
-            crc_val,
+            b"MBX5", 5, num_frames, fps, 0,
+            ambi_rgb[0], ambi_rgb[1], ambi_rgb[2], 0, crc_val,
         )
         full_mbx = header + body_blob
-
         with open(cls.RAM_ANIM_PATH, "wb") as f:
             f.write(full_mbx)
 
-        title = save_name.strip() if save_name else (f"Стікер {crc_hex[:4]}" if media_type == "sticker" else f"Гіфка {crc_hex[:4]}")
         ascii_candidate = re.sub(r"[^a-zA-Z0-9_-]", "", save_name)[:28].lower()
-        if not ascii_candidate:
-            safe_name = f"custom_slot_{reaction_slot}" if reaction_slot > 0 else f"live_{crc_hex[:6]}"
-        else:
-            safe_name = ascii_candidate
+        prefix = "vn" if media_type == "video_note" else "live"
+        safe_name = ascii_candidate or (f"custom_slot_{reaction_slot}" if reaction_slot > 0 else f"{prefix}_{crc_hex[:6]}")
+        default_title = f"Стікер {crc_hex[:4]}" if media_type == "sticker" else f"Гіфка {crc_hex[:4]}"
+        title = save_name.strip() if save_name else ("" if media_type == "video_note" else default_title)
 
-        if save_name or reaction_slot > 0:
+        if persist_without_name or save_name or reaction_slot > 0:
             perm_path = os.path.join(settings.STICKERS_DIR, f"{safe_name}.mbx")
             with open(perm_path, "wb") as f:
                 f.write(full_mbx)
@@ -265,10 +214,7 @@ class MediaService:
                 reaction_slot=reaction_slot,
             )
 
-        del frames_bytes
-        del body_blob
         memory_guard.trim_ram()
-
         return {
             "name": safe_name,
             "title": title,
@@ -281,6 +227,58 @@ class MediaService:
             "ambi2_rgb": list(ambi2_rgb),
             "ambi3_rgb": list(ambi3_rgb),
         }
+
+    @classmethod
+    def _process_media_sync(
+        cls,
+        raw_bytes: bytes,
+        save_name: str = "",
+        reaction_slot: int = 0,
+    ) -> Dict[str, Any]:
+        from PIL import Image
+
+        is_video = (len(raw_bytes) > 8 and raw_bytes[4:8] == b"ftyp") or raw_bytes[:4] == b"\x1a\x45\xdf\xa3"
+        if is_video:
+            return cls._process_video_note_sync(raw_bytes, save_name, reaction_slot)
+
+        frames_bytes: List[bytes] = []
+        ambi_rgb: Tuple[int, int, int] = (56, 189, 248)
+        ambi2_rgb: Tuple[int, int, int] = (248, 113, 113)
+        ambi3_rgb: Tuple[int, int, int] = (250, 204, 21)
+        fps = settings.GIF_DEFAULT_FPS
+
+        try:
+            img = Image.open(io.BytesIO(raw_bytes))
+        except Exception:
+            return cls._process_video_note_sync(raw_bytes, save_name, reaction_slot)
+
+        with img:
+            is_anim = getattr(img, "is_animated", False) and getattr(img, "n_frames", 1) > 1
+            total_src_frames = getattr(img, "n_frames", 1) if is_anim else 1
+
+            if is_anim:
+                duration_ms = img.info.get("duration", 66) or 66
+                fps = max(6, min(25, int(round(1000.0 / max(20.0, float(duration_ms))))))
+                max_f = min(settings.GIF_MAX_FRAMES, 18)
+                step = max(1, total_src_frames // max_f)
+                frame_indices = list(range(0, total_src_frames, step))[:max_f]
+                mid_idx = len(frame_indices) // 2
+
+                for idx_pos, f_idx in enumerate(frame_indices):
+                    img.seek(f_idx)
+                    arr = cls._fit_and_composite_frame(img)
+                    if idx_pos == mid_idx:
+                        ambi_rgb, ambi2_rgb, ambi3_rgb = cls._extract_ambilight_triad(arr)
+                    frames_bytes.append(cls._rgb_array_to_rgb565_bytes(arr))
+            else:
+                arr = cls._fit_and_composite_frame(img)
+                ambi_rgb, ambi2_rgb, ambi3_rgb = cls._extract_ambilight_triad(arr)
+                frames_bytes.append(cls._rgb_array_to_rgb565_bytes(arr))
+
+        media_type = "gif" if len(frames_bytes) > 1 else "sticker"
+        return cls._finalize_and_store_mbx(
+            frames_bytes, fps, ambi_rgb, ambi2_rgb, ambi3_rgb, media_type, save_name, reaction_slot
+        )
 
     @classmethod
     def _process_video_note_sync(
@@ -298,17 +296,15 @@ class MediaService:
                 f.write(raw_bytes)
             out_pattern = os.path.join(tmpdir, "frame_%03d.png")
 
-            # Екстракція до 18 кадрів при 10 fps (ліміт PSRAM/LittleFS 2.0MB)
             cmd = [
                 "ffmpeg", "-y", "-i", in_mp4,
                 "-vf", "fps=10,scale=240:240:force_original_aspect_ratio=increase,crop=240:240",
                 "-frames:v", "18",
-                out_pattern
+                out_pattern,
             ]
             try:
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             except Exception:
-                # Фоллбек: якщо ffmpeg недоступний, пробуємо обробити як звичайне медіа
                 return cls._process_media_sync(raw_bytes, save_name, reaction_slot)
 
             frame_files = sorted(glob.glob(os.path.join(tmpdir, "frame_*.png")))
@@ -325,132 +321,16 @@ class MediaService:
                 with Image.open(fpath) as img:
                     arr = cls._fit_and_composite_frame(img)
                     if idx_pos == mid_idx:
-                        p, s, a = cls._extract_ambilight_triad(arr)
-                        ambi_rgb, ambi2_rgb, ambi3_rgb = p, s, a
+                        ambi_rgb, ambi2_rgb, ambi3_rgb = cls._extract_ambilight_triad(arr)
                     frames_bytes.append(cls._rgb_array_to_rgb565_bytes(arr))
 
-            num_frames = len(frames_bytes)
-            fps = 10
-
-            mid_frame = frames_bytes[num_frames // 2]
-            with open(cls.RAM_FRAME_PATH, "wb") as f:
-                f.write(mid_frame)
-
-            body_blob = b"".join(frames_bytes)
-            crc_val = zlib.crc32(body_blob) & 0xFFFFFFFF
-            crc_hex = f"{crc_val:08x}"
-
-            header = struct.pack(
-                "<4sBBBBBBBBI",
-                b"MBX5",
-                5,
-                num_frames,
-                fps,
-                0,
-                ambi_rgb[0],
-                ambi_rgb[1],
-                ambi_rgb[2],
-                0,
-                crc_val,
-            )
-            full_mbx = header + body_blob
-
-            with open(cls.RAM_ANIM_PATH, "wb") as f:
-                f.write(full_mbx)
-
-            safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", save_name)[:28].lower()
-            if not safe_name:
-                safe_name = f"vn_{crc_hex[:6]}"
-
-            perm_path = os.path.join(settings.STICKERS_DIR, f"{safe_name}.mbx")
-            with open(perm_path, "wb") as f:
-                f.write(full_mbx)
-            memory_guard.register_file_write(len(full_mbx))
-            db_service.upsert_custom_media(
-                name=safe_name,
-                media_type="video_note",
-                file_path=perm_path,
-                crc32_hex=crc_hex,
-                frames=num_frames,
-                fps=fps,
-                byte_size=len(full_mbx),
-                ambi_rgb=ambi_rgb,
-                reaction_slot=reaction_slot,
+            return cls._finalize_and_store_mbx(
+                frames_bytes, 10, ambi_rgb, ambi2_rgb, ambi3_rgb,
+                "video_note", save_name, reaction_slot, persist_without_name=True,
             )
 
-            del frames_bytes
-            del body_blob
-            memory_guard.trim_ram()
-
-            return {
-                "name": safe_name,
-                "media_type": "video_note",
-                "crc": crc_hex,
-                "frames": num_frames,
-                "fps": fps,
-                "size_bytes": len(full_mbx),
-                "ambi_rgb": list(ambi_rgb),
-                "ambi2_rgb": list(ambi2_rgb),
-                "ambi3_rgb": list(ambi3_rgb),
-            }
-
-    async def process_video_note_and_enqueue(
-        self,
-        raw_bytes: bytes,
-        base_url: str = "",
-        save_name: str = "",
-        reaction_slot: int = 0,
-        set_as_saver: bool = False,
-        media_timer_min: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        meta = await asyncio.to_thread(self._process_video_note_sync, raw_bytes, save_name, reaction_slot)
-        host = state_service.resolve_public_url(base_url)
-        if "89.168.126.103" not in host:
-            host = "http://89.168.126.103:8000"
-        media_url = f"{host}/api/v5/media/{meta['name']}.mbx?c={meta['crc']}"
-        frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
-
-        cmd_dict: Dict[str, Any] = {
-            "media_name": meta["name"],
-            "media_url": media_url,
-            "img_url": frame_url,
-            "media_crc": meta["crc"],
-            "media_frames": meta["frames"],
-            "media_fps": meta["fps"],
-            "ambi_rgb": meta["ambi_rgb"],
-            "ambi2_rgb": meta.get("ambi2_rgb", [248, 113, 113]),
-            "ambi3_rgb": meta.get("ambi3_rgb", [250, 204, 21]),
-        }
-        if set_as_saver:
-            cmd_dict["set_saver"] = True
-        if media_timer_min is not None:
-            cmd_dict["media_timer"] = int(media_timer_min)
-
-        state_service.enqueue_raw(cmd_dict)
-        meta["media_url"] = media_url
-        return meta
-
-    async def process_and_enqueue(
-        self,
-        raw_bytes: bytes,
-        base_url: str = "",
-        save_name: str = "",
-        reaction_slot: int = 0,
-        set_as_saver: bool = False,
-        media_timer_min: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        meta = await asyncio.to_thread(self._process_media_sync, raw_bytes, save_name, reaction_slot)
-        host = state_service.resolve_public_url(base_url)
-        if "89.168.126.103" not in host:
-            host = "http://89.168.126.103:8000"
-
-        if save_name or reaction_slot > 0:
-            media_url = f"{host}/api/v5/media/{meta['name']}.mbx?c={meta['crc']}"
-        else:
-            media_url = f"{host}/api/v5/media/live.mbx?c={meta['crc']}"
-
-        frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
-
+    @staticmethod
+    def _build_media_cmd(meta: Dict[str, Any], media_url: str, frame_url: str, set_as_saver: bool, media_timer_min: Optional[int]) -> Dict[str, Any]:
         cmd_dict: Dict[str, Any] = {
             "media_name": meta["name"],
             "media_url": media_url,
@@ -467,7 +347,45 @@ class MediaService:
             db_service.set_active_saver(meta["name"])
         if media_timer_min is not None:
             cmd_dict["media_timer"] = int(media_timer_min)
+        return cmd_dict
 
+    @staticmethod
+    def _resolve_media_host(base_url: str) -> str:
+        host = state_service.resolve_public_url(base_url)
+        return host if "89.168.126.103" in host else "http://89.168.126.103:8000"
+
+    async def process_video_note_and_enqueue(
+        self,
+        raw_bytes: bytes,
+        base_url: str = "",
+        save_name: str = "",
+        reaction_slot: int = 0,
+        set_as_saver: bool = False,
+        media_timer_min: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        meta = await asyncio.to_thread(self._process_video_note_sync, raw_bytes, save_name, reaction_slot)
+        host = self._resolve_media_host(base_url)
+        media_url = f"{host}/api/v5/media/{meta['name']}.mbx?c={meta['crc']}"
+        frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
+        state_service.enqueue_raw(self._build_media_cmd(meta, media_url, frame_url, set_as_saver, media_timer_min))
+        meta["media_url"] = media_url
+        return meta
+
+    async def process_and_enqueue(
+        self,
+        raw_bytes: bytes,
+        base_url: str = "",
+        save_name: str = "",
+        reaction_slot: int = 0,
+        set_as_saver: bool = False,
+        media_timer_min: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        meta = await asyncio.to_thread(self._process_media_sync, raw_bytes, save_name, reaction_slot)
+        host = self._resolve_media_host(base_url)
+        slug = meta["name"] if (save_name or reaction_slot > 0) else "live"
+        media_url = f"{host}/api/v5/media/{slug}.mbx?c={meta['crc']}"
+        frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
+        cmd_dict = self._build_media_cmd(meta, media_url, frame_url, set_as_saver, media_timer_min)
         state_service.enqueue_raw(cmd_dict)
         from app.core.events import realtime_hub
         await realtime_hub.push_to_box(cmd_dict)
@@ -504,29 +422,20 @@ class MediaService:
             with open(self.RAM_FRAME_PATH, "wb") as f_dst:
                 f_dst.write(raw_mbx[16:16 + 115200])
 
-        host = state_service.resolve_public_url(base_url)
-        if "89.168.126.103" not in host:
-            host = "http://89.168.126.103:8000"
+        host = self._resolve_media_host(base_url)
         media_url = f"{host}/api/v5/media/{safe_name}.mbx?c={info['crc32_hex']}"
         frame_url = f"{host}/api/v1/media/frame.rgb565?v={int(time.time())}"
         ambi = [info["ambi_r"], info["ambi_g"], info["ambi_b"]]
-
-        cmd_dict: Dict[str, Any] = {
-            "media_name": safe_name,
-            "media_url": media_url,
-            "img_url": frame_url,
-            "media_crc": info["crc32_hex"],
-            "media_frames": info["frames"],
-            "media_fps": info["fps"],
+        meta = {
+            "name": safe_name,
+            "crc": info["crc32_hex"],
+            "frames": info["frames"],
+            "fps": info["fps"],
             "ambi_rgb": ambi,
             "ambi2_rgb": [info.get("ambi_r", 56), info.get("ambi_g", 189), info.get("ambi_b", 248)],
             "ambi3_rgb": [250, 204, 21],
         }
-        if set_as_saver:
-            cmd_dict["set_saver"] = True
-            db_service.set_active_saver(safe_name)
-        if media_timer_min is not None:
-            cmd_dict["media_timer"] = int(media_timer_min)
+        cmd_dict = self._build_media_cmd(meta, media_url, frame_url, set_as_saver, media_timer_min)
 
         state_service.enqueue_raw(cmd_dict)
         from app.core.events import realtime_hub

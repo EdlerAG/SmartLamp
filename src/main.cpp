@@ -63,9 +63,8 @@ void handleOnboardingButton(EventType ev_type) {
         // [ ◄ НІ / ПРОПУСТИТИ / НАЗАД ]
         switch (appState.onboarding_step) {
             case OnboardingStep::WIZ_STEP_WELCOME_SOUND:
-                appState.audio_muted = true;
-                appState.audio_volume = 0;
-                storageService.saveAudioSettings(0, true, appState.touch_beep_enabled);
+                appState.setVolume(0);
+                appState.setMute(true);
                 appState.onboarding_step = OnboardingStep::WIZ_STEP_TG_BOT;
                 storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_TG_BOT);
                 break;
@@ -110,9 +109,8 @@ void handleOnboardingButton(EventType ev_type) {
         // [ ТАК / ДАЛІ ► ]
         switch (appState.onboarding_step) {
             case OnboardingStep::WIZ_STEP_WELCOME_SOUND:
-                appState.audio_muted = false;
-                appState.audio_volume = 12;
-                storageService.saveAudioSettings(12, false, appState.touch_beep_enabled);
+                appState.setMute(false);
+                appState.setVolume(12);
                 audioService.playBootChord();
                 appState.onboarding_step = OnboardingStep::WIZ_STEP_TG_BOT;
                 storageService.setOnboardingStep((uint8_t)OnboardingStep::WIZ_STEP_TG_BOT);
@@ -221,25 +219,15 @@ void processEvents() {
 
             case EventType::BTN_LEFT_LONG:
                 if (appState.screen_mode == SCREEN_SMART_HUB) {
-                    // На екрані Spotify/Smart Hub перемикаємо режим світіння між AmbiLight та Затишним теплим
-                    if (appState.light_mode == MODE_SPOTIFY_AMBI) {
-                        CommandRouter::setLightMode(appState, MODE_WARM_COZY);
-                        appState.showHudToast("Light", "Warm Cozy");
-                    } else {
-                        CommandRouter::setLightMode(appState, MODE_SPOTIFY_AMBI);
-                        appState.showHudToast("Light", "Spotify Ambi");
-                    }
+                    CommandRouter::setLightMode(appState, (appState.light_mode == MODE_SPOTIFY_AMBI) ? MODE_WARM_COZY : MODE_SPOTIFY_AMBI);
                 } else if (appState.screen_mode == SCREEN_POMODORO) {
-                    // З екрана Pomodoro довгий клік повертає на головний годинник
                     appState.triggerScreenSlide(SCREEN_CLIMATE, -1);
                     appState.markSettingsDirty();
                 } else if (appState.screen_mode == SCREEN_CLIMATE) {
-                    // На головному екрані: довге утримання перемикає Нічний режим
                     appState.night_mode_enabled = !appState.night_mode_enabled;
                     appState.showHudToast("Night Mode", appState.night_mode_enabled ? "Auto (23-07)" : "Disabled");
                     appState.markSettingsDirty();
                 } else {
-                    // З будь-якого іншого екрана довге утримання лівої кнопки перемикає на Pomodoro
                     appState.triggerScreenSlide(SCREEN_POMODORO, 1);
                     appState.markSettingsDirty();
                 }
@@ -247,7 +235,6 @@ void processEvents() {
                 break;
 
             case EventType::BTN_COMBO_WIFI_RESET:
-                // Блок 4: 10-секундне утримання Left + Right -> аварійний скид та запуск точки доступу
                 appState.sys_ui_state = SystemUiState::SYS_NETWORK_DIAG;
                 appState.cmd_start_ap = true;
                 audioService.playBootChord();
@@ -258,11 +245,10 @@ void processEvents() {
 
             case EventType::BTN_TOP_SHORT:
                 if (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG) {
-                    // Натискання на кришку на екрані діагностики вмикає точку доступу MagicBox-Setup
                     appState.cmd_start_ap = true;
                     audioService.playBootChord();
                     appState.triggerLedNotification(NOTIFY_CYAN_WAVE, true);
-                    return;
+                    continue;
                 } else if (appState.screen_mode == SCREEN_POMODORO) {
                     // Дотик до сенсорної кришки вмикає Старт / Паузу Pomodoro
                     appState.pomoToggleStartPause();
@@ -407,7 +393,6 @@ void setup() {
     // Зв'язуємо ввід із аудіо для миттєвих апаратних кліків (<0.1 мс)
     inputService.setAudioService(&audioService);
 
-    // 2. Швидкі сервіси реального часу на Core 1
     // 2. Ініціалізація швидких сервісів Core 1 (Дисплей та кнопки)
     core1FastServices.add(&inputService);
     core1FastServices.add(&displayService);
@@ -443,7 +428,6 @@ void setup() {
 }
 
 void loop() {
-    uint32_t loop_start_us = micros();
     esp_task_wdt_reset();
 
     static uint32_t last_stk_check_ms = 0;
@@ -537,9 +521,4 @@ void loop() {
 
     bool active = ledService.isAnimating() || displayService.isHighFpsNeeded();
     vTaskDelay(pdMS_TO_TICKS(active ? 4 : 15));
-
-    uint32_t loop_dt_ms = (micros() - loop_start_us) / 1000;
-    if (loop_dt_ms > appState.diag_loop_max_ms) {
-        appState.diag_loop_max_ms = loop_dt_ms;
-    }
 }

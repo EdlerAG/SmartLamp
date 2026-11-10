@@ -18,6 +18,7 @@ class BoxTelemetryPayload(BaseModel):
     vol: int = 12
     muted: bool = False
     t_beep: bool = True
+    t_prof: Optional[int] = 0
     dnd: bool = False
     pomo: bool = False
     pomo_rem: int = 0
@@ -57,14 +58,6 @@ class BoxTelemetryPayload(BaseModel):
     t_off: Optional[float] = -0.8
     h_off: Optional[float] = 0.0
     p_off: Optional[float] = 0.0
-    clk_cnt: Optional[int] = 0
-    clk_us: Optional[int] = 0
-    clk_max_us: Optional[int] = 0
-    clk_b: Optional[int] = 0
-    clk_res: Optional[int] = 0
-    clk_gap: Optional[int] = 0
-    loop_max_ms: Optional[int] = 0
-    clk_cpu: Optional[int] = 0
 
 
 class CommandPayload(BaseModel):

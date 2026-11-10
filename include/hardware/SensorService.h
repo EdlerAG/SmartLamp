@@ -164,7 +164,6 @@ private:
         bmp_fail_count = 0;
     }
     uint32_t last_climate_ms  = 0;
-    uint32_t last_ldr_ms      = 0;
     uint32_t last_hist_ms     = 0;
     bool     first_hist_saved = false;
 
@@ -184,15 +183,47 @@ private:
         return crc;
     }
 
+    bool readAndApplySht31(bool initial) {
+        if (Wire.requestFrom((int)sht_addr, 6) != 6) return false;
+        uint8_t buf[6];
+        for (int i = 0; i < 6; i++) buf[i] = Wire.read();
+        if (crc8(&buf[0], 2) != buf[2] || crc8(&buf[3], 2) != buf[5]) return false;
+
+        bool was_valid = state.sensors_valid;
+        sht_fail_count = 0;
+        state.sht_connected = true;
+        state.sensors_valid = true;
+
+        uint16_t rawT = ((uint16_t)buf[0] << 8) | buf[1];
+        uint16_t rawH = ((uint16_t)buf[3] << 8) | buf[4];
+        float t = -45.0f + (175.0f * (float)rawT / 65535.0f) + state.temp_offset;
+        float h = constrain((100.0f * (float)rawH / 65535.0f) + state.humidity_offset, 0.0f, 100.0f);
+
+        if (t > -40.0f && t < 85.0f) {
+            if (initial || !was_valid || fabs(t - state.temperature) > 5.0f) {
+                state.temperature = t;
+            } else if (fabs(t - state.temperature) >= 0.05f) {
+                state.temperature = (state.temperature * 0.7f) + (t * 0.3f);
+            }
+            if (!initial) state.ui_force_dirty = true;
+        }
+        if (h >= 0.0f && h <= 100.0f) {
+            if (initial || !was_valid || fabs(h - state.humidity) > 10.0f) {
+                state.humidity = h;
+            } else if (fabs(h - state.humidity) >= 0.5f) {
+                state.humidity = (state.humidity * 0.7f) + (h * 0.3f);
+            }
+            if (!initial) state.ui_force_dirty = true;
+        }
+        return true;
+    }
+
 public:
     SensorService(AppState& st) : state(st) {}
 
     const char* getName() const override { return "Sensors"; }
 
     void init() override {
-        analogReadResolution(12);
-        // analogSetPinAttenuation(Config::PIN_LDR, ADC_11db); // LDR removed
-
         Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL, 400000);
         Wire.setTimeOut(25);
 
@@ -217,7 +248,6 @@ public:
             state.sht_connected = true;
         }
 
-        // Швидке початкове зчитування температури та вологості SHT30/31 при старті
         if (state.sht_connected) {
             Wire.beginTransmission(sht_addr);
             Wire.write(0x30);
@@ -229,19 +259,7 @@ public:
             Wire.write(0x00);
             if (Wire.endTransmission() == 0) {
                 delay(16);
-                if (Wire.requestFrom((int)sht_addr, 6) == 6) {
-                    uint8_t buf[6];
-                    for (int i = 0; i < 6; i++) buf[i] = Wire.read();
-                    if (crc8(buf, 2) == buf[2] && crc8(buf + 3, 2) == buf[5]) {
-                        uint16_t raw_t = ((uint16_t)buf[0] << 8) | buf[1];
-                        uint16_t raw_h = ((uint16_t)buf[3] << 8) | buf[4];
-                        float t_val = -45.0f + (175.0f * (float)raw_t / 65535.0f);
-                        float h_val = 100.0f * ((float)raw_h / 65535.0f);
-                        state.temperature = t_val + state.temp_offset;
-                        state.humidity = constrain(h_val + state.humidity_offset, 0.0f, 100.0f);
-                        state.sensors_valid = true;
-                    }
-                }
+                readAndApplySht31(true);
             }
         }
     }
@@ -250,52 +268,9 @@ public:
         uint32_t now = millis();
         bool is_quiet = state.dnd_mode || state.quiet_hours_active;
 
-        // Опитування фоторезистора (LDR) видалено за апаратними вимогами
-        state.raw_ldr = 0;
-        state.smooth_ldr = 0.0f;
-        state.light_percent = 0;
-
         if (sht_waiting_data && (now - sht_cmd_ms >= 20)) {
             sht_waiting_data = false;
-            if (Wire.requestFrom(sht_addr, (uint8_t)6) == 6) {
-                uint8_t buf[6];
-                for (int i = 0; i < 6; i++) buf[i] = Wire.read();
-
-                if (crc8(&buf[0], 2) == buf[2] && crc8(&buf[3], 2) == buf[5]) {
-                    sht_fail_count = 0;
-                    state.sht_connected = true;
-                    state.sensors_valid = true;
-                    uint16_t rawT = ((uint16_t)buf[0] << 8) | buf[1];
-                    uint16_t rawH = ((uint16_t)buf[3] << 8) | buf[4];
-
-                    float raw_t = -45.0f + 175.0f * ((float)rawT / 65535.0f);
-                    float raw_h = 100.0f * ((float)rawH / 65535.0f);
-
-                    // Прозора калібрувальна модель: фізичний Sensirion SHT3x + стабільне зміщення NVS
-                    // Жодних прихованих нелінійних віднімань чи стрибків від світла/CPU!
-                    float t = raw_t + state.temp_offset;
-                    float h = constrain(raw_h + state.humidity_offset, 0.0f, 100.0f);
-
-                    if (t > -40.0f && t < 85.0f) {
-                        if (!state.sensors_valid || fabs(t - state.temperature) > 5.0f) {
-                            state.temperature = t;
-                        } else if (fabs(t - state.temperature) >= 0.05f) {
-                            state.temperature = (state.temperature * 0.7f) + (t * 0.3f);
-                        }
-                        state.ui_force_dirty = true;
-                    }
-                    if (h >= 0.0f && h <= 100.0f) {
-                        if (!state.sensors_valid || fabs(h - state.humidity) > 10.0f) {
-                            state.humidity = h;
-                        } else if (fabs(h - state.humidity) >= 0.5f) {
-                            state.humidity = (state.humidity * 0.7f) + (h * 0.3f);
-                        }
-                        state.ui_force_dirty = true;
-                    }
-                } else {
-                    if (++sht_fail_count >= 3) recoverI2cBus();
-                }
-            } else {
+            if (!readAndApplySht31(false)) {
                 if (++sht_fail_count >= 3) recoverI2cBus();
             }
         }
@@ -303,8 +278,6 @@ public:
         uint32_t climate_interval = is_quiet ? 12000 : 2500;
         if (now - last_climate_ms >= climate_interval) {
             last_climate_ms = now;
-
-
 
             if (state.sht_connected && !sht_waiting_data) {
                 Wire.beginTransmission(sht_addr);

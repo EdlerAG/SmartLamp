@@ -15,17 +15,22 @@ private:
         out[j] = '\0';
     }
 
-public:
-    static const char* getModeNameShortUa(uint8_t mode) {
-        static const char* const names[TOTAL_LIGHT_MODES] = {
-            "Теплий затишок", "Жива свічка",     "Бурштин",
-            "Камін з іскрами","Захід сонця",     "Сакура Неон",
-            "Північне сяйво", "Океанський бриз", "Кібер-комета",
-            "Веселка",        "Вимкнено",        "Spotify Ambi"
-        };
-        return names[mode % TOTAL_LIGHT_MODES];
+    static void showLightToast(AppState& state, const char* title) {
+        char sub[32];
+        snprintf(sub, sizeof(sub), "%s • %u%%", getLightModeName(state.light_mode), state.getLedBrightnessPercent());
+        state.showHudToast(title, sub);
     }
 
+    static void applyBrightnessPreset(AppState& state, uint8_t idx) {
+        static constexpr uint8_t PCT_MAP[4] = {15, 35, 65, 100};
+        state.auto_brt = false;
+        state.manual_brt_idx = idx % 4;
+        state.manual_brt_pct = PCT_MAP[state.manual_brt_idx];
+        state.markSettingsDirty();
+        state.showHudToast("🔆 Яскравість", getBrightnessPresetName(false, state.manual_brt_idx));
+    }
+
+public:
     static const char* getModeNameUa(uint8_t mode) {
         static const char* const names_ua[TOTAL_LIGHT_MODES] = {
             "☀️ Теплий затишок",
@@ -61,25 +66,19 @@ public:
             state.sleep_timer_active = false;
         }
         state.markSettingsDirty();
-        char sub[32];
-        snprintf(sub, sizeof(sub), "%s • %u%%", getLightModeName(state.light_mode), state.getLedBrightnessPercent());
-        state.showHudToast("💡 Режим світла", sub);
+        showLightToast(state, "💡 Режим світла");
     }
 
     static void nextLightMode(AppState& state) {
         state.light_mode = (state.light_mode + 1) % TOTAL_LIGHT_MODES;
         state.markSettingsDirty();
-        char sub[32];
-        snprintf(sub, sizeof(sub), "%s • %u%%", getLightModeName(state.light_mode), state.getLedBrightnessPercent());
-        state.showHudToast("💡 Режим світла", sub);
+        showLightToast(state, "💡 Режим світла");
     }
 
     static void togglePower(AppState& state) {
         if (state.light_mode == MODE_LIGHT_OFF) {
             state.light_mode = MODE_WARM_COZY;
-            char sub[32];
-            snprintf(sub, sizeof(sub), "%s • %u%%", getLightModeName(state.light_mode), state.getLedBrightnessPercent());
-            state.showHudToast("💡 Світло увімкнено", sub);
+            showLightToast(state, "💡 Світло увімкнено");
         } else {
             state.light_mode = MODE_LIGHT_OFF;
             state.sleep_timer_active = false;
@@ -105,25 +104,11 @@ public:
     }
 
     static void setBrightnessPreset(AppState& state, bool /*auto_mode*/, uint8_t preset_idx = 2) {
-        state.auto_brt = false;
-        state.manual_brt_idx = preset_idx % 4;
-        static const uint8_t pct_map[4] = {15, 35, 65, 100};
-        state.manual_brt_pct = pct_map[state.manual_brt_idx];
-        state.markSettingsDirty();
-        char sub[32];
-        snprintf(sub, sizeof(sub), "%s", getBrightnessPresetName(false, state.manual_brt_idx));
-        state.showHudToast("🔆 Яскравість", sub);
+        applyBrightnessPreset(state, preset_idx);
     }
 
     static void cycleBrightness(AppState& state) {
-        state.auto_brt = false;
-        state.manual_brt_idx = (state.manual_brt_idx + 1) % 4;
-        static const uint8_t pct_map[4] = {15, 35, 65, 100};
-        state.manual_brt_pct = pct_map[state.manual_brt_idx];
-        state.markSettingsDirty();
-        char sub[32];
-        snprintf(sub, sizeof(sub), "%s", getBrightnessPresetName(false, state.manual_brt_idx));
-        state.showHudToast("🔆 Яскравість", sub);
+        applyBrightnessPreset(state, state.manual_brt_idx + 1);
     }
 
     static void setAnimSpeed(AppState& state, uint8_t spd) {
@@ -245,7 +230,7 @@ public:
                  "\"ack\":%s,\"ping\":%u,"
                  "\"ota\":%u,\"ws_rec\":%u,\"scr_ang\":%d,\"sav_f\":%u,\"anm_f\":%u,"
                  "\"cpu_mhz\":%u,\"chip_t\":%.1f,"
-                 "\"stk_net\":%lu,\"stk_cld\":%lu,\"stk_led\":%lu,\"clk_cnt\":%lu,\"clk_us\":%lu,\"clk_max_us\":%lu,\"clk_b\":%u,\"clk_res\":%d,\"clk_gap\":%lu,\"loop_max_ms\":%lu,\"clk_cpu\":%u,"
+                 "\"stk_net\":%lu,\"stk_cld\":%lu,\"stk_led\":%lu,"
                  "\"led_bot\":%u,\"led_bak\":%u,\"led_cnt\":%u,\"led_off\":%u,\"led_rev\":%s,\"led_ma\":%u,\"t_off\":%.1f,\"h_off\":%.0f,\"p_off\":%.0f}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, send_p, state.pressure_diff, state.light_percent,
@@ -267,7 +252,7 @@ public:
                  state.ota_in_progress ? 1 : 0, (unsigned int)state.ws_reconnect_cnt,
                  (int)state.screen_angle, (unsigned int)state.saver_num_frames, (unsigned int)state.anim_frames_count,
                  (unsigned int)getCpuFrequencyMhz(), (float)temperatureRead(),
-                 (unsigned long)state.stk_net, (unsigned long)state.stk_cloud, (unsigned long)state.stk_led, (unsigned long)state.diag_clk_cnt, (unsigned long)state.diag_clk_us, (unsigned long)state.diag_clk_max_us, (unsigned int)state.diag_clk_bytes, (int)state.diag_clk_res, (unsigned long)state.diag_clk_gap_ms, (unsigned long)state.diag_loop_max_ms, (unsigned int)state.diag_clk_cpu,
+                 (unsigned long)state.stk_net, (unsigned long)state.stk_cloud, (unsigned long)state.stk_led,
                  (unsigned int)state.led_layout.bottom_count, (unsigned int)state.led_layout.back_count,
                  (unsigned int)state.led_layout.totalCount(), (unsigned int)state.led_layout.bottom_offset,
                  state.led_layout.reversed ? "true" : "false",

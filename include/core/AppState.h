@@ -5,12 +5,6 @@
 #include "Config.h"
 #include "core/Types.h"
 
-struct LedZone {
-    uint8_t start_idx;
-    uint8_t len;
-    LedZone(uint8_t s = 0, uint8_t l = 15) : start_idx(s), len(l) {}
-};
-
 struct LedLayoutConfig {
     uint16_t bottom_count         = Config::DEFAULT_BOTTOM_LEDS; // Зона 1: Дно (Underglow, за замовчуванням 36)
     uint16_t back_count           = Config::DEFAULT_BACK_LEDS;   // Зона 2: Задня стінка (Wall-Wash, за замовчуванням 24)
@@ -18,14 +12,9 @@ struct LedLayoutConfig {
     bool     reversed             = false;                       // true = інверсія обходу стрічки
     uint8_t  max_current_ma_div10 = 200;                         // 200 => 2000 мА
 
-    // Зворотна сумісність з API v5.0
     uint16_t active_led_count     = 60;
     uint8_t  start_offset         = 0;
     bool     reverse_dir          = false;
-    LedZone  zone_top             = {0, 15};
-    LedZone  zone_right           = {15, 15};
-    LedZone  zone_bottom          = {30, 15};
-    LedZone  zone_left            = {45, 15};
 
     uint16_t totalCount() const {
         uint16_t total = bottom_count + back_count;
@@ -72,18 +61,16 @@ struct AppState {
     float   pressure_hist[24]   = {0};
     uint8_t pressure_hist_count = 0;
 
-    // Освітленість та яскравість (LDR видалено — керування суворо фіксованими рівнями)
-    volatile int     raw_ldr         = 0;
-    volatile float   smooth_ldr      = 0.0f;
+    // Яскравість (LDR видалено — керування фіксованими рівнями або 1..100%)
     volatile int     light_percent   = 0;
     volatile bool    auto_brt        = false;
     volatile uint8_t manual_brt_idx  = 2;
-    volatile uint8_t manual_brt_pct  = 65; // 1..100% плавне регулювання
+    volatile uint8_t manual_brt_pct  = 65;
     volatile uint8_t current_led_brt = 65;
     volatile uint8_t current_lcd_brt = 220;
 
     // Швидкість анімацій та кастомний колір (1..100, RGBW)
-    volatile uint8_t anim_speed      = 50;  // 1..100
+    volatile uint8_t anim_speed      = 50;
     volatile uint8_t custom_r        = 255;
     volatile uint8_t custom_g        = 180;
     volatile uint8_t custom_b        = 80;
@@ -92,24 +79,14 @@ struct AppState {
     // Топологія стрічки та калібратор пікселів
     LedLayoutConfig   led_layout;
     volatile bool     led_layout_dirty     = false;
+    volatile bool     climate_offsets_dirty = false;
     volatile int16_t  cal_pixel            = -1;
     volatile uint32_t cal_until_ms         = 0;
 
-    // Stack High-Water Marks для RTOS-телеметрії здоров'я
+    // Stack High-Water Marks для RTOS-телеметрії
     volatile uint32_t stk_net   = 0;
     volatile uint32_t stk_cloud = 0;
     volatile uint32_t stk_led   = 0;
-    // Діагностика кліків та шини I2S
-    volatile uint32_t diag_clk_cnt     = 0;
-    volatile uint32_t diag_clk_us      = 0;
-    volatile uint32_t diag_clk_max_us  = 0;
-    volatile size_t   diag_clk_bytes   = 0;
-    volatile int32_t  diag_clk_res     = 0;
-    volatile uint32_t diag_clk_gap_ms  = 0;
-    volatile uint32_t diag_clk_last_ms = 0;
-    volatile uint32_t diag_loop_max_ms = 0;
-    volatile uint32_t diag_clk_cpu     = 0;
-    volatile uint8_t  diag_clk_core    = 0;
 
     void triggerCalibratePixel(int16_t px, uint32_t duration_ms = 4000) {
         portENTER_CRITICAL(&mux);
@@ -236,8 +213,7 @@ struct AppState {
     uint8_t*          shared_canvas_buf     = nullptr;
     volatile uint8_t  anim_frames_count     = 0;
     volatile uint8_t  anim_fps              = 15;
-    volatile uint32_t custom_frame_until    = 0;
-    volatile uint32_t media_expire_ms       = 0;       // 0: крутиться безперервно поки не скасують; >0: час завершення за таймером
+    volatile uint32_t media_expire_ms       = 0;       // 0: постійно; >0: час завершення за таймером
     volatile bool     stop_media_requested  = false;
     volatile bool     canvas_loading        = false;
 
@@ -426,7 +402,6 @@ struct AppState {
     volatile uint32_t birthday_celebrate_end_ms = 0;
 
     // Процедурні тригери синтезатора
-    volatile bool     trig_touch_click      = false;
     volatile bool     trig_boot_chord       = false;
     volatile bool     trig_notify_bell      = false;
     volatile uint8_t  trig_reaction_synth   = 0; // 2..6
@@ -581,7 +556,6 @@ struct AppState {
         ambi_active           = true;
         stop_media_requested  = false;
         media_expire_ms       = (duration_ms > 0) ? (millis() + duration_ms) : 0;
-        custom_frame_until    = media_expire_ms;
         canvas_loading        = false;
         portEXIT_CRITICAL(&mux);
         led_notify_type = NOTIFY_AMBILIGHT;
@@ -591,7 +565,6 @@ struct AppState {
     void stopActiveMedia() {
         portENTER_CRITICAL(&mux);
         anim_frames_count    = 0;
-        custom_frame_until   = 0;
         media_expire_ms      = 0;
         stop_media_requested = true;
         ambi_active          = false;
@@ -602,12 +575,7 @@ struct AppState {
 
     void setMediaTimer(uint16_t minutes) {
         portENTER_CRITICAL(&mux);
-        if (minutes == 0) {
-            media_expire_ms = 0; // Постійно
-        } else {
-            media_expire_ms = millis() + ((uint32_t)minutes * 60000UL);
-        }
-        custom_frame_until = media_expire_ms;
+        media_expire_ms = (minutes == 0) ? 0 : (millis() + ((uint32_t)minutes * 60000UL));
         portEXIT_CRITICAL(&mux);
         ui_force_dirty = true;
         registerActivity();
@@ -936,16 +904,6 @@ struct AppState {
         pending_media_is_saver = is_saver;
         portEXIT_CRITICAL(&mux);
         registerNetActivity();
-    }
-
-    void setPendingImageUrl(const char* url) {
-        setPendingMedia(url);
-    }
-
-    bool popPendingImageUrl(char* url_out, size_t max_len) {
-        char n[32], c[16];
-        bool is_sav = false;
-        return popPendingMedia(url_out, max_len, n, sizeof(n), c, sizeof(c), is_sav);
     }
 
     bool popPendingMedia(char* url_out, size_t u_len, char* name_out, size_t n_len, char* crc_out, size_t c_len, bool& is_saver_out) {

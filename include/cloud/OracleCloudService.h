@@ -716,36 +716,20 @@ private:
             if (sp["bpm"].is<uint16_t>()) state.spotify.bpm = sp["bpm"].as<uint16_t>();
             if (sp["energy"].is<uint8_t>()) state.spotify.energy = sp["energy"].as<uint8_t>();
 
-            if (sp["ambi_rgb"].is<JsonArray>()) {
-                JsonArray rgb = sp["ambi_rgb"];
-                if (rgb.size() >= 3) {
-                    uint8_t r = rgb[0].as<uint8_t>();
-                    uint8_t g = rgb[1].as<uint8_t>();
-                    uint8_t b = rgb[2].as<uint8_t>();
-                    state.spotify.ambi_r = r; state.spotify.ambi_g = g; state.spotify.ambi_b = b;
-                    state.ambi_r = r; state.ambi_g = g; state.ambi_b = b;
-                }
-            }
-            if (sp["ambi2_rgb"].is<JsonArray>()) {
-                JsonArray rgb2 = sp["ambi2_rgb"];
-                if (rgb2.size() >= 3) {
-                    uint8_t r2 = rgb2[0].as<uint8_t>();
-                    uint8_t g2 = rgb2[1].as<uint8_t>();
-                    uint8_t b2 = rgb2[2].as<uint8_t>();
-                    state.spotify.ambi2_r = r2; state.spotify.ambi2_g = g2; state.spotify.ambi2_b = b2;
-                    state.ambi2_r = r2; state.ambi2_g = g2; state.ambi2_b = b2;
-                }
-            }
-            if (sp["ambi3_rgb"].is<JsonArray>()) {
-                JsonArray rgb3 = sp["ambi3_rgb"];
-                if (rgb3.size() >= 3) {
-                    uint8_t r3 = rgb3[0].as<uint8_t>();
-                    uint8_t g3 = rgb3[1].as<uint8_t>();
-                    uint8_t b3 = rgb3[2].as<uint8_t>();
-                    state.spotify.ambi3_r = r3; state.spotify.ambi3_g = g3; state.spotify.ambi3_b = b3;
-                    state.ambi3_r = r3; state.ambi3_g = g3; state.ambi3_b = b3;
-                }
-            }
+            auto readAmbiTriad = [&](const char* key, volatile uint8_t& sr, volatile uint8_t& sg, volatile uint8_t& sb,
+                                     volatile uint8_t& ar, volatile uint8_t& ag, volatile uint8_t& ab) {
+                if (!sp[key].is<JsonArray>()) return;
+                JsonArray rgb = sp[key];
+                if (rgb.size() < 3) return;
+                uint8_t r = rgb[0].as<uint8_t>();
+                uint8_t g = rgb[1].as<uint8_t>();
+                uint8_t b = rgb[2].as<uint8_t>();
+                sr = r; sg = g; sb = b;
+                ar = r; ag = g; ab = b;
+            };
+            readAmbiTriad("ambi_rgb",  state.spotify.ambi_r,  state.spotify.ambi_g,  state.spotify.ambi_b,  state.ambi_r,  state.ambi_g,  state.ambi_b);
+            readAmbiTriad("ambi2_rgb", state.spotify.ambi2_r, state.spotify.ambi2_g, state.spotify.ambi2_b, state.ambi2_r, state.ambi2_g, state.ambi2_b);
+            readAmbiTriad("ambi3_rgb", state.spotify.ambi3_r, state.spotify.ambi3_g, state.spotify.ambi3_b, state.ambi3_r, state.ambi3_g, state.ambi3_b);
             state.spotify.last_sync_ms = millis();
             portEXIT_CRITICAL(&state.mux);
         }
@@ -785,16 +769,13 @@ private:
             }
             state.led_layout.syncLegacy();
             state.led_layout_dirty = true;
-            if (storage_srv) storage_srv->saveLedLayout(state.led_layout);
             state.showHudToast("🔧 Топологія LED", "Дно + Стінка оновлено", 1800);
         }
 
         if (doc["screen_angle"].is<int>()) {
             CommandRouter::setScreenAngle(state, doc["screen_angle"].as<int16_t>());
-            if (storage_srv) storage_srv->saveScreenAngle(state.screen_angle);
         }
 
-        // Калібрування сенсорів клімату (збереження в NVS та оновлення стану)
         bool climate_calib_changed = false;
         if (doc["t_off"].is<float>() || doc["temp_offset"].is<float>()) {
             state.temp_offset = doc["t_off"].is<float>() ? doc["t_off"].as<float>() : doc["temp_offset"].as<float>();
@@ -809,7 +790,7 @@ private:
             climate_calib_changed = true;
         }
         if (climate_calib_changed) {
-            if (storage_srv) storage_srv->saveClimateOffsets(state.temp_offset, state.humidity_offset, state.pressure_offset);
+            state.climate_offsets_dirty = true;
             state.ui_force_dirty = true;
             char cal_toast[64];
             snprintf(cal_toast, sizeof(cal_toast), "T:%.1f H:%.0f P:%.0f", state.temp_offset, state.humidity_offset, state.pressure_offset);
@@ -859,29 +840,20 @@ private:
             CommandRouter::setCustomRgbw(state, cr, cg, cb, cw);
         }
 
-        // 2. Команди звуку: гучність, Mute, тактильні кліки
         if (doc["volume"].is<int>()) {
-            uint8_t v = (uint8_t)constrain(doc["volume"].as<int>(), 0, 21);
-            CommandRouter::setVolume(state, v);
-            if (storage_srv) storage_srv->saveAudioSettings(v, state.audio_muted, state.touch_beep_enabled);
+            CommandRouter::setVolume(state, (uint8_t)constrain(doc["volume"].as<int>(), 0, 21));
         }
 
         if (doc["muted"].is<bool>()) {
-            bool m = doc["muted"].as<bool>();
-            CommandRouter::setMute(state, m);
-            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, m, state.touch_beep_enabled);
+            CommandRouter::setMute(state, doc["muted"].as<bool>());
         }
 
         if (doc["touch_beep"].is<bool>()) {
-            bool tb = doc["touch_beep"].as<bool>();
-            CommandRouter::setTouchBeep(state, tb);
-            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, tb, state.touch_click_profile);
+            CommandRouter::setTouchBeep(state, doc["touch_beep"].as<bool>());
         }
 
         if (doc["touch_profile"].is<int>()) {
-            uint8_t tp = (uint8_t)constrain(doc["touch_profile"].as<int>(), 0, 2);
-            state.setTouchClickProfile(tp);
-            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, state.touch_beep_enabled, tp);
+            state.setTouchClickProfile((uint8_t)constrain(doc["touch_profile"].as<int>(), 0, 2));
         }
 
         // 3. Команди керування показом медіа
@@ -1015,7 +987,7 @@ private:
             }
         } else if (doc["img_url"].is<const char*>()) {
             String img_url = normalizeMediaUrl(doc["img_url"].as<const char*>());
-            if (img_url.length() > 8) state.setPendingImageUrl(img_url.c_str());
+            if (img_url.length() > 8) state.setPendingMedia(img_url.c_str());
         }
 
         if (doc["ota_url"].is<const char*>()) {

@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 namespace Config {
-    constexpr const char* FW_VERSION = "v7.6-StudioUltra";
+    constexpr const char* FW_VERSION = "v7.7-Clean";
     constexpr const char* DEVICE_NAME = "magicbox";
     constexpr const char* AP_SSID     = "MagicBox-AP";
 
@@ -35,11 +35,8 @@ namespace Config {
     constexpr uint8_t  VINYL_DIAMETER      = 136;   // Діаметр круглої вінілової платівки
     constexpr size_t   VINYL_BYTES_RGB565  = 136 * 136 * 2; // 36992 байти
     constexpr size_t   BLUR_BYTES_RGB565   = 32 * 32 * 2;   // 2048 байт (32x32 Apple Music blurred cover)
-    constexpr size_t   BUNDLE_BYTES_RGB565 = VINYL_BYTES_RGB565 + BLUR_BYTES_RGB565; // 39040 байт // 36992 байти
+    constexpr size_t   BUNDLE_BYTES_RGB565 = VINYL_BYTES_RGB565 + BLUR_BYTES_RGB565; // 39040 байт
     constexpr const char* SAVER_FILE_PATH  = "/default_saver.mbx";
-
-    // Калібрування датчиків у корпусі
-    constexpr float TEMP_OFFSET_C = 0.0f;
 
     // Таймінги для відключень світла (Blackout) та Onboarding
     constexpr uint32_t WIFI_BOOT_TIMEOUT_MS    = 60000;
@@ -48,7 +45,6 @@ namespace Config {
     constexpr uint32_t BOOT_SPLASH_MS          = 0;  // Миттєвий старт без заставки
 
     // Піни периферії
-    constexpr uint8_t PIN_LDR         = 1;
     constexpr uint8_t PIN_TOUCH_LEFT  = 4;
     constexpr uint8_t PIN_LED         = 5;
     constexpr uint8_t PIN_TOUCH_TOP   = 6;

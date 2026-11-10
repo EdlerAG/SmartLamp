@@ -1440,78 +1440,7 @@ namespace ScreenRenderer {
         canvas.drawString(pg_buf, 120, 148);
     }
 
-    // ВІКНО 4: SCREEN_BAROMETER (Dieter Rams Braun Barometer — 4 FPS)
-    inline void drawBarometer(LGFX_Sprite& canvas, AppState& state, float& smooth_pres_angle) {
-        drawPerimeterTicks(canvas);
-
-        float hist[24];
-        uint8_t h_cnt = 0;
-        float p_diff = 0.0f;
-        state.getPressureHistory(hist, h_cnt, p_diff);
-
-        canvas.setFont(&UkrainianFont12Bold);
-        canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-        canvas.drawString("BAROMETRIC TREND", 120, 32);
-
-        canvas.setFont(&fonts::FreeSansBold24pt7b);
-        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-        char p_str[16];
-        snprintf(p_str, sizeof(p_str), "%.0f", state.pressure);
-        canvas.drawString(p_str, 120, 68);
-
-        const char* arrow_sym = "→";
-        uint16_t trend_col = HallmarkTheme::TEXT_SECONDARY;
-        const char* trend_word = "СТАБІЛЬНИЙ";
-
-        if (p_diff >= 0.7f) {
-            arrow_sym = "↑";
-            trend_col = HallmarkTheme::ACCENT_SUCCESS;
-            trend_word = "ЗРОСТАЄ";
-        } else if (p_diff <= -0.7f) {
-            arrow_sym = "↓";
-            trend_col = HallmarkTheme::ACCENT_DANGER;
-            trend_word = "ПАДАЄ";
-        }
-
-        canvas.setFont(&UkrainianFont12Bold);
-        canvas.setTextColor(trend_col);
-        char trend_str[64];
-        snprintf(trend_str, sizeof(trend_str), "%s %s (%+.1f mmHg)", arrow_sym, trend_word, p_diff);
-        canvas.drawString(trend_str, 120, 96);
-
-        const char* wf = "Стабільна погода";
-        if (state.pressure < 742.0f || p_diff <= -1.5f) wf = "Можливі опади / Циклон";
-        else if (state.pressure > 760.0f || p_diff >= 1.5f) wf = "Ясно / Антициклон";
-
-        canvas.fillRoundRect(36, 110, 168, 20, 10, HallmarkTheme::BG_SURFACE);
-        canvas.drawRoundRect(36, 110, 168, 20, 10, HallmarkTheme::BORDER_HAIRLINE);
-        canvas.setFont(&UkrainianFont14);
-        canvas.setTextColor(HallmarkTheme::TEXT_PRIMARY);
-        canvas.drawString(wf, 120, 120);
-
-        // 24-точковий Sparkline з базовою лінією 750 mmHg
-        canvas.fillRoundRect(36, 138, 168, 44, 6, HallmarkTheme::BG_SURFACE);
-        canvas.drawRoundRect(36, 138, 168, 44, 6, HallmarkTheme::BORDER_HAIRLINE);
-
-        int baseline_y = 160;
-        canvas.drawFastHLine(42, baseline_y, 156, HallmarkTheme::BORDER_HAIRLINE);
-
-        for (int i = 0; i < 24; i++) {
-            float v = constrain(hist[i], 735.0f, 765.0f);
-            int bar_h = 3 + (int)((v - 735.0f) / 30.0f * 26.0f);
-            int bx = 45 + i * 6;
-            int by = 176 - bar_h;
-            uint16_t b_col = (i == 23) ? HallmarkTheme::ACCENT_WARM :
-                            ((i >= 18) ? HallmarkTheme::ACCENT_COOL : HallmarkTheme::BORDER_HAIRLINE);
-            canvas.fillRect(bx, by, 4, bar_h, b_col);
-        }
-
-        canvas.setFont(&UkrainianFont12Bold);
-        canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
-        canvas.drawString("750", 192, baseline_y - 4);
-    }
-
-    // ВІКНО 5: SCREEN_POMODORO (Hallmark Horology Focus Dial & Timer — 10 FPS)
+    // ВІКНО: SCREEN_POMODORO (10 FPS)
     inline void drawPomodoro(LGFX_Sprite& canvas, AppState& state, uint32_t now) {
         drawPerimeterTicks(canvas);
 

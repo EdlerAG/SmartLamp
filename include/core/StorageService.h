@@ -324,6 +324,11 @@ public:
             saveLedLayout(state.led_layout);
         }
 
+        if (state.climate_offsets_dirty) {
+            state.climate_offsets_dirty = false;
+            saveClimateOffsets(state.temp_offset, state.humidity_offset, state.pressure_offset);
+        }
+
         if (state.settings_dirty && (millis() - state.settings_change_ms >= 2000)) {
             state.settings_dirty = false;
             if (prefs.begin("box_state", false)) {

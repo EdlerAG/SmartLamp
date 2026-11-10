@@ -55,7 +55,7 @@ class OtaService:
         try:
             from app.core.events import realtime_hub
             realtime_hub.emit_to_box_immediate()
-        except Exception as emit_err:
+        except Exception:
             pass
 
         return {

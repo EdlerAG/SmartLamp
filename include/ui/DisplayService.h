@@ -25,17 +25,31 @@ private:
     uint8_t  cur_saver_frame    = 0;
     uint8_t  applied_lcd_brt    = 220;
     char     cached_qr_str[160] = "";
+    float    vinyl_angle        = 0.0f;
 
-    float smooth_hum_angle   = 180.0f;
-    float smooth_pres_angle  = 270.0f;
-    float vinyl_angle        = 0.0f;
-
-    bool isGaugeSettled() const {
-        float target_hum = 180.0f + constrain(state.humidity, 0.0f, 100.0f) * 1.8f;
-        float clamped_p  = constrain(state.pressure, 730.0f, 770.0f);
-        float target_p   = 135.0f + ((clamped_p - 730.0f) / 40.0f * 270.0f);
-        return (fabs(target_hum - smooth_hum_angle) < 0.3f) &&
-               (fabs(target_p - smooth_pres_angle) < 0.3f);
+    static bool advanceAndCopyMbxFrame(
+        const uint8_t* psram_buf,
+        uint8_t num_frames,
+        uint8_t fps,
+        uint8_t* shared_canvas,
+        uint32_t now,
+        uint32_t& last_tick_ms,
+        uint8_t& cur_frame
+    ) {
+        if (!psram_buf || num_frames == 0 || !shared_canvas) return false;
+        bool advanced = false;
+        if (num_frames > 1) {
+            uint32_t delay_ms = 1000 / (fps > 0 ? fps : 12);
+            if (now - last_tick_ms >= delay_ms) {
+                last_tick_ms = now;
+                cur_frame = (cur_frame + 1) % num_frames;
+                advanced = true;
+            }
+        }
+        if (cur_frame >= num_frames) cur_frame = 0;
+        const uint8_t* frame_ptr = psram_buf + sizeof(MbxHeader) + ((size_t)cur_frame * Config::FRAME_BYTES_RGB565);
+        memcpy(shared_canvas, frame_ptr, Config::FRAME_BYTES_RGB565);
+        return advanced;
     }
 
 public:
@@ -54,13 +68,7 @@ public:
         return vinylSprite;
     }
 
-    LGFX_Sprite& getBgSprite() {
-        return bgSprite;
-    }
-
-    // Розмита текстура обкладинки більше не пишеться у bgSprite: сервер шле big-endian RGB565,
-    // а ESP читає little-endian, тож ця інтерполяція давала кольоровий шум замість фону.
-    // Фон Spotify-деку повністю генерує ScreenRenderer::drawSmartHub.
+    // Фон Spotify-деку генерує ScreenRenderer::drawSmartHub (сервер шле big-endian RGB565).
     void updateBlurredBackground(const uint16_t* blur32) {
         if (!blur32) return;
         state.spotify_blur_ready = true;
@@ -210,24 +218,12 @@ public:
                 break;
 
             case SCREEN_LIVING_GIF:
-                if (state.saver_loaded && state.saver_num_frames > 0 && state.psram_saver_buf && state.shared_canvas_buf) {
-                    uint32_t saver_delay = 1000 / (state.saver_fps > 0 ? state.saver_fps : 12);
-                    if (now - last_saver_tick_ms >= saver_delay) {
-                        last_saver_tick_ms = now;
-                        cur_saver_frame = (cur_saver_frame + 1) % state.saver_num_frames;
-                    }
-                    if (cur_saver_frame >= state.saver_num_frames) cur_saver_frame = 0;
-                    const uint8_t* frame_ptr = state.psram_saver_buf + sizeof(MbxHeader) + ((size_t)cur_saver_frame * Config::FRAME_BYTES_RGB565);
-                    memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
-                } else if (state.psram_anim_buf && state.anim_frames_count > 0 && state.shared_canvas_buf) {
-                    uint32_t anim_delay = 1000 / (state.anim_fps > 0 ? state.anim_fps : 12);
-                    if (now - last_anim_tick_ms >= anim_delay) {
-                        last_anim_tick_ms = now;
-                        cur_anim_frame = (cur_anim_frame + 1) % state.anim_frames_count;
-                    }
-                    if (cur_anim_frame >= state.anim_frames_count) cur_anim_frame = 0;
-                    const uint8_t* frame_ptr = state.psram_anim_buf + sizeof(MbxHeader) + ((size_t)cur_anim_frame * Config::FRAME_BYTES_RGB565);
-                    memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
+                if (state.saver_loaded && state.saver_num_frames > 0) {
+                    advanceAndCopyMbxFrame(state.psram_saver_buf, state.saver_num_frames, state.saver_fps,
+                                           state.shared_canvas_buf, now, last_saver_tick_ms, cur_saver_frame);
+                } else if (state.anim_frames_count > 0) {
+                    advanceAndCopyMbxFrame(state.psram_anim_buf, state.anim_frames_count, state.anim_fps,
+                                           state.shared_canvas_buf, now, last_anim_tick_ms, cur_anim_frame);
                 }
                 ScreenRenderer::drawLivingGif(canvas, state, now);
                 break;
@@ -479,22 +475,12 @@ public:
         // 3. Пріоритет: Тимчасове спливаюче медіа з Telegram
         // (ТІЛЬКИ коли діє активний таймер показу media_expire_ms > 0 і ми НЕ на екрані заставки SCREEN_LIVING_GIF)
         if (state.isCustomFrameActive(now) && state.media_expire_ms > 0 && state.screen_mode != SCREEN_LIVING_GIF) {
-            uint8_t fps = state.anim_fps;
-            uint32_t frame_delay = 1000 / (fps > 0 ? fps : 1);
-            bool advance_frame = (state.anim_frames_count > 1) && (now - last_anim_tick_ms >= frame_delay);
-            if (advance_frame) {
-                last_anim_tick_ms = now;
-                cur_anim_frame = (cur_anim_frame + 1) % state.anim_frames_count;
-            }
-
-            if (state.ui_force_dirty || advance_frame) {
+            uint8_t fps = state.anim_fps > 0 ? state.anim_fps : 1;
+            bool need_draw = state.ui_force_dirty || ((state.anim_frames_count > 1) && (now - last_anim_tick_ms >= (1000UL / fps)));
+            if (need_draw) {
                 state.ui_force_dirty = false;
-
-                if (state.psram_anim_buf && state.shared_canvas_buf) {
-                    if (cur_anim_frame >= state.anim_frames_count) cur_anim_frame = 0;
-                    const uint8_t* frame_ptr = state.psram_anim_buf + sizeof(MbxHeader) + ((size_t)cur_anim_frame * Config::FRAME_BYTES_RGB565);
-                    memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
-                }
+                advanceAndCopyMbxFrame(state.psram_anim_buf, state.anim_frames_count, fps,
+                                       state.shared_canvas_buf, now, last_anim_tick_ms, cur_anim_frame);
 
                 uint16_t ambi_col = canvas.color565(state.ambi_r, state.ambi_g, state.ambi_b);
                 canvas.drawCircle(120, 120, 118, ambi_col);

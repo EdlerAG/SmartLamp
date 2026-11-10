@@ -268,11 +268,5 @@ class RoutineService:
             logger.warning("Morning brief generation error: %s", e)
             return "☀️ Доброго ранку! Продуктивного та гарного дня!"
 
-    async def generate_morning_brief_for_nastya(self) -> str:
-        return await self.generate_morning_brief()
-
 
 routine_service = RoutineService()
-# Зворотна сумісність
-NastyaRoutineService = RoutineService
-nastya_routine_service = routine_service
