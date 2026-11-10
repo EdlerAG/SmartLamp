@@ -69,7 +69,7 @@ namespace TextSanitizer {
                 else if ((c2 >= 0xB2 && c2 <= 0xB6) || c2 == 0xB8) mapped = 'o';
                 else if ((c2 >= 0x99 && c2 <= 0x9C)) mapped = 'U';
                 else if ((c2 >= 0xB9 && c2 <= 0xBC)) mapped = 'u';
-                else if (c2 == 0x9D || c2 == 0x9F) mapped = 'Y';
+                else if (c2 == 0x9D) mapped = 'Y';
                 else if (c2 == 0xBD || c2 == 0xBF) mapped = 'y';
                 else if (c2 == 0x9F) mapped = 's'; // ß -> s
 

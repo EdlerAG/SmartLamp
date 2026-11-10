@@ -247,6 +247,7 @@ private:
         if (total_read == 115200) {
             MbxHeader* hdr = (MbxHeader*)state.psram_anim_buf;
             memcpy(hdr->magic, "MBX5", 4);
+            hdr->version = 5;
             hdr->num_frames = 1;
             hdr->fps = 1;
             hdr->ambi_r = state.ambi_r;
@@ -279,7 +280,7 @@ private:
         return false;
     }
 
-    bool downloadMbxAnimation(const String& raw_url, bool is_saver = false) {
+    bool downloadMbxAnimation(const String& raw_url) {
         if (!state.psram_anim_buf || !state.wifi_connected) return false;
         String url = normalizeMediaUrl(raw_url);
 
@@ -378,8 +379,6 @@ private:
                     state.saver_crc        = s_hdr->crc32;
                     state.saver_buf_size   = cpy_len;
                     state.saver_loaded     = true;
-                    state.screen_mode      = SCREEN_LIVING_GIF;
-                    state.ui_force_dirty   = true;
 
                     // Завжди надійно зберігаємо активну анімацію у LittleFS для екрану 2 (SCREEN_LIVING_GIF).
                     // Обмежуємо LittleFS до 10 кадрів (~1.15 МБ), що гарантовано вміщається в розділ 1.44 МБ,
@@ -1076,7 +1075,7 @@ public:
         bool is_sav = false;
         if (state.popPendingMedia(med_url, sizeof(med_url), med_name, sizeof(med_name), med_crc, sizeof(med_crc), is_sav)) {
             if (String(med_url).indexOf(".mbx") != -1) {
-                downloadMbxAnimation(String(med_url), is_sav);
+                downloadMbxAnimation(String(med_url));
             } else {
                 downloadRgb565ToCanvas(String(med_url));
             }

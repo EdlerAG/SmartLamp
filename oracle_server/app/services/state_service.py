@@ -115,7 +115,7 @@ class StateService:
             is_valid = (not is_stub_pres and not is_stub_temp and payload.t > -30.0 and payload.t < 60.0)
 
             # Outlier Rejection: атмосферний тиск фізично не може стрибати більше ніж на 3 мм за 5 хв
-            if is_valid and hasattr(self, '_last_saved_pres') and self._last_saved_pres is not None:
+            if is_valid and self._last_saved_pres is not None:
                 if abs(payload.p - self._last_saved_pres) > 3.0:
                     is_valid = False
 
@@ -179,15 +179,15 @@ class StateService:
         # In-Place Command Coalescing (Захист від флуду слайдерами)
         coalesce_keys = {
             "set_brt", "speed", "set_speed", "custom_r", "custom_g", "custom_b", "custom_w",
-            "set_mode", "screen_angle", "scr_angle", "led_cal_px", "volume",
-            "led_count", "led_offset", "led_reverse", "led_max_ma"
+            "set_mode", "screen_angle", "scr_angle", "led_cal_px", "volume", "muted",
+            "touch_beep", "touch_profile", "led_count", "led_offset", "led_reverse", "led_max_ma"
         }
-        is_discrete = any(k in data for k in ("msg", "media_url", "play_url", "ota_url", "stop_media", "react", "birthday_celebrate"))
+        discrete_keys = ("msg", "media_url", "play_url", "ota_url", "stop_media", "react", "birthday_celebrate")
+        is_discrete = any(k in data for k in discrete_keys)
 
         if not is_discrete and self.command_queue:
-            # Шукаємо невідправлену команду в черзі з кінця для оновлення на місці
             for queued in reversed(self.command_queue):
-                if not any(k in queued for k in ("msg", "media_url", "play_url", "ota_url", "stop_media", "react", "birthday_celebrate")):
+                if not any(k in queued for k in discrete_keys):
                     if any(k in data for k in coalesce_keys):
                         queued.update(data)
                         queued["created_at"] = now

@@ -38,8 +38,7 @@ private:
     DRAM_ATTR static RgbwColor s_shadow_pixels[Config::NUM_LEDS];
     DRAM_ATTR static RgbwColor s_slew_pixels[Config::NUM_LEDS];
 
-    const uint8_t manual_pct_levels[4] = {15, 35, 65, 100};
-    const uint8_t lcd_levels[4]        = {60, 130, 200, 255};
+    const uint8_t lcd_levels[4] = {60, 130, 200, 255};
 
     inline uint16_t mapLogicalToPhysical(uint16_t logical_idx) const {
         uint16_t active_cnt = state.led_layout.totalCount();

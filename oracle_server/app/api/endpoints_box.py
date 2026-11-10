@@ -41,6 +41,30 @@ async def _get_cached_calendar_event() -> Optional[Dict[str, Any]]:
         _cal_cache["ts"] = now
     return _cal_cache["event"]
 
+def _store_batch_telemetry(points: list, default_light: int = 0) -> int:
+    if not points:
+        return 0
+    now_ts = int(time.time())
+    samples = []
+    for pt in points:
+        t_val = float(pt.get("t", 22.0))
+        h_val = float(pt.get("h", 50.0))
+        p_val = float(pt.get("p", 750.0))
+        is_stub = (abs(p_val - 750.0) < 0.2) or (abs(t_val - 22.0) < 0.05 and abs(h_val - 50.0) < 0.1)
+        if 680.0 <= p_val <= 820.0 and not is_stub and -30.0 < t_val < 60.0:
+            age_sec = max(0, int(pt.get("age_sec", 0)))
+            samples.append({
+                "ts": max(0, now_ts - age_sec),
+                "temp": t_val,
+                "hum": h_val,
+                "pres": p_val,
+                "light": pt.get("l", default_light),
+            })
+    cnt = db_service.add_climate_batch(samples) if samples else 0
+    realtime_hub.emit_to_dashboards({"type": "batch", "count": cnt})
+    return cnt
+
+
 def invalidate_calendar_cache() -> None:
     _cal_cache["ts"] = 0.0
 
@@ -276,29 +300,8 @@ async def box_websocket_endpoint(ws: WebSocket):
                     await realtime_hub.send_bytes_to_box(vinyl_data)
                 continue
 
-            # Передача пакета офлайн-точок блекауту напряму через відкритий WebSocket (0 HTTP-запитів)
             if data.get("type") == "batch_telemetry":
-                points = data.get("points", [])
-                if points:
-                    samples = []
-                    now_sec = int(time.time())
-                    for pt in points:
-                        t = float(pt.get("t", 0.0))
-                        h = float(pt.get("h", 0.0))
-                        p = float(pt.get("p", 0.0))
-                        is_stub = (abs(p - 750.0) < 0.2) or (abs(t - 22.0) < 0.05 and abs(h - 50.0) < 0.1)
-                        if p >= 680.0 and p <= 820.0 and not is_stub and t > -30.0 and t < 60.0:
-                            age = pt.get("age_sec", 0)
-                            ts = max(0, now_sec - age)
-                            samples.append({
-                                "ts": ts,
-                                "temp": t,
-                                "hum": h,
-                                "pres": p,
-                                "light": pt.get("l", 0),
-                            })
-                    cnt = db_service.add_climate_batch(samples) if samples else 0
-                    realtime_hub.emit_to_dashboards({"type": "batch", "count": cnt})
+                _store_batch_telemetry(data.get("points", []))
                 ack_resp = {"type": "batch_ack", "ok": True}
                 if is_binary_session and msgpack:
                     await ws.send_bytes(msgpack.packb(ack_resp))
@@ -373,28 +376,7 @@ async def download_live_mbx():
 @router.post("/api/v5/box/batch-telemetry")
 async def receive_batch_telemetry(payload: Dict[str, Any], _=Depends(verify_access)):
     """Приймає пакет офлайн-телеметрії («чорна скринька» шкатулки під час блекауту/відсутності Wi-Fi)."""
-    points = payload.get("points", [])
-    if not points:
-        return {"ok": True, "count": 0}
-    now_ts = int(time.time())
-    samples = []
-    for p in points:
-        t_val = float(p.get("t", 22.0))
-        h_val = float(p.get("h", 50.0))
-        p_val = float(p.get("p", 750.0))
-        is_stub = (abs(p_val - 750.0) < 0.2) or (abs(t_val - 22.0) < 0.05 and abs(h_val - 50.0) < 0.1)
-        if p_val >= 680.0 and p_val <= 820.0 and not is_stub and t_val > -30.0 and t_val < 60.0:
-            age_sec = max(0, int(p.get("age_sec", 0)))
-            ts = now_ts - age_sec
-            samples.append({
-                "ts": ts,
-                "temp": t_val,
-                "hum": h_val,
-                "pres": p_val,
-                "light": p.get("l", 50),
-            })
-    count = db_service.add_climate_batch(samples)
-    realtime_hub.emit_to_dashboards({"type": "batch", "count": count})
+    count = _store_batch_telemetry(payload.get("points", []), default_light=50)
     return {"ok": True, "count": count}
 
 
