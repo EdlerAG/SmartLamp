@@ -1,8 +1,12 @@
 #pragma once
 #include <Arduino.h>
 
+#ifndef SMARTLAMP_FW_VERSION
+#define SMARTLAMP_FW_VERSION "v7.7-Clean"
+#endif
+
 namespace Config {
-    constexpr const char* FW_VERSION = "v7.7-Clean";
+    constexpr const char* FW_VERSION = SMARTLAMP_FW_VERSION;
     constexpr const char* DEVICE_NAME = "magicbox";
     constexpr const char* AP_SSID     = "MagicBox-AP";
 

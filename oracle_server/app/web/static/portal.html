@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<title>MagicBox Sovereign Studio • v5.6.0</title>
-<!-- Hallmark & Sovereign Protocol v5.6.0 -->
+<title>MagicBox Sovereign Studio • v{{APP_VERSION}}</title>
+<!-- Hallmark & Sovereign Protocol v{{APP_VERSION}} -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -31,7 +31,7 @@
 <div id="loginModal">
   <div class="login-box">
     <div style="font-size:32px;margin-bottom:8px">🪄</div>
-    <h2 style="font-size:16px;margin-bottom:6px">MagicBox Studio • Sovereign v5.6.0</h2>
+    <h2 style="font-size:16px;margin-bottom:6px">MagicBox Studio • v{{APP_VERSION}}</h2>
     <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">Аварійний вхід: введіть пароль доступу</p>
     <input type="password" id="pwdInput" placeholder="Пароль доступу..." onkeydown="if(event.key==='Enter')doLogin()">
     <button class="btn btn-cool" style="width:100%;margin-top:10px" onclick="doLogin()">Увійти</button>
@@ -42,7 +42,7 @@
   <div style="background:var(--bg-elevated);border:1px solid #e63946;box-shadow:0 0 35px rgba(230,57,70,0.25);border-radius:16px;max-width:420px;width:100%;padding:24px;text-align:center;position:relative">
     <button onclick="closeHellcatModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:var(--text-secondary);font-size:22px;cursor:pointer;line-height:1">&times;</button>
     <div style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;background:rgba(230,57,70,0.15);border:1px solid #e63946;color:#ff6b6b;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px">
-      ⚡️ SOVEREIGN PROTOCOL • V5.6.0
+      ⚡️ SOVEREIGN PROTOCOL • v{{APP_VERSION}}
     </div>
     <h2 style="font-size:18px;font-weight:800;color:var(--text-primary);margin-bottom:6px">
       SmartLamp Sovereign Gateway
@@ -76,7 +76,7 @@
         <div style="display:flex;align-items:center;gap:6px">
           <span id="onlineDot" class="pulse on"></span>
           <b id="onlineTxt" style="font-size:13px;letter-spacing:0.4px">MAGICBOX SOVEREIGN</b>
-          <span class="mono" style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8" id="verBadge">v5.6.0 ⚡ Live</span>
+          <span class="mono" style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8" id="verBadge">v{{APP_VERSION}} ⚡ Live</span>
         </div>
 
       </div>
@@ -602,7 +602,7 @@
       <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:8px;margin-bottom:8px">
         <div style="background:var(--bg-surface);padding:8px;border-radius:8px;border:1px solid var(--border-hairline)">
           <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase">Прошивка (FW)</div>
-          <b class="mono" style="font-size:12px;color:var(--accent-cool)" id="fwBadge">v5.6-Sovereign</b>
+          <b class="mono" style="font-size:12px;color:var(--accent-cool)" id="fwBadge">--</b>
         </div>
         <div style="background:var(--bg-surface);padding:8px;border-radius:8px;border:1px solid var(--border-hairline)">
           <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase">Вільна RAM</div>

@@ -1796,6 +1796,7 @@ function applyState(d) {
   const on = d.is_online !== undefined ? d.is_online : true;
   setCachedClass('onlineDot', 'pulse ' + (on ? 'on' : 'off'));
   setCachedText('onlineTxt', on ? 'MAGICBOX SOVEREIGN' : 'MAGICBOX OFFLINE');
+  if (d.server_version) setCachedText('verBadge', `v${d.server_version} ⚡ Live`);
   if (d.pending_commands !== undefined) setCachedText('queueTxt', d.pending_commands);
 
   const res = d.resources || {};
@@ -2042,7 +2043,7 @@ function updateScreenButtons(activeMode) {
 function applyTelemetryInPlace(t) {
   if (!t) return;
   if (t.fw || t.rssi) {
-    setCachedText('fwBadge', `${t.fw || 'v5.0'} (${t.rssi || -60} dBm)`);
+    setCachedText('fwBadge', `${t.fw || '--'} (${t.rssi || -60} dBm)`);
   }
   const tStr = (t.t !== undefined ? t.t.toFixed(1) : '--') + ' °C';
   const hStr = (t.h !== undefined ? t.h.toFixed(0) : '--') + ' %';

@@ -38,8 +38,8 @@ def _resolve_ram_cache_dir(fallback_storage: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    PROJECT_NAME: str = "SmartLamp Sovereign Cloud v5.6"
-    VERSION: str = "5.6.0-Hallmark"
+    PROJECT_NAME: str = "SmartLamp Sovereign Cloud"
+    VERSION: str = "7.7.0"
 
     # Безпека та мережа
     APP_ENV: str = os.getenv("APP_ENV", "development").lower()

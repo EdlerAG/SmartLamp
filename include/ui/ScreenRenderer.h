@@ -163,7 +163,7 @@ namespace ScreenRenderer {
 
         canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(HallmarkTheme::ACCENT_WARM);
-        canvas.drawString("HALLMARK v4.5", 120, 116);
+        canvas.drawString(Config::FW_VERSION, 120, 116);
 
         canvas.setTextColor(HallmarkTheme::TEXT_SECONDARY);
         canvas.drawString("I2C | I2S | PSRAM | OK", 120, 144);
@@ -417,7 +417,9 @@ namespace ScreenRenderer {
 
         canvas.setFont(&UkrainianFont12Bold);
         canvas.setTextColor(state.oracle_online ? HallmarkTheme::ACCENT_SUCCESS : HallmarkTheme::ACCENT_COOL);
-        canvas.drawString("SYSTEM DIAGNOSTICS", 120, 26);
+        char diag_hdr[44];
+        snprintf(diag_hdr, sizeof(diag_hdr), "DIAG | %s", Config::FW_VERSION);
+        canvas.drawString(diag_hdr, 120, 26);
 
         if (strcmp(qr_payload, cached_qr_str) != 0) {
             strncpy(cached_qr_str, qr_payload, qr_len - 1);

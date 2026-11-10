@@ -5,6 +5,7 @@
 підключає portal.css, portal.js, PWA manifest.json та Service Worker.
 """
 from pathlib import Path
+from app.core.config import settings
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _PORTAL_HTML_FILE = _STATIC_DIR / "portal.html"
@@ -13,7 +14,8 @@ _PORTAL_HTML_FILE = _STATIC_DIR / "portal.html"
 def _load_portal_html() -> str:
     if _PORTAL_HTML_FILE.exists():
         try:
-            return _PORTAL_HTML_FILE.read_text(encoding="utf-8")
+            raw = _PORTAL_HTML_FILE.read_text(encoding="utf-8")
+            return raw.replace("{{APP_VERSION}}", settings.VERSION)
         except Exception:
             pass
     return (

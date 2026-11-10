@@ -4,8 +4,8 @@ from typing import Optional, List, Dict, Any
 
 
 class BoxTelemetryPayload(BaseModel):
-    """Вхідний пакет телеметрії від ESP32-S3 (v4.5 / v5.0)."""
-    fw: str = "v4.5"
+    """Вхідний пакет телеметрії від ESP32-S3."""
+    fw: str = "unknown"
     t: float
     h: float
     p: float

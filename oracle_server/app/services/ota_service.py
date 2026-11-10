@@ -63,7 +63,7 @@ class OtaService:
             "size": self.last_size,
             "sha256": self.last_sha256,
             "ota_url": ota_url,
-            "status": "Queued for MagicBox v3.8",
+            "status": "Queued for MagicBox OTA",
         }
 
     async def save_and_queue_firmware(self, file: UploadFile, base_url: str) -> Dict[str, Any]:

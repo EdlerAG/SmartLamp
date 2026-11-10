@@ -248,6 +248,7 @@ async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = 
 
     resp = {
         "ok": True,
+        "server_version": settings.VERSION,
         "user_role": role,
         "is_online": state_service.is_online(),
         "seconds_since_last_ping": state_service.seconds_since_seen(),

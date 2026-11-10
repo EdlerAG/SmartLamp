@@ -107,7 +107,7 @@ class MaintenanceService:
             "box": {
                 "is_online": state_service.is_online(),
                 "seconds_since_last_ping": state_service.seconds_since_seen(),
-                "firmware_version": t.get("fw", "v4.5"),
+                "firmware_version": t.get("fw", "unknown"),
                 "wifi_rssi_dbm": t.get("rssi", -60),
                 "room_temperature": t.get("t", 0.0),
                 "room_humidity": t.get("h", 0.0),
