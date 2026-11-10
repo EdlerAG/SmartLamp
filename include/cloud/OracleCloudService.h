@@ -9,6 +9,7 @@
 #include "cloud/CloudOtaService.h"
 #include "cloud/TgJsonUtils.h"
 #include "utils/Crc32.h"
+#include "utils/TextSanitizer.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -62,11 +63,36 @@ private:
                 } else if (data->op_code == 2 || (data->op_code == 0 && self->rx_binary_in_progress)) {
                     if (self->display_srv) {
                         uint8_t* vinyl_buf = (uint8_t*)self->display_srv->getVinylSprite().getBuffer();
-                        if (vinyl_buf && ((size_t)(data->payload_offset + data->data_len) <= Config::VINYL_BYTES_RGB565)) {
+                        uint8_t* blur_buf  = (uint8_t*)self->state.spotify_blur_buf;
+                        size_t total_payload = (size_t)(data->payload_offset + data->data_len);
+                        if (vinyl_buf && total_payload <= Config::BUNDLE_BYTES_RGB565) {
                             self->rx_binary_in_progress = true;
                             self->state.spotify_vinyl_loading = true;
-                            memcpy(vinyl_buf + data->payload_offset, data->data_ptr, data->data_len);
-                            if ((size_t)(data->payload_offset + data->data_len) >= Config::VINYL_BYTES_RGB565) {
+
+                            // Частина 1: Вініл (0 .. 36991)
+                            if ((size_t)data->payload_offset < Config::VINYL_BYTES_RGB565) {
+                                size_t v_copy = min((size_t)data->data_len, Config::VINYL_BYTES_RGB565 - (size_t)data->payload_offset);
+                                memcpy(vinyl_buf + data->payload_offset, data->data_ptr, v_copy);
+                            }
+
+                            // Частина 2: Blur (36992 .. 39039)
+                            if (total_payload > Config::VINYL_BYTES_RGB565) {
+                                size_t b_start = (data->payload_offset >= (int)Config::VINYL_BYTES_RGB565) ? ((size_t)data->payload_offset - Config::VINYL_BYTES_RGB565) : 0;
+                                size_t d_offset = (data->payload_offset >= (int)Config::VINYL_BYTES_RGB565) ? 0 : (Config::VINYL_BYTES_RGB565 - (size_t)data->payload_offset);
+                                size_t b_len = (size_t)data->data_len - d_offset;
+                                if (blur_buf && b_start + b_len <= Config::BLUR_BYTES_RGB565) {
+                                    memcpy(blur_buf + b_start, (const uint8_t*)data->data_ptr + d_offset, b_len);
+                                }
+                            }
+
+                            if (total_payload >= Config::BUNDLE_BYTES_RGB565) {
+                                self->rx_binary_in_progress = false;
+                                self->state.spotify_vinyl_loading = false;
+                                self->state.spotify.vinyl_ready = true;
+                                self->state.spotify_vinyl_needed = false;
+                                self->display_srv->updateBlurredBackground(self->state.spotify_blur_buf);
+                                self->state.ui_force_dirty = true;
+                            } else if (total_payload >= Config::VINYL_BYTES_RGB565 && (size_t)data->payload_len == Config::VINYL_BYTES_RGB565) {
                                 self->rx_binary_in_progress = false;
                                 self->state.spotify_vinyl_loading = false;
                                 self->state.spotify.vinyl_ready = true;
@@ -164,6 +190,8 @@ private:
         if (!state.psram_anim_buf || !state.wifi_connected) return false;
         String url = normalizeMediaUrl(raw_url);
 
+        state.canvas_loading = true;
+
         HTTPClient img_http;
         WiFiClient img_client;
         WiFiClientSecure img_sec;
@@ -184,6 +212,7 @@ private:
 
         if (!begun) {
             state.tls_in_flight = false;
+            state.canvas_loading = false;
             return false;
         }
 
@@ -192,6 +221,7 @@ private:
         if (code != HTTP_CODE_OK || (content_len > 0 && content_len != 115200)) {
             img_http.end();
             state.tls_in_flight = false;
+            state.canvas_loading = false;
             return false;
         }
 
@@ -224,11 +254,28 @@ private:
             hdr->ambi_b = state.ambi_b;
             hdr->crc32 = 0;
             uint32_t dur = (state.media_expire_ms > millis()) ? (state.media_expire_ms - millis()) : 0;
+            if (display_srv) display_srv->resetAnimationFrames();
             state.activateCustomAnimation(1, 1, state.ambi_r, state.ambi_g, state.ambi_b, dur);
             state.screen_mode = SCREEN_LIVING_GIF;
             state.ui_force_dirty = true;
+            state.canvas_loading = false;
+
+            if (state.psram_saver_buf) {
+                size_t cpy_len = sizeof(MbxHeader) + 115200;
+                memcpy(state.psram_saver_buf, state.psram_anim_buf, cpy_len);
+                state.saver_num_frames = 1;
+                state.saver_fps        = 1;
+                state.saver_crc        = 0;
+                state.saver_buf_size   = cpy_len;
+                state.saver_loaded     = true;
+                if (storage_srv && cpy_len <= 1572864) {
+                    storage_srv->saveSaverFile(state.psram_anim_buf, cpy_len);
+                    storage_srv->setSaverCrc(0);
+                }
+            }
             return true;
         }
+        state.canvas_loading = false;
         return false;
     }
 
@@ -236,12 +283,16 @@ private:
         if (!state.psram_anim_buf || !state.wifi_connected) return false;
         String url = normalizeMediaUrl(raw_url);
 
+        // Блокуємо рендер із psram_anim_buf на час завантаження, щоб уникнути
+        // розриву кадрів та накладання попередньої анімації на нову
+        state.canvas_loading = true;
+
         HTTPClient mbx_http;
         WiFiClient m_client;
         WiFiClientSecure m_sec;
 
-        mbx_http.setConnectTimeout(4000);
-        mbx_http.setTimeout(20000);
+        mbx_http.setConnectTimeout(5000);
+        mbx_http.setTimeout(45000);
 
         state.tls_in_flight = true;
         bool begun = url.startsWith("https://")
@@ -250,6 +301,7 @@ private:
 
         if (!begun) {
             state.tls_in_flight = false;
+            state.canvas_loading = false;
             return false;
         }
 
@@ -257,6 +309,7 @@ private:
         if (code != HTTP_CODE_OK) {
             mbx_http.end();
             state.tls_in_flight = false;
+            state.canvas_loading = false;
             return false;
         }
 
@@ -265,6 +318,7 @@ private:
         if (content_len > (int)max_buf) {
             mbx_http.end();
             state.tls_in_flight = false;
+            state.canvas_loading = false;
             return false;
         }
 
@@ -273,12 +327,12 @@ private:
         uint32_t start_ms = millis();
         size_t target_len = (content_len > 0) ? (size_t)content_len : max_buf;
 
-        while (mbx_http.connected() && total_read < target_len && (millis() - start_ms < 20000)) {
+        while (mbx_http.connected() && total_read < target_len && (millis() - start_ms < 45000)) {
             esp_task_wdt_reset();
             size_t avail = stream->available();
             if (avail > 0) {
                 size_t to_read = min(avail, target_len - total_read);
-                int r = stream->readBytes(state.psram_anim_buf + total_read, to_read);
+                int r = stream->read(state.psram_anim_buf + total_read, to_read);
                 if (r > 0) total_read += r;
             } else {
                 vTaskDelay(pdMS_TO_TICKS(1));
@@ -298,34 +352,58 @@ private:
                     uint32_t calc_crc = Crc32::calculate(state.psram_anim_buf + sizeof(MbxHeader), total_read - sizeof(MbxHeader));
                     esp_task_wdt_reset();
                     if (calc_crc != hdr->crc32) {
+                        state.canvas_loading = false;
                         return false;
                     }
                 }
                 uint32_t dur = (state.media_expire_ms > millis()) ? (state.media_expire_ms - millis()) : 0;
+                if (display_srv) display_srv->resetAnimationFrames();
                 state.activateCustomAnimation(hdr->num_frames, hdr->fps, hdr->ambi_r, hdr->ambi_g, hdr->ambi_b, dur);
                 state.screen_mode = SCREEN_LIVING_GIF;
                 state.ui_force_dirty = true;
 
-                // Завжди зберігаємо активну анімацію як заставку для Вікна 1 (SCREEN_LIVING_GIF)
-                if (storage_srv && state.psram_saver_buf) {
-                    size_t cpy_len = min(total_read, sizeof(MbxHeader) + (size_t)(18 * Config::FRAME_BYTES_RGB565));
+                // Завжди зберігаємо активну анімацію як заставку для Вікна 2 (SCREEN_LIVING_GIF) у PSRAM
+                if (state.psram_saver_buf) {
+                    uint8_t save_frames = min((uint8_t)hdr->num_frames, (uint8_t)18);
+                    size_t cpy_len = sizeof(MbxHeader) + (size_t)save_frames * Config::FRAME_BYTES_RGB565;
+                    if (total_read < cpy_len) cpy_len = total_read;
                     memcpy(state.psram_saver_buf, state.psram_anim_buf, cpy_len);
-                    state.saver_num_frames = hdr->num_frames;
+
+                    MbxHeader* s_hdr = (MbxHeader*)state.psram_saver_buf;
+                    s_hdr->num_frames = save_frames;
+                    s_hdr->crc32 = Crc32::calculate(state.psram_saver_buf + sizeof(MbxHeader), cpy_len - sizeof(MbxHeader));
+
+                    state.saver_num_frames = save_frames;
                     state.saver_fps        = hdr->fps;
-                    state.saver_crc        = hdr->crc32;
+                    state.saver_crc        = s_hdr->crc32;
                     state.saver_buf_size   = cpy_len;
                     state.saver_loaded     = true;
                     state.screen_mode      = SCREEN_LIVING_GIF;
                     state.ui_force_dirty   = true;
 
-                    if (is_saver) {
-                        storage_srv->saveSaverFile(state.psram_anim_buf, cpy_len);
-                        storage_srv->setSaverCrc(hdr->crc32);
+                    // Завжди надійно зберігаємо активну анімацію у LittleFS для екрану 2 (SCREEN_LIVING_GIF).
+                    // Обмежуємо LittleFS до 10 кадрів (~1.15 МБ), що гарантовано вміщається в розділ 1.44 МБ,
+                    // і обов'язково розраховуємо валідний CRC32 саме для збережених кадрів!
+                    if (storage_srv) {
+                        uint8_t fs_frames = min((uint8_t)save_frames, (uint8_t)10);
+                        size_t fs_len = sizeof(MbxHeader) + (size_t)fs_frames * Config::FRAME_BYTES_RGB565;
+                        if (cpy_len < fs_len) fs_len = cpy_len;
+
+                        MbxHeader orig_hdr = *s_hdr;
+                        s_hdr->num_frames = fs_frames;
+                        s_hdr->crc32 = Crc32::calculate(state.psram_saver_buf + sizeof(MbxHeader), fs_len - sizeof(MbxHeader));
+
+                        storage_srv->saveSaverFile(state.psram_saver_buf, fs_len);
+                        storage_srv->setSaverCrc(s_hdr->crc32);
+
+                        *s_hdr = orig_hdr;
                     }
                 }
+                state.canvas_loading = false;
                 return true;
             }
         }
+        state.canvas_loading = false;
         return false;
     }
 
@@ -356,29 +434,39 @@ private:
 
         int code = v_http.GET();
         int content_len = v_http.getSize();
-        if (code != HTTP_CODE_OK || (content_len > 0 && content_len != (int)Config::VINYL_BYTES_RGB565)) {
+        if (code != HTTP_CODE_OK || (content_len > 0 && content_len != (int)Config::BUNDLE_BYTES_RGB565 && content_len != (int)Config::VINYL_BYTES_RGB565)) {
             v_http.end();
             state.tls_in_flight = false;
             return false;
         }
 
         uint8_t* vinyl_buf = (uint8_t*)display_srv->getVinylSprite().getBuffer();
+        uint8_t* blur_buf  = (uint8_t*)state.spotify_blur_buf;
         if (!vinyl_buf) {
             v_http.end();
             state.tls_in_flight = false;
             return false;
         }
 
+        size_t target_len = (content_len == (int)Config::VINYL_BYTES_RGB565) ? Config::VINYL_BYTES_RGB565 : Config::BUNDLE_BYTES_RGB565;
         WiFiClient* stream = v_http.getStreamPtr();
         size_t total_read = 0;
         uint32_t start_ms = millis();
 
-        while (v_http.connected() && total_read < Config::VINYL_BYTES_RGB565 && (millis() - start_ms < 5000)) {
+        while (v_http.connected() && total_read < target_len && (millis() - start_ms < 5000)) {
             size_t avail = stream->available();
             if (avail > 0) {
-                size_t to_read = min(avail, Config::VINYL_BYTES_RGB565 - total_read);
-                int r = stream->readBytes(vinyl_buf + total_read, to_read);
-                if (r > 0) total_read += r;
+                size_t to_read = min(avail, target_len - total_read);
+                if (total_read < Config::VINYL_BYTES_RGB565) {
+                    size_t v_chunk = min(to_read, Config::VINYL_BYTES_RGB565 - total_read);
+                    int r = stream->readBytes(vinyl_buf + total_read, v_chunk);
+                    if (r > 0) total_read += r;
+                } else {
+                    size_t b_chunk = to_read;
+                    size_t b_offset = total_read - Config::VINYL_BYTES_RGB565;
+                    int r = stream->readBytes(blur_buf + b_offset, b_chunk);
+                    if (r > 0) total_read += r;
+                }
             } else {
                 vTaskDelay(pdMS_TO_TICKS(1));
             }
@@ -387,9 +475,12 @@ private:
         v_http.end();
         state.tls_in_flight = false;
 
-        if (total_read == Config::VINYL_BYTES_RGB565) {
+        if (total_read >= target_len) {
             state.spotify.vinyl_ready = true;
             state.spotify_vinyl_needed = false;
+            if (target_len >= Config::BUNDLE_BYTES_RGB565) {
+                display_srv->updateBlurredBackground(state.spotify_blur_buf);
+            }
             state.ui_force_dirty = true;
             return true;
         }
@@ -489,6 +580,25 @@ private:
             }
         }
 
+        if (doc["sp_bg"].is<int>()) {
+            uint8_t bg_s = (uint8_t)constrain(doc["sp_bg"].as<int>(), 0, 1);
+            if (bg_s != state.spotify_bg_style) {
+                state.spotify_bg_style = bg_s;
+                state.spotify_bg_dirty = true;
+                state.ui_force_dirty = true;
+                state.markSettingsDirty();
+            }
+        }
+
+        if (doc["cl_bg"].is<int>()) {
+            uint8_t cl_s = (uint8_t)constrain(doc["cl_bg"].as<int>(), 0, 1);
+            if (cl_s != state.climate_bg_style) {
+                state.climate_bg_style = cl_s;
+                state.ui_force_dirty = true;
+                state.markSettingsDirty();
+            }
+        }
+
         // Обробка тихих годин та режиму DND для Насті
         if (doc["quiet_hours"].is<bool>()) {
             bool qh = doc["quiet_hours"].as<bool>();
@@ -500,10 +610,25 @@ private:
         if (doc["dnd"].is<bool>()) {
             bool dnd = doc["dnd"].as<bool>();
             state.dnd_mode = dnd;
-            if (dnd) state.audio_muted = true;
         }
 
         // Обробка найближчої події Google Календаря Насті (Zero-Knowledge Smart Hub)
+        if (doc["out_t"].is<float>()) {
+            state.outdoor_temp = doc["out_t"].as<float>();
+            state.ui_force_dirty = true;
+        }
+
+        if (doc["out_w"].is<const char*>()) {
+            const char* raw_w = doc["out_w"].as<const char*>();
+            if (raw_w && raw_w[0] != '\0') {
+                char dec_w[48];
+                TgJsonUtils::decodeJsonString(raw_w, dec_w, sizeof(dec_w));
+                strncpy(state.outdoor_desc, dec_w, sizeof(state.outdoor_desc) - 1);
+                state.outdoor_desc[sizeof(state.outdoor_desc) - 1] = '\0';
+                state.ui_force_dirty = true;
+            }
+        }
+
         if (doc["cal_event"].is<JsonObject>()) {
             JsonObject cal = doc["cal_event"];
             const char* summary = cal["summary"] | "";
@@ -525,33 +650,53 @@ private:
             portENTER_CRITICAL(&state.mux);
             if (sp["playing"].is<bool>()) {
                 bool new_playing = sp["playing"].as<bool>();
-                if (new_playing != state.spotify.playing) {
-                    state.spotify.playing = new_playing;
-                    state.spotify.last_sync_millis = millis();
+                uint32_t now_ms = millis();
+                if (!state.spotify.isPlayPauseOptimistic(now_ms)) {
+                    if (new_playing != state.spotify.playing) {
+                        state.spotify.playing = new_playing;
+                        state.spotify.last_sync_millis = now_ms;
+                    }
                 }
             }
 
             const char* tr_id = sp["track_id"] | "";
-            if (tr_id && tr_id[0] != '\0' && strcmp(state.spotify.track_id, tr_id) != 0) {
-                strncpy(state.spotify.track_id, tr_id, sizeof(state.spotify.track_id) - 1);
-                state.spotify.vinyl_ready = false;
-                state.spotify_vinyl_needed = true;
-                state.spotify_vinyl_loading = false;
-                state.ui_force_dirty = true;
+            if (tr_id && tr_id[0] != '\0') {
+                if (strcmp(state.spotify.track_id, tr_id) != 0) {
+                    strncpy(state.spotify.track_id, tr_id, sizeof(state.spotify.track_id) - 1);
+                    state.spotify.vinyl_ready = false;
+                    state.spotify_vinyl_needed = true;
+                    state.spotify_vinyl_loading = false;
+                    state.ui_force_dirty = true;
+                }
+                // Новий трек прийнято -> знімаємо оптимістичний режим
+                state.spotify.optimistic_until_ms = 0;
             }
 
             const char* title = sp["title"] | "";
             if (title && title[0] != '\0') {
-                TgJsonUtils::decodeJsonString(title, state.spotify.title, sizeof(state.spotify.title));
+                char raw_dec[128];
+                TgJsonUtils::decodeJsonString(title, raw_dec, sizeof(raw_dec));
+                TextSanitizer::sanitize(raw_dec, state.spotify.title, sizeof(state.spotify.title));
             }
 
             const char* artist = sp["artist"] | "";
             if (artist && artist[0] != '\0') {
-                TgJsonUtils::decodeJsonString(artist, state.spotify.artist, sizeof(state.spotify.artist));
+                char raw_dec[96];
+                TgJsonUtils::decodeJsonString(artist, raw_dec, sizeof(raw_dec));
+                TextSanitizer::sanitize(raw_dec, state.spotify.artist, sizeof(state.spotify.artist));
             }
 
             if (sp["is_mono"].is<bool>()) {
                 state.spotify.is_mono = sp["is_mono"].as<bool>();
+            }
+            if (sp["bg_style"].is<int>()) {
+                uint8_t bg_s = (uint8_t)constrain(sp["bg_style"].as<int>(), 0, 1);
+                if (bg_s != state.spotify_bg_style) {
+                    state.spotify_bg_style = bg_s;
+                    state.spotify_bg_dirty = true;
+                    state.ui_force_dirty = true;
+                    state.markSettingsDirty();
+                }
             }
 
             if (sp["progress_ms"].is<uint32_t>()) {
@@ -570,16 +715,6 @@ private:
             if (sp["duration_ms"].is<uint32_t>()) state.spotify.duration_ms = sp["duration_ms"].as<uint32_t>();
             if (sp["bpm"].is<uint16_t>()) state.spotify.bpm = sp["bpm"].as<uint16_t>();
             if (sp["energy"].is<uint8_t>()) state.spotify.energy = sp["energy"].as<uint8_t>();
-            if (sp["lyric"].is<const char*>()) {
-                const char* lyr = sp["lyric"].as<const char*>();
-                const char* safe_lyr = lyr ? lyr : "";
-                if (strcmp(state.spotify.lyric, safe_lyr) != 0) {
-                    strncpy(state.spotify.lyric, safe_lyr, sizeof(state.spotify.lyric) - 1);
-                    state.spotify.lyric[sizeof(state.spotify.lyric) - 1] = '\0';
-                    state.ui_force_dirty = true;
-                }
-            }
-            state.spotify.optimistic_until_ms = 0;
 
             if (sp["ambi_rgb"].is<JsonArray>()) {
                 JsonArray rgb = sp["ambi_rgb"];
@@ -659,6 +794,28 @@ private:
             if (storage_srv) storage_srv->saveScreenAngle(state.screen_angle);
         }
 
+        // Калібрування сенсорів клімату (збереження в NVS та оновлення стану)
+        bool climate_calib_changed = false;
+        if (doc["t_off"].is<float>() || doc["temp_offset"].is<float>()) {
+            state.temp_offset = doc["t_off"].is<float>() ? doc["t_off"].as<float>() : doc["temp_offset"].as<float>();
+            climate_calib_changed = true;
+        }
+        if (doc["h_off"].is<float>() || doc["hum_offset"].is<float>()) {
+            state.humidity_offset = doc["h_off"].is<float>() ? doc["h_off"].as<float>() : doc["hum_offset"].as<float>();
+            climate_calib_changed = true;
+        }
+        if (doc["p_off"].is<float>() || doc["pres_offset"].is<float>()) {
+            state.pressure_offset = doc["p_off"].is<float>() ? doc["p_off"].as<float>() : doc["pres_offset"].as<float>();
+            climate_calib_changed = true;
+        }
+        if (climate_calib_changed) {
+            if (storage_srv) storage_srv->saveClimateOffsets(state.temp_offset, state.humidity_offset, state.pressure_offset);
+            state.ui_force_dirty = true;
+            char cal_toast[64];
+            snprintf(cal_toast, sizeof(cal_toast), "T:%.1f H:%.0f P:%.0f", state.temp_offset, state.humidity_offset, state.pressure_offset);
+            state.showHudToast("🌡 Калібрування", cal_toast, 2000);
+        }
+
         if (doc["set_screen"].is<int>()) {
             uint8_t sc = (uint8_t)constrain(doc["set_screen"].as<int>(), 0, SCREEN_COUNT - 1);
             state.screen_mode = sc;
@@ -718,12 +875,27 @@ private:
         if (doc["touch_beep"].is<bool>()) {
             bool tb = doc["touch_beep"].as<bool>();
             CommandRouter::setTouchBeep(state, tb);
-            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, tb);
+            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, tb, state.touch_click_profile);
+        }
+
+        if (doc["touch_profile"].is<int>()) {
+            uint8_t tp = (uint8_t)constrain(doc["touch_profile"].as<int>(), 0, 2);
+            state.setTouchClickProfile(tp);
+            if (storage_srv) storage_srv->saveAudioSettings(state.audio_volume, state.audio_muted, state.touch_beep_enabled, tp);
         }
 
         // 3. Команди керування показом медіа
         if (doc["stop_media"].as<bool>()) {
             CommandRouter::stopActiveMedia(state);
+        }
+
+        if (doc["clear_saver"].as<bool>()) {
+            state.saver_loaded = false;
+            state.saver_num_frames = 0;
+            state.saver_crc = 0;
+            if (storage_srv) storage_srv->clearScreensaver();
+            state.ui_force_dirty = true;
+            state.showHudToast("🕰 Заставка", "Маятник встановлено", 1800);
         }
 
         // 4. Святкове привітання з днем народження
@@ -951,17 +1123,27 @@ public:
             s_vinyl_loading_start_ms = 0;
         }
 
+        static uint32_t s_vinyl_req_wait_start = 0;
         if (state.spotify_vinyl_needed && !state.spotify_vinyl_loading && !rx_binary_in_progress && !state.audio_playing) {
             if (ws_connected && ws_client && esp_websocket_client_is_connected(ws_client)) {
-                state.spotify_vinyl_loading = true;
-                esp_websocket_client_send_text(ws_client, "{\"type\":\"get_vinyl\"}", 20, pdMS_TO_TICKS(50));
+                if (s_vinyl_req_wait_start == 0) {
+                    s_vinyl_req_wait_start = millis();
+                } else if (millis() - s_vinyl_req_wait_start > 1200) {
+                    // Якщо за 1.2 с серверний автоматичний пуш не дійшов, робимо фолбек-запит
+                    state.spotify_vinyl_loading = true;
+                    esp_websocket_client_send_text(ws_client, "{\"type\":\"get_vinyl\"}", 20, pdMS_TO_TICKS(50));
+                    s_vinyl_req_wait_start = 0;
+                }
             } else {
+                s_vinyl_req_wait_start = 0;
                 state.spotify_vinyl_loading = true;
                 if (downloadSpotifyVinylArt()) {
                     state.spotify_vinyl_needed = false;
                 }
                 state.spotify_vinyl_loading = false;
             }
+        } else {
+            s_vinyl_req_wait_start = 0;
         }
 
         // Захист від навантаження каналу під час I2S аудіо
@@ -972,13 +1154,13 @@ public:
         // ⚡️ Динамічний тротлінг телеметрії:
         // У режимі Smart Hub під час відтворення опитуємо частіше (1500 мс замість 4500 мс),
         // а під час перемикання треку (isSwitchingOptimistic) — надсилаємо кожні 250 мс для суб-секундного перемикання!
-        bool has_urgent_events = (state.cmd_spotify_action != 0 || state.cmd_send_tg_ack || state.cmd_send_meme_ping != 0 || state.alarm_dismissed || state.has_more_cloud_cmds || state.spotify.isSwitchingOptimistic(millis()));
+        bool has_urgent_events = (state.cmd_spotify_action != 0 || state.cmd_send_tg_ack || state.cmd_send_meme_ping != 0 || state.alarm_dismissed || state.has_more_cloud_cmds || state.spotify.isSwitchingOptimistic(millis()) || state.spotify.isPlayPauseOptimistic(millis()));
         uint32_t min_interval_ms = 4500;
-        if (state.screen_mode == SCREEN_SMART_HUB && state.spotify.playing) {
+        if (state.screen_mode == SCREEN_SMART_HUB) {
             min_interval_ms = 1500;
         }
-        if (state.spotify.isSwitchingOptimistic(millis())) {
-            min_interval_ms = 250;
+        if (state.spotify.isSwitchingOptimistic(millis()) || state.spotify.isPlayPauseOptimistic(millis()) || state.cmd_spotify_action != 0) {
+            min_interval_ms = 200;
         }
         if (ws_connected && !has_urgent_events && (millis() - last_ws_send_ms < min_interval_ms)) {
             return;
@@ -987,8 +1169,15 @@ public:
         char status_json[1024];
         CommandRouter::buildStatusJson(state, status_json, sizeof(status_json));
 
-        // ⚡️ Пріоритетний швидкісний WebSocket-канал (15 мс latency)
-        if (!ws_client && base_server_url.length() > 8) {
+        // ⚡️ Авто-перепідключення швидкісного WebSocket-каналу
+        if (ws_client && !esp_websocket_client_is_connected(ws_client)) {
+            static uint32_t s_last_ws_reconnect_attempt = 0;
+            if (millis() - s_last_ws_reconnect_attempt > 6000) {
+                s_last_ws_reconnect_attempt = millis();
+                ws_connected = false;
+                initWebSocketClient();
+            }
+        } else if (!ws_client && base_server_url.length() > 8) {
             initWebSocketClient();
         }
 

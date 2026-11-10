@@ -51,12 +51,22 @@ namespace TgJsonUtils {
             }
         }
 
-        // Protect from trailing broken UTF-8 byte
-        while (j > 0 && ((uint8_t)out[j - 1] & 0xC0) == 0x80) {
-            j--;
-        }
-        if (j > 0 && ((uint8_t)out[j - 1] & 0x80) != 0) {
-            j--;
+        // Protect from trailing broken UTF-8 sequence ONLY if truncated by buffer limit
+        if (j >= max_len - 4) {
+            size_t k = j;
+            while (k > 0 && ((uint8_t)out[k - 1] & 0xC0) == 0x80) {
+                k--;
+            }
+            if (k > 0) {
+                uint8_t lead = (uint8_t)out[k - 1];
+                size_t expected_len = 1;
+                if ((lead & 0xE0) == 0xC0) expected_len = 2;
+                else if ((lead & 0xF0) == 0xE0) expected_len = 3;
+                else if ((lead & 0xF8) == 0xF0) expected_len = 4;
+                if (j - (k - 1) < expected_len) {
+                    j = k - 1; // Incomplete multi-byte UTF-8 character: safely truncate
+                }
+            }
         }
         out[j] = '\0';
     }

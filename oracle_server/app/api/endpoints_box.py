@@ -27,6 +27,7 @@ from app.services.spotify_service import spotify_service
 from app.services.routine_service import routine_service
 from app.services.google_calendar_service import google_calendar_service
 from app.services.setup_service import setup_service
+from app.services.weather_ai_service import weather_ai_service
 
 router = APIRouter(tags=["ESP32-S3 Box Gateway v5.0"])
 
@@ -50,15 +51,18 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
     if payload.claim:
         db_service.register_device_claim(payload.claim)
 
-    # 1. Обробка команд плеєра Spotify з кнопок лампи
+    # 1. Обробка команд плеєра Spotify з кнопок лампи (миттєвий фоновий запуск без блокування WS)
     if payload.sp_act > 0:
         if payload.sp_act == 1:
-            await spotify_service.player_action("next")
+            asyncio.create_task(spotify_service.player_action("next"))
         elif payload.sp_act == 2:
-            await spotify_service.player_action("previous")
+            asyncio.create_task(spotify_service.player_action("previous"))
         elif payload.sp_act == 3:
-            cur_p = spotify_service.get_cached_state().get("playing", False)
-            await spotify_service.player_action("pause" if cur_p else "play")
+            # Явна дія: Play
+            asyncio.create_task(spotify_service.player_action("play"))
+        elif payload.sp_act == 4:
+            # Явна дія: Pause
+            asyncio.create_task(spotify_service.player_action("pause"))
 
     # 2. Якщо лампа повідомила про скидання будильника фізичною кнопкою
     if payload.alarm_off:
@@ -127,6 +131,44 @@ async def build_box_sync_response(payload: BoxTelemetryPayload) -> Dict[str, Any
     resp["su"] = setup_service.get_setup_bitmask()
     resp["mood"] = db_service.get_setting("box_active_mood", "ocean")
     resp["ts"] = int(time.time())
+
+    # 9. Погода за вікном для головного циферблата (Screen 1 Climate)
+    w_cache = getattr(weather_ai_service, "_weather_cache", {})
+    if not w_cache:
+        try:
+            w_cache = await weather_ai_service.get_combined_weather()
+        except Exception:
+            pass
+    if w_cache and "outdoor_temp" in w_cache:
+        resp["out_t"] = round(float(w_cache["outdoor_temp"]), 1)
+        raw_desc = str(w_cache.get("weather_desc", ""))
+        clean_desc = raw_desc.replace("☀️", "").replace("🌤", "").replace("⛅", "").replace("☁️", "") \
+                             .replace("🌫", "").replace("🌦", "").replace("🌧", "").replace("🌨", "") \
+                             .replace("⛈", "").strip()
+        low = clean_desc.lower()
+        if "хмарн" in low or "похмур" in low:
+            clean_desc = "Хмарно"
+        elif "ясн" in low:
+            clean_desc = "Ясно"
+        elif "злив" in low:
+            clean_desc = "Злива"
+        elif "дощ" in low or "мряк" in low:
+            clean_desc = "Дощ"
+        elif "сніг" in low:
+            clean_desc = "Сніг"
+        elif "туман" in low or "памороз" in low:
+            clean_desc = "Туман"
+        elif "гроз" in low:
+            clean_desc = "Гроза"
+        resp["out_w"] = clean_desc if clean_desc else "Хмарно"
+    resp["cl_bg"] = int(db_service.get_setting("climate_bg_style", "0") or 0)
+
+    # 10. Перевірка синхронізації постійної заставки Вікна 2 (SCREEN_LIVING_GIF)
+    active_saver_name = db_service.get_setting("active_saver_name", "")
+    if active_saver_name and payload.sav_f == 0 and not any(cmd.get("media_name") == active_saver_name for cmd in state_service.command_queue):
+        saver_info = db_service.get_media_by_name(active_saver_name)
+        if saver_info and os.path.exists(saver_info.get("file_path", "")):
+            media_service.trigger_saved_media(active_saver_name, set_as_saver=True)
 
     return resp
 
@@ -411,6 +453,7 @@ async def get_latest_ota_metadata(request: Request):
     return ota_service.get_metadata(str(request.base_url))
 
 
+@router.get("/ota/firmware.bin")
 @router.get("/api/v1/ota/firmware.bin")
 async def download_firmware():
     if not os.path.exists(settings.FIRMWARE_PATH):

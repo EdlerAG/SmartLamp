@@ -40,6 +40,31 @@ class BoxTelemetryPayload(BaseModel):
     ws_rec: int = 0 # Лічильник реконектів WebSocket
     claim: Optional[str] = None # Секрет першого підключення (base32) від плати
     scr_ang: Optional[int] = 0 # Поточний кут орієнтації екрана (0..359°)
+    cpu_mhz: Optional[int] = 240
+    chip_t: Optional[float] = 0.0
+    stk_net: Optional[int] = 0
+    stk_cld: Optional[int] = 0
+    stk_led: Optional[int] = 0
+    sav_f: Optional[int] = 0
+    anm_f: Optional[int] = 0
+    sp_playing: Optional[bool] = False
+    led_bot: Optional[int] = 36
+    led_bak: Optional[int] = 24
+    led_cnt: Optional[int] = 60
+    led_off: Optional[int] = 0
+    led_rev: Optional[bool] = False
+    led_ma: Optional[int] = 2000
+    t_off: Optional[float] = -0.8
+    h_off: Optional[float] = 0.0
+    p_off: Optional[float] = 0.0
+    clk_cnt: Optional[int] = 0
+    clk_us: Optional[int] = 0
+    clk_max_us: Optional[int] = 0
+    clk_b: Optional[int] = 0
+    clk_res: Optional[int] = 0
+    clk_gap: Optional[int] = 0
+    loop_max_ms: Optional[int] = 0
+    clk_cpu: Optional[int] = 0
 
 
 class CommandPayload(BaseModel):
@@ -65,6 +90,7 @@ class CommandPayload(BaseModel):
     sender: Optional[str] = Field(None, max_length=32)
     msg: Optional[str] = Field(None, max_length=120)
     ota_url: Optional[str] = None
+    ota_sha256: Optional[str] = None
     play_url: Optional[str] = None
     media_name: Optional[str] = None
     media_url: Optional[str] = None

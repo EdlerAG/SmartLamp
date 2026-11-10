@@ -35,8 +35,8 @@ class DatabaseService:
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute("PRAGMA synchronous=NORMAL;")
             conn.execute("PRAGMA temp_store=MEMORY;")
-            conn.execute("PRAGMA cache_size=-2000;")  # 2.0 МБ кешу
-            conn.execute("PRAGMA mmap_size=16777216;") # 16 МБ пам'яті під відображення для надшвидкого читання
+            conn.execute("PRAGMA cache_size=-1000;")  # 1.0 МБ кешу
+            conn.execute("PRAGMA mmap_size=4194304;")  # 4.0 МБ пам'яті під відображення для швидкого читання
             conn.execute("PRAGMA busy_timeout=5000;")
             self._conn = conn
         return self._conn
@@ -192,6 +192,12 @@ class DatabaseService:
                 conn.execute(f"ALTER TABLE box_health_history ADD COLUMN {col_name} {col_type};")
             except Exception:
                 pass
+
+        # Міграція: додаємо title до custom_media для імен з пробілами, кирилицею та емодзі
+        try:
+            conn.execute("ALTER TABLE custom_media ADD COLUMN title TEXT DEFAULT '';")
+        except Exception:
+            pass
 
         conn.commit()
 
@@ -387,6 +393,7 @@ class DatabaseService:
         byte_size: int,
         ambi_rgb: tuple[int, int, int] = (56, 189, 248),
         reaction_slot: int = 0,
+        title: str = "",
     ) -> None:
         try:
             conn = self._get_conn()
@@ -398,9 +405,10 @@ class DatabaseService:
             conn.execute(
                 """
                 INSERT INTO custom_media
-                (name, media_type, file_path, crc32_hex, frames, fps, byte_size, ambi_r, ambi_g, ambi_b, reaction_slot, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (name, title, media_type, file_path, crc32_hex, frames, fps, byte_size, ambi_r, ambi_g, ambi_b, reaction_slot, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
+                    title=CASE WHEN excluded.title != '' THEN excluded.title ELSE custom_media.title END,
                     media_type=excluded.media_type,
                     file_path=excluded.file_path,
                     crc32_hex=excluded.crc32_hex,
@@ -414,7 +422,7 @@ class DatabaseService:
                     created_at=excluded.created_at
                 """,
                 (
-                    name, media_type, file_path, crc32_hex, int(frames), int(fps),
+                    name, title, media_type, file_path, crc32_hex, int(frames), int(fps),
                     int(byte_size), int(ambi_rgb[0]), int(ambi_rgb[1]), int(ambi_rgb[2]),
                     int(reaction_slot), int(time.time()),
                 ),
@@ -423,6 +431,26 @@ class DatabaseService:
             self._media_cache = None
         except Exception as e:
             logger.error("upsert_custom_media error: %s", e)
+
+    def update_media_title(self, name: str, new_title: str) -> bool:
+        try:
+            conn = self._get_conn()
+            cur = conn.execute("UPDATE custom_media SET title = ? WHERE name = ?", (new_title.strip(), name))
+            conn.commit()
+            self._media_cache = None
+            return cur.rowcount > 0
+        except Exception as e:
+            logger.error("update_media_title error: %s", e)
+            return False
+
+    def get_active_saver(self) -> Optional[Dict[str, Any]]:
+        name = self.get_setting("active_saver_name", "")
+        if not name:
+            return None
+        return self.get_media_by_name(name)
+
+    def set_active_saver(self, name: str) -> None:
+        self.set_setting("active_saver_name", name.strip())
 
     def bind_media_to_reaction_slot(self, name: str, slot: int) -> bool:
         try:
@@ -460,7 +488,7 @@ class DatabaseService:
             return self._media_cache
         try:
             rows = self._get_conn().execute(
-                "SELECT name, media_type, crc32_hex, frames, fps, byte_size, "
+                "SELECT name, title, media_type, crc32_hex, frames, fps, byte_size, "
                 "ambi_r, ambi_g, ambi_b, reaction_slot, created_at "
                 "FROM custom_media ORDER BY reaction_slot DESC, created_at DESC"
             ).fetchall()

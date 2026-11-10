@@ -17,6 +17,62 @@ from app.services.database_service import db_service
 from app.services.state_service import state_service
 
 
+_VINYL_LUT = None
+
+def _get_vinyl_lut():
+    global _VINYL_LUT
+    if _VINYL_LUT is None:
+        import numpy as np
+        size = 136
+        center = (size - 1) / 2.0
+        y, x = np.ogrid[:size, :size]
+        dist = np.sqrt((x - center) ** 2 + (y - center) ** 2).astype(np.float32)
+        theta = np.arctan2(y - center, x - center).astype(np.float32)
+        sheen = (9.0 * (np.cos(2.0 * theta - 0.785398) ** 4)).astype(np.float32)
+
+        spindle_mask = (dist <= 4.0)
+        ring_mask = (dist > 4.0) & (dist <= 6.0)
+        vinyl_mask = (dist > 54.0) & (dist <= 67.0)
+        outer_mask = (dist > 67.0)
+        groove_59 = (dist >= 58.6) & (dist <= 59.4)
+        groove_63 = (dist >= 62.6) & (dist <= 63.4)
+
+        bayer_matrix = np.array([
+            [ 0,  8,  2, 10],
+            [12,  4, 14,  6],
+            [ 3, 11,  1,  9],
+            [15,  7, 13,  5]
+        ], dtype=np.float32)
+        tile_y = (size + 3) // 4
+        tile_x = (size + 3) // 4
+        bayer_grid = np.tile(bayer_matrix, (tile_y, tile_x))[:size, :size]
+        dither_r = ((bayer_grid / 16.0 - 0.5) * 6.0).astype(np.float32)
+        dither_g = ((bayer_grid / 16.0 - 0.5) * 3.5).astype(np.float32)
+        dither_b = ((bayer_grid / 16.0 - 0.5) * 6.0).astype(np.float32)
+
+        # Ваги для країв обкладинки 108x108 (чим ближче до кромки, тим вагоміший колір)
+        cy_c, cx_c = np.ogrid[:108, :108]
+        cdist = np.sqrt((cx_c - 53.5) ** 2 + (cy_c - 53.5) ** 2).astype(np.float32)
+        cover_edge_weight = np.clip(1.0 + (cdist / 54.0) * 1.6, 1.0, 2.6).astype(np.float32)
+
+        _VINYL_LUT = {
+            "dist": dist,
+            "theta": theta,
+            "sheen": sheen,
+            "spindle_mask": spindle_mask,
+            "ring_mask": ring_mask,
+            "vinyl_mask": vinyl_mask,
+            "outer_mask": outer_mask,
+            "groove_59": groove_59,
+            "groove_63": groove_63,
+            "dither_r": dither_r,
+            "dither_g": dither_g,
+            "dither_b": dither_b,
+            "cover_edge_weight": cover_edge_weight,
+        }
+    return _VINYL_LUT
+
+
 class SpotifyService:
     """
     Demand-Driven Zero-Idle Spotify Service (v4.0):
@@ -36,12 +92,10 @@ class SpotifyService:
         "_last_ambi3_rgb",
         "_last_is_mono",
         "_vinyl_cache",
-        "_lyrics_cache",
-        "_current_lyrics",
         "_bpm_cache",
         "_hub_active",
-        "_lyrics_task",
-        "_last_pushed_lyric",
+        "_action_lock_until",
+        "_rate_limited_until",
     )
 
     SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state"
@@ -73,24 +127,44 @@ class SpotifyService:
             "cover_url": "",
             "progress_ms": 0,
             "duration_ms": 0,
-            "ambi_rgb": [56, 189, 248],
-            "ambi2_rgb": [248, 113, 113],
-            "ambi3_rgb": [250, 204, 21],
+            "ambi_rgb": [54, 48, 44],
+            "ambi2_rgb": [38, 34, 32],
+            "ambi3_rgb": [78, 66, 54],
             "is_mono": False,
             "bpm": 120,
             "energy": 65,
         }
-        self._last_ambi_rgb: List[int] = [56, 189, 248]
-        self._last_ambi2_rgb: List[int] = [248, 113, 113]
-        self._last_ambi3_rgb: List[int] = [250, 204, 21]
+        self._last_ambi_rgb: List[int] = [54, 48, 44]
+        self._last_ambi2_rgb: List[int] = [38, 34, 32]
+        self._last_ambi3_rgb: List[int] = [78, 66, 54]
         self._last_is_mono: bool = False
         self._vinyl_cache: Dict[str, Tuple[bytes, List[int], List[int], bool]] = {}
-        self._lyrics_cache: Dict[str, List[Dict[str, Any]]] = {}
-        self._current_lyrics: List[Dict[str, Any]] = []
         self._bpm_cache: Dict[str, int] = {}
         self._hub_active: bool = False
-        self._lyrics_task: Optional[asyncio.Task] = None
-        self._last_pushed_lyric: str = ""
+        self._action_lock_until: float = 0.0
+        self._rate_limited_until: float = 0.0
+
+        # Відновлення останнього треку для миттєвого Spotify Standby Deck
+        try:
+            saved_json = db_service.get_setting("spotify_last_state", "")
+            if saved_json:
+                import orjson
+                saved_st = orjson.loads(saved_json)
+                if isinstance(saved_st, dict) and saved_st.get("title"):
+                    saved_st["playing"] = False
+                    # Очищення старих дефолтів та застарілої палітри [70, 95, 130]
+                    if saved_st.get("ambi_rgb") in ([70, 95, 130], [56, 189, 248]):
+                        saved_st["ambi_rgb"] = [54, 48, 44]
+                        saved_st["ambi2_rgb"] = [38, 34, 32]
+                        saved_st["ambi3_rgb"] = [78, 66, 54]
+                    self._cached_state.update(saved_st)
+                    self._last_track_id = saved_st.get("track_id", "")
+                    self._last_ambi_rgb = saved_st.get("ambi_rgb", [54, 48, 44])
+                    self._last_ambi2_rgb = saved_st.get("ambi2_rgb", [38, 34, 32])
+                    self._last_ambi3_rgb = saved_st.get("ambi3_rgb", [78, 66, 54])
+                    self._last_is_mono = saved_st.get("is_mono", False)
+        except Exception as rest_err:
+            logger.debug("Spotify Standby state restore error: %s", rest_err)
 
     def _get_redirect_uri(self, base_url: str = "") -> str:
         if settings.SPOTIFY_REDIRECT_URI:
@@ -129,8 +203,9 @@ class SpotifyService:
             "track_id": "",
             "progress_ms": 0,
             "duration_ms": 0,
-            "ambi_rgb": [56, 189, 248],
-            "ambi2_rgb": [248, 113, 113],
+            "ambi_rgb": [54, 48, 44],
+            "ambi2_rgb": [38, 34, 32],
+            "ambi3_rgb": [78, 66, 54],
             "is_mono": False,
             "bpm": 120,
             "energy": 65,
@@ -228,8 +303,8 @@ class SpotifyService:
         return None
 
     async def _fast_track_switch_poll(self, prev_track_id: str) -> None:
-        """Fast Track Switch: адаптивне опитування протягом 2.5с доки не перемкнеться track_id."""
-        delays = [0.15, 0.25, 0.35, 0.45, 0.60, 0.80, 1.10, 1.50]
+        """Fast Track Switch: адаптивне ультрашвидке опитування доки не перемкнеться track_id."""
+        delays = [0.05, 0.12, 0.20, 0.30, 0.45, 0.65, 0.90, 1.20]
         for delay in delays:
             await asyncio.sleep(delay)
             st = await self.fetch_current_playback(force=True)
@@ -252,19 +327,46 @@ class SpotifyService:
                 if queue:
                     next_item = queue[0]
                     next_tid = next_item.get("id")
-                    if next_tid and next_tid not in self._vinyl_cache:
+                    if next_tid and f"{next_tid}_v69" not in self._vinyl_cache:
                         images = (next_item.get("album") or {}).get("images", [])
                         art_url = images[1].get("url") if len(images) > 1 else (images[0].get("url") if images else "")
                         if art_url:
                             art_resp = await client.get(art_url, timeout=5.0)
                             if art_resp.status_code == 200:
-                                v_bytes, a1, a2, a3, mono = self._create_vinyl_art_bytes(art_resp.content)
+                                v_bytes, a1, a2, a3, mono = self._create_vinyl_art_bytes(art_resp.content, 120, 65)
                                 if len(self._vinyl_cache) > 30:
                                     self._vinyl_cache.pop(next(iter(self._vinyl_cache)))
-                                self._vinyl_cache[next_tid] = (v_bytes, a1, a2, a3, mono)
+                                self._vinyl_cache[f"{next_tid}_v69"] = (v_bytes, a1, a2, a3, mono)
                                 logger.info("Pre-cached vinyl for next queue track: %s (%s)", next_item.get("name"), next_tid)
         except Exception as q_err:
             logger.debug("Spotify queue prefetch error: %s", q_err)
+
+    async def seek_track(self, position_ms: int) -> bool:
+        """Перемотує поточний трек на позицію position_ms (Spotify Player Seek API)."""
+        token = await self._ensure_access_token()
+        if not token:
+            return False
+
+        headers = {"Authorization": f"Bearer {token}"}
+        client = http_pool.get()
+        url = f"https://api.spotify.com/v1/me/player/seek?position_ms={max(0, int(position_ms))}"
+        try:
+            resp = await client.put(url, headers=headers, timeout=5.0)
+            ok = resp.status_code in (200, 204)
+            if ok:
+                self._cached_state["progress_ms"] = max(0, int(position_ms))
+                self._last_poll_time = time.time()
+                try:
+                    from app.core.events import realtime_hub
+                    cur_st = self.get_cached_state()
+                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
+                    realtime_hub.emit_spotify_to_box(cur_st)
+                except Exception as emit_err:
+                    logger.debug("Spotify seek broadcast error: %s", emit_err)
+            return ok
+        except Exception as e:
+            logger.warning("Spotify seek error: %s", e)
+            return False
 
     async def player_action(self, action: str) -> bool:
         token = await self._ensure_access_token()
@@ -284,6 +386,35 @@ class SpotifyService:
         if action not in endpoint_map:
             return False
 
+        # ⚡️ Миттєве оптимістичне оновлення кешу та пуш (Sub-5ms реакція на клік)
+        now = time.time()
+        self._action_lock_until = now + 2.5
+        if action == "pause":
+            if self._cached_state.get("playing") and self._last_poll_time > 0:
+                elapsed_ms = int((now - self._last_poll_time) * 1000)
+                orig_prog = self._cached_state.get("progress_ms", 0)
+                dur = self._cached_state.get("duration_ms", 0)
+                cur_prog = orig_prog + elapsed_ms
+                self._cached_state["progress_ms"] = min(cur_prog, dur) if dur > 0 else cur_prog
+            self._cached_state["playing"] = False
+            self._last_poll_time = now
+        elif action == "play":
+            self._cached_state["playing"] = True
+            self._last_poll_time = now
+        elif action in ("next", "previous"):
+            self._action_lock_until = now + 2.0
+            self._cached_state["progress_ms"] = 0
+            self._cached_state["playing"] = True
+            self._last_poll_time = now
+
+        try:
+            from app.core.events import realtime_hub
+            cur_st = self.get_cached_state()
+            realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
+            realtime_hub.emit_spotify_to_box(cur_st)
+        except Exception as emit_err:
+            logger.debug("Spotify optimistic broadcast error: %s", emit_err)
+
         method, url = endpoint_map[action]
         try:
             if method == "POST":
@@ -291,67 +422,79 @@ class SpotifyService:
             else:
                 resp = await client.put(url, headers=headers, timeout=5.0)
             ok = resp.status_code in (200, 204)
-            if ok:
-                now = time.time()
-                if action == "pause":
-                    if self._cached_state.get("playing") and self._last_poll_time > 0:
-                        elapsed_ms = int((now - self._last_poll_time) * 1000)
-                        orig_prog = self._cached_state.get("progress_ms", 0)
-                        dur = self._cached_state.get("duration_ms", 0)
-                        cur_prog = orig_prog + elapsed_ms
-                        self._cached_state["progress_ms"] = min(cur_prog, dur) if dur > 0 else cur_prog
-                    self._cached_state["playing"] = False
-                    self._last_poll_time = now
-                elif action == "play":
-                    self._cached_state["playing"] = True
-                    self._last_poll_time = now
-                elif action in ("next", "previous"):
-                    self._cached_state["progress_ms"] = 0
-                    self._cached_state["playing"] = True
-                    self._last_poll_time = now
-                    asyncio.create_task(self._fast_track_switch_poll(self._last_track_id))
-
+            if not ok and action == "play" and resp.status_code == 404:
+                # Waking up idle Spotify device if 404 No Active Device
                 try:
-                    from app.core.events import realtime_hub
-                    cur_st = self.get_cached_state()
-                    realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
-                    realtime_hub.emit_spotify_to_box(cur_st)
-                except Exception as emit_err:
-                    logger.debug("Spotify action broadcast error: %s", emit_err)
+                    dev_resp = await client.get("https://api.spotify.com/v1/me/player/devices", headers=headers, timeout=4.0)
+                    if dev_resp.status_code == 200:
+                        devices = dev_resp.json().get("devices", [])
+                        if devices:
+                            dev_id = devices[0].get("id")
+                            if dev_id:
+                                retry_resp = await client.put(f"https://api.spotify.com/v1/me/player/play?device_id={dev_id}", headers=headers, timeout=5.0)
+                                ok = retry_resp.status_code in (200, 204)
+                                logger.info("Spotify resume fallback to device %s (status %s)", dev_id, retry_resp.status_code)
+                except Exception as dev_err:
+                    logger.warning("Spotify device resume fallback error: %s", dev_err)
+            if ok and action in ("next", "previous"):
+                asyncio.create_task(self._fast_track_switch_poll(self._last_track_id))
             return ok
         except Exception as action_err:
             logger.warning("Spotify player action HTTP error for '%s': %s", action, action_err)
             return False
 
     @staticmethod
-    def _create_vinyl_art_bytes(album_img_bytes: bytes) -> Tuple[bytes, List[int], List[int], List[int], bool]:
+    def _create_vinyl_art_bytes(album_img_bytes: bytes, bpm: int = 120, energy: int = 65) -> Tuple[bytes, List[int], List[int], List[int], bool]:
         """
-        Генерує кругле зображення вінілової платівки 136x136 px RGB565 (рівно 36992 байти):
-        - r <= 4 px: чорний отвір по центру (#000000).
-        - 4 < r <= 6 px: тонке кільце біля отвору в колір обкладинки.
-        - 6 < r <= 54 px: чисте, яскраве зображення обкладинки альбому (LANCZOS + м'який Bayer-дизеринг).
-        - 54 < r <= 67 px: темний вініловий обідок (#0C0E14) з доріжками r=59, r=63 та бліком.
-        - r > 67 px: чистий чорний #000000 (прозорий фон для круглої маски).
+        Генерує кругле зображення вінілової платівки 136x136 px RGB565 (рівно 36992 байти)
+        з оптимізованим LUT кешем (Zero CPU waste) та адаптивною палітрою Mood-True Ambient 3.0.
         """
         import numpy as np
         import colorsys
 
-        size = 136
-        center = (size - 1) / 2.0
-        y, x = np.ogrid[:size, :size]
-        dist = np.sqrt((x - center) ** 2 + (y - center) ** 2)
-        theta = np.arctan2(y - center, x - center)
+        lut = _get_vinyl_lut()
+        dist = lut["dist"]
+        theta = lut["theta"]
+        sheen = lut["sheen"]
+        spindle_mask = lut["spindle_mask"]
+        ring_mask = lut["ring_mask"]
+        vinyl_mask = lut["vinyl_mask"]
+        outer_mask = lut["outer_mask"]
+        groove_59 = lut["groove_59"]
+        groove_63 = lut["groove_63"]
+        dither_r = lut["dither_r"]
+        dither_g = lut["dither_g"]
+        dither_b = lut["dither_b"]
+        cover_edge_weight = lut["cover_edge_weight"]
 
+        size = 136
         canvas_arr = np.zeros((size, size, 3), dtype=np.float32)
 
-        ambi_rgb = [56, 189, 248]
-        ambi2_rgb = [248, 113, 113]
-        ambi3_rgb = [250, 204, 21]
+        ambi_rgb = [54, 48, 44]
+        ambi2_rgb = [38, 34, 32]
+        ambi3_rgb = [78, 66, 54]
         is_mono = False
+        blur_bytes = b"\x00" * 2048
 
         try:
             with Image.open(io.BytesIO(album_img_bytes)) as raw_img:
-                enhanced = raw_img.convert("RGB")
+                raw_rgb = raw_img.convert("RGB")
+
+                # Apple Music / Canvas style blurred cover art background (32x32 RGB565 = 2048 bytes)
+                try:
+                    blur_img = raw_rgb.resize((32, 32), Image.Resampling.BILINEAR)
+                    blur_img = blur_img.filter(ImageFilter.GaussianBlur(radius=2.5))
+                    blur_img = ImageEnhance.Color(blur_img).enhance(1.25)
+                    blur_arr = np.asarray(blur_img, dtype=np.uint16)
+                    br = (blur_arr[:, :, 0] & 0xF8) << 8
+                    bg = (blur_arr[:, :, 1] & 0xFC) << 3
+                    bb = blur_arr[:, :, 2] >> 3
+                    blur_rgb565 = br | bg | bb
+                    blur_bytes = blur_rgb565.astype(">u2").tobytes()
+                except Exception as blur_err:
+                    logger.debug("Spotify blur texture generation fallback: %s", blur_err)
+
+                enhanced = raw_rgb
                 enhanced = ImageEnhance.Contrast(enhanced).enhance(1.15)
                 enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=1.2, percent=125, threshold=3))
 
@@ -388,20 +531,22 @@ class SpotifyService:
                 h_chan = (h_chan / 6.0) % 1.0
 
                 mean_sat = float(np.mean(s_chan))
-                if mean_sat < 0.14:
+                mean_val = float(np.mean(v_chan))
+
+                if mean_sat < 0.12:
+                    # Чорно-біла / монохромна обкладинка -> Преміальний «Теплий графіт»
                     is_mono = True
-                    ambi_rgb = [255, 180, 50]   # Primary: Теплий бурштин
-                    ambi2_rgb = [255, 120, 80]  # Secondary: Персиковий корал
-                    ambi3_rgb = [255, 220, 140] # Accent: Перлинне сяйво
+                    ambi_rgb = [54, 48, 44]
+                    ambi2_rgb = [38, 34, 32]
+                    ambi3_rgb = [78, 66, 54]
                 else:
                     is_mono = False
                     valid_mask = (v_chan >= 0.15) & (s_chan >= 0.15)
                     if np.sum(valid_mask) < 20:
                         valid_mask = (v_chan >= 0.08) & (s_chan >= 0.08)
 
-                    weights = np.ones((108, 108), dtype=np.float32)
-                    weights[54:, :] = 2.0
-                    weights = weights * s_chan * v_chan
+                    # Застосовуємо просторовий крайній ваговий коефіцієнт обкладинки
+                    weights = cover_edge_weight * (s_chan ** 1.2) * (v_chan ** 0.8)
 
                     h_valid = h_chan[valid_mask]
                     s_valid = s_chan[valid_mask]
@@ -409,7 +554,7 @@ class SpotifyService:
                     w_valid = weights[valid_mask]
 
                     if len(h_valid) > 0:
-                        # 1. Primary: домінантний насичений тон (S >= 0.65, V >= 0.85)
+                        # 1. Primary: домінантний тон
                         bin_indices = np.clip((h_valid * 24.0).astype(int), 0, 23)
                         bin_weights = np.bincount(bin_indices, weights=w_valid, minlength=24)
                         best_bin = int(np.argmax(bin_weights))
@@ -418,30 +563,57 @@ class SpotifyService:
                         diff_h1 = np.abs(h_valid - h1)
                         circ_diff1 = np.minimum(diff_h1, 1.0 - diff_h1)
 
-                        # 2. Secondary: контрастний тон (Delta H >= 35 deg)
-                        mask2 = circ_diff1 >= (35.0 / 360.0)
-                        if np.sum(mask2) >= 10:
+                        cluster1_mask = circ_diff1 <= (1.0 / 24.0)
+                        if np.any(cluster1_mask):
+                            raw_s = float(np.median(s_valid[cluster1_mask]))
+                            raw_v = float(np.median(v_valid[cluster1_mask]))
+                            # Виразний колір обкладинки із захистом від кислотного неону
+                            s1 = float(np.clip(raw_s * 0.90, 0.28, 0.78))
+                            v1 = float(np.clip(raw_v * 0.96, 0.54, 0.88))
+                        else:
+                            s1 = 0.48
+                            v1 = 0.68
+
+                        # Врахування настрою треку (реальний BPM, енергія та тональність обкладинки):
+                        cur_bpm = bpm
+                        cur_energy = energy
+
+                        if cur_bpm < 95 or (cur_energy < 48 and mean_val < 0.35):
+                            # Спокійний, інтимний лаунж: глибші оксамитові тони
+                            s1 = float(np.clip(s1 * 0.88, 0.24, 0.68))
+                            v1 = float(np.clip(v1 * 0.90, 0.48, 0.78))
+                        elif cur_bpm > 126 or cur_energy > 72:
+                            # Драйвовий, енергійний трек: насичений живий акцент
+                            s1 = float(np.clip(s1 * 1.06, 0.32, 0.82))
+                            v1 = float(np.clip(v1 * 1.05, 0.58, 0.90))
+
+                        # 2. Secondary: реальний другий тон обкладинки або багата аналогова гармонія
+                        mask2 = circ_diff1 >= (25.0 / 360.0)
+                        if np.sum(mask2) >= 25:
                             b2 = np.clip((h_valid[mask2] * 24.0).astype(int), 0, 23)
                             w2 = np.bincount(b2, weights=w_valid[mask2], minlength=24)
                             h2 = (int(np.argmax(w2)) + 0.5) / 24.0
+                            c2_mask = mask2 & (np.minimum(np.abs(h_valid - h2), 1.0 - np.abs(h_valid - h2)) <= (1.0 / 24.0))
+                            if np.any(c2_mask):
+                                s2 = float(np.clip(np.median(s_valid[c2_mask]) * 0.88, 0.24, 0.75))
+                                v2 = float(np.clip(np.median(v_valid[c2_mask]) * 0.92, 0.48, 0.84))
+                            else:
+                                s2 = float(np.clip(s1 * 0.88, 0.24, 0.72))
+                                v2 = float(np.clip(v1 * 0.90, 0.48, 0.82))
                         else:
-                            h2 = (h1 + 0.5) % 1.0
+                            h2 = (h1 + (18.0 / 360.0)) % 1.0
+                            s2 = float(np.clip(s1 * 0.88, 0.24, 0.72))
+                            v2 = float(np.clip(v1 * 0.90, 0.48, 0.82))
 
-                        # 3. Accent col3
-                        diff_h2 = np.abs(h_valid - h2)
-                        circ_diff2 = np.minimum(diff_h2, 1.0 - diff_h2)
-                        mask3 = (circ_diff1 >= (30.0 / 360.0)) & (circ_diff2 >= (30.0 / 360.0))
-                        if np.sum(mask3) >= 8:
-                            score3 = s_valid[mask3] * v_valid[mask3]
-                            idx3 = int(np.argmax(score3))
-                            h3 = float(h_valid[mask3][idx3])
-                        else:
-                            h3 = (h1 + 0.25) % 1.0
+                        # 3. Tertiary: глибокий фоновий компаньйон обкладинки
+                        h3 = (h1 - (18.0 / 360.0)) % 1.0
+                        s3 = float(np.clip(s1 * 0.80, 0.20, 0.68))
+                        v3 = float(np.clip(v1 * 0.82, 0.42, 0.76))
 
-                        # Гарантуємо соковитість кольорів (S >= 0.70, V >= 0.90)
-                        rgb1 = colorsys.hsv_to_rgb(h1, 0.90, 1.0)
-                        rgb2 = colorsys.hsv_to_rgb(h2, 0.82, 0.95)
-                        rgb3 = colorsys.hsv_to_rgb(h3, 0.95, 1.0)
+                        # Mood-True Ambient 3.0: збереження природної тональності без синтетичного неону
+                        rgb1 = colorsys.hsv_to_rgb(h1, s1, v1)
+                        rgb2 = colorsys.hsv_to_rgb(h2, s2, v2)
+                        rgb3 = colorsys.hsv_to_rgb(h3, s3, v3)
 
                         ambi_rgb = [int(np.clip(rgb1[0] * 255.0, 0, 255)),
                                     int(np.clip(rgb1[1] * 255.0, 0, 255)),
@@ -456,15 +628,12 @@ class SpotifyService:
             logger.debug("Spotify album color extraction fallback: %s", color_err)
 
         # 1. Spindle hole: r <= 4.0 px -> pure black #000000
-        canvas_arr[dist <= 4.0] = [0.0, 0.0, 0.0]
+        canvas_arr[spindle_mask] = [0.0, 0.0, 0.0]
 
         # 2. Ring near hole: 4.0 < r <= 6.0 px -> cover color (ambi_rgb)
-        ring_mask = (dist > 4.0) & (dist <= 6.0)
         canvas_arr[ring_mask] = ambi_rgb
 
         # 3. Custom-pressed Colored Vinyl Rim: 54.0 < r <= 67.0 px -> tinted luxury vinyl
-        vinyl_mask = (dist > 54.0) & (dist <= 67.0)
-        sheen = 9.0 * (np.cos(2.0 * theta - 0.785398) ** 4)
         tint_r = float(ambi_rgb[0]) * 0.22
         tint_g = float(ambi_rgb[1]) * 0.22
         tint_b = float(ambi_rgb[2]) * 0.22
@@ -477,34 +646,19 @@ class SpotifyService:
         canvas_arr[vinyl_mask, 2] = np.clip(base_b[vinyl_mask], 10.0, 80.0)
 
         # Concentric grooves at r = 59.0 and r = 63.0
-        gr_59 = (dist >= 58.6) & (dist <= 59.4)
-        gr_63 = (dist >= 62.6) & (dist <= 63.4)
-        canvas_arr[gr_59] = np.clip(canvas_arr[gr_59] * 0.7, 0.0, 255.0)
-        canvas_arr[gr_63] = np.clip(canvas_arr[gr_63] * 0.7, 0.0, 255.0)
+        canvas_arr[groove_59] = np.clip(canvas_arr[groove_59] * 0.7, 0.0, 255.0)
+        canvas_arr[groove_63] = np.clip(canvas_arr[groove_63] * 0.7, 0.0, 255.0)
 
         # 4. Outer boundary: r > 67.0 px -> pure black #000000 (transparent mask)
-        canvas_arr[dist > 67.0] = [0.0, 0.0, 0.0]
+        canvas_arr[outer_mask] = [0.0, 0.0, 0.0]
 
         # 5. Soft Bayer dithering on cover art (6.0 < r <= 54.0)
-        bayer_matrix = np.array([
-            [ 0,  8,  2, 10],
-            [12,  4, 14,  6],
-            [ 3, 11,  1,  9],
-            [15,  7, 13,  5]
-        ], dtype=np.float32)
-        tile_y = (size + 3) // 4
-        tile_x = (size + 3) // 4
-        bayer_grid = np.tile(bayer_matrix, (tile_y, tile_x))[:size, :size]
-        dither_r = (bayer_grid / 16.0 - 0.5) * 6.0
-        dither_g = (bayer_grid / 16.0 - 0.5) * 3.5
-        dither_b = (bayer_grid / 16.0 - 0.5) * 6.0
-
         art_mask = (dist > 6.0) & (dist <= 54.0)
         canvas_arr[art_mask, 0] = np.clip(canvas_arr[art_mask, 0] + dither_r[art_mask], 0.0, 255.0)
         canvas_arr[art_mask, 1] = np.clip(canvas_arr[art_mask, 1] + dither_g[art_mask], 0.0, 255.0)
         canvas_arr[art_mask, 2] = np.clip(canvas_arr[art_mask, 2] + dither_b[art_mask], 0.0, 255.0)
 
-        # Global safety clip before uint16 cast (never overflow to 0xFFFF!)
+        # Global safety clip before uint16 cast
         canvas_arr = np.clip(canvas_arr, 0.0, 255.0)
 
         r_final = canvas_arr[:, :, 0].astype(np.uint16)
@@ -515,8 +669,15 @@ class SpotifyService:
         g = (g_final & 0xFC) << 3
         b = b_final >> 3
         rgb565 = r | g | b
+
+        # 100% захист від накривання пластинки фоном:
+        # жоден внутрішній піксель вінілу не повинен мати прозорий ключ 0x0000!
+        inside_mask = (dist <= 67.0)
+        rgb565[(rgb565 == 0) & inside_mask] = 0x0821  # мінімальний оксамитовий чорний RGB565
+
         raw_bytes = rgb565.astype(">u2").tobytes()
-        return raw_bytes, ambi_rgb, ambi2_rgb, ambi3_rgb, is_mono
+        bundle_bytes = raw_bytes + blur_bytes
+        return bundle_bytes, ambi_rgb, ambi2_rgb, ambi3_rgb, is_mono
 
     async def _fetch_track_bpm(self, track_id: str, title: str, artist: str) -> int:
         """Отримує точний BPM треку через Deezer API або повертає значення за замовчуванням (120)."""
@@ -561,56 +722,26 @@ class SpotifyService:
         arc = int(math.sin(prog_frac * math.pi) * 25.0)
         return min(95, max(25, base + arc))
 
-        cur_sec = progress_ms / 1000.0
-        lyrics = self._current_lyrics
-
-        # Інтро до першого рядка
-        if cur_sec < lyrics[0]["sec"]:
-            gap = lyrics[0]["sec"] - cur_sec
-            return 25 if gap > 6.5 else 55
-
-        # Знаходимо активний рядок
-        idx = 0
-        for i, item in enumerate(lyrics):
-            if item["sec"] <= cur_sec:
-                idx = i
-            else:
-                break
-
-        # Аутро після останнього рядка
-        if idx >= len(lyrics) - 1:
-            gap = cur_sec - lyrics[-1]["sec"]
-            return 25 if gap > 6.5 else 55
-
-        # Дельта часу до наступного рядка
-        dt = lyrics[idx + 1]["sec"] - lyrics[idx]["sec"]
-
-        # Перевірка на повторення рядків тексту (ознака приспіву / хука)
-        is_repeat = False
-        cur_txt = lyrics[idx]["text"].strip().lower()
-        if idx > 0:
-            prev_txt = lyrics[idx - 1]["text"].strip().lower()
-            if cur_txt and cur_txt == prev_txt:
-                is_repeat = True
-        if idx + 1 < len(lyrics):
-            next_txt = lyrics[idx + 1]["text"].strip().lower()
-            if cur_txt and cur_txt == next_txt:
-                is_repeat = True
-
-        if is_repeat or dt <= 3.2:
-            return 90
-        elif dt <= 6.5:
-            return 55
-        else:
-            return 25
-
     async def fetch_current_playback(self, force: bool = False) -> Dict[str, Any]:
         """Опитує офіційний Spotify API про поточний трек із захистом від rate-limit."""
         if not self.is_linked():
             return self.get_cached_state()
 
         now = time.time()
-        min_poll_interval = 0.5 if (self._cached_state.get("playing") or self._hub_active) else 2.5
+        # 1. Перевірка на активний Spotify rate-limit cooldown
+        if self._rate_limited_until > now:
+            if self._cached_state.get("playing"):
+                self._cached_state["playing"] = False
+                try:
+                    from app.core.events import realtime_hub
+                    cur_st = self.get_cached_state()
+                    realtime_hub.emit_spotify_to_box(cur_st)
+                    asyncio.create_task(realtime_hub.broadcast_to_dashboards({"type": "spotify", "spotify": cur_st}))
+                except Exception:
+                    pass
+            return self.get_cached_state()
+
+        min_poll_interval = 3.5 if (self._cached_state.get("playing") or self._hub_active) else 7.0
         if not force and (now - self._last_poll_time < min_poll_interval):
             return self.get_cached_state()
         self._last_poll_time = now
@@ -626,7 +757,26 @@ class SpotifyService:
                 timeout=4.5,
             )
 
+            # Обробка 429 Too Many Requests (Spotify Quota Exceeded)
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("Retry-After", 60))
+                self._rate_limited_until = now + retry_after
+                logger.warning("Spotify API 429 Rate Limit! Cooldown for %d seconds", retry_after)
+                prev_playing = self._cached_state.get("playing", False)
+                self._cached_state["playing"] = False
+                if prev_playing:
+                    try:
+                        from app.core.events import realtime_hub
+                        cur_st = self.get_cached_state()
+                        realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
+                        realtime_hub.emit_spotify_to_box(cur_st)
+                    except Exception:
+                        pass
+                return self.get_cached_state()
+
             if resp.status_code == 204 or not resp.content:
+                if time.time() < self._action_lock_until:
+                    return self.get_cached_state()
                 prev_playing = self._cached_state.get("playing", False)
                 self._cached_state["playing"] = False
                 if prev_playing:
@@ -640,10 +790,15 @@ class SpotifyService:
                 return self.get_cached_state()
 
             if resp.status_code == 200:
+                self._rate_limited_until = 0.0
                 data = resp.json()
                 item = data.get("item") or {}
                 track_id = item.get("id") or ""
-                is_playing = bool(data.get("is_playing", False))
+                api_playing = bool(data.get("is_playing", False))
+                if now < self._action_lock_until:
+                    is_playing = self._cached_state.get("playing", api_playing)
+                else:
+                    is_playing = api_playing
 
                 title = item.get("name", "")
                 artists = [a.get("name", "") for a in item.get("artists", []) if a.get("name")]
@@ -655,15 +810,34 @@ class SpotifyService:
                 # Оптимізація 300x300 preview (images[1]) для блискавичного скачування (< 40 мс)
                 art_url = images[1].get("url") if len(images) > 1 else (images[0].get("url") if images else "")
 
-                # Якщо змінився трек — Two-Phase Fast Track Push
-                track_changed = bool(track_id and track_id != self._last_track_id)
+                cache_key = f"{track_id}_v69"
+                # Якщо змінився трек або палітри ще немає в кеші — Two-Phase Fast Track Push
+                track_changed = bool(track_id and (track_id != self._last_track_id or cache_key not in self._vinyl_cache))
                 new_vinyl_bytes = None
                 if track_changed:
                     self._last_track_id = track_id
-                    self._current_lyrics = []
-                    self._cached_state["lyric"] = ""
-                    if track_id in self._vinyl_cache:
-                        vinyl_bytes, ambi, ambi2, ambi3, is_mono = self._vinyl_cache[track_id]
+                    # Phase 0: Миттєвий Metadata Push у WebSocket лампи (назва, виконавець, скидання затримки)
+                    self._cached_state.update({
+                        "playing": is_playing,
+                        "title": title[:120],
+                        "artist": artist[:90],
+                        "track_id": track_id[:32],
+                        "cover_url": art_url,
+                        "progress_ms": progress_ms,
+                        "duration_ms": duration_ms,
+                        "bpm": self._bpm_cache.get(track_id, 120),
+                        "energy": 55,
+                    })
+                    try:
+                        from app.core.events import realtime_hub
+                        cur_st = self.get_cached_state()
+                        realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
+                        realtime_hub.emit_spotify_to_box(cur_st)
+                    except Exception as p_imm_err:
+                        logger.debug("Immediate metadata push to box error: %s", p_imm_err)
+
+                    if cache_key in self._vinyl_cache:
+                        vinyl_bytes, ambi, ambi2, ambi3, is_mono = self._vinyl_cache[cache_key]
                         self._last_ambi3_rgb = ambi3
                         self._last_ambi_rgb = ambi
                         self._last_ambi2_rgb = ambi2
@@ -673,40 +847,37 @@ class SpotifyService:
                             f.write(vinyl_bytes)
                     else:
                         if art_url:
-                            art_resp = await http_pool.get().get(art_url, timeout=5.0)
-                            if art_resp.status_code == 200:
-                                vinyl_bytes, ambi, ambi2, ambi3, is_mono = await asyncio.to_thread(self._create_vinyl_art_bytes, art_resp.content)
+                            # Паралельне завантаження обкладинки та реального BPM (Deezer) для 100% точної палітри за настроєм
+                            art_task = http_pool.get().get(art_url, timeout=4.5)
+                            bpm_task = self._fetch_track_bpm(track_id, title, artist)
+                            art_resp, track_bpm = await asyncio.gather(art_task, bpm_task, return_exceptions=True)
+                            if isinstance(track_bpm, Exception) or not isinstance(track_bpm, int):
+                                track_bpm = self._bpm_cache.get(track_id, 120)
+                            track_energy = self._calc_song_energy(track_bpm, progress_ms, duration_ms)
+
+                            if not isinstance(art_resp, Exception) and getattr(art_resp, "status_code", 0) == 200:
+                                vinyl_bytes, ambi, ambi2, ambi3, is_mono = await asyncio.to_thread(
+                                    self._create_vinyl_art_bytes, art_resp.content, track_bpm, track_energy
+                                )
                                 self._last_ambi3_rgb = ambi3
                                 self._last_ambi_rgb = ambi
                                 self._last_ambi2_rgb = ambi2
                                 self._last_is_mono = is_mono
                                 new_vinyl_bytes = vinyl_bytes
-                                if len(self._vinyl_cache) > 30:
+                                if len(self._vinyl_cache) > 12:
                                     self._vinyl_cache.pop(next(iter(self._vinyl_cache)))
-                                self._vinyl_cache[track_id] = (vinyl_bytes, ambi, ambi2, ambi3, is_mono)
+                                self._vinyl_cache[cache_key] = (vinyl_bytes, ambi, ambi2, ambi3, is_mono)
                                 with open(settings.SPOTIFY_VINYL_PATH, "wb") as f:
                                     f.write(vinyl_bytes)
-                                memory_guard.trim_ram()
+                                memory_guard.schedule_lazy_trim(5.0)
 
-                    # Оновлюємо кешований стан негайно з новими кольорами та метаданими
-                    self._cached_state = {
-                        "playing": is_playing,
-                        "title": title[:60],
-                        "artist": artist[:45],
-                        "track_id": track_id[:32],
-                        "cover_url": art_url,
-                        "progress_ms": progress_ms,
-                        "duration_ms": duration_ms,
-                        "ambi_rgb": self._last_ambi_rgb,
-                        "ambi2_rgb": self._last_ambi2_rgb,
-                        "ambi3_rgb": self._last_ambi3_rgb,
-                        "is_mono": self._last_is_mono,
-                        "bpm": self._bpm_cache.get(track_id, 120),
-                        "energy": 55,
-                        "lyric": "",
-                    }
+                    # Оновлюємо стан новими кольорами
+                    self._cached_state["ambi_rgb"] = self._last_ambi_rgb
+                    self._cached_state["ambi2_rgb"] = self._last_ambi2_rgb
+                    self._cached_state["ambi3_rgb"] = self._last_ambi3_rgb
+                    self._cached_state["is_mono"] = self._last_is_mono
 
-                    # Phase 1: Миттєвий Push бінарного вінілу та стану у відкритий WebSocket лампи (< 40 мс)
+                    # Phase 1: Push бінарного вінілу та стану з кольорами у відкритий WebSocket лампи
                     try:
                         from app.core.events import realtime_hub
                         cur_st = self.get_cached_state()
@@ -717,20 +888,6 @@ class SpotifyService:
                     except Exception as p_err:
                         logger.debug("Vinyl and state push to box error: %s", p_err)
 
-                    # Phase 2 (Background task): Асинхронне підвантаження BPM (Deezer) без лірики LRCLIB
-                    async def _bg_enrich_and_update(tid: str, ttl: str, art: str, dur_sec: int):
-                        await self._fetch_track_bpm(tid, ttl, art)
-                        await asyncio.sleep(0.1)
-                        if self._last_track_id == tid:
-                            upd_st = self.get_cached_state()
-                            try:
-                                from app.core.events import realtime_hub
-                                realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": upd_st})
-                                realtime_hub.emit_spotify_to_box(upd_st)
-                            except Exception:
-                                pass
-
-                    asyncio.create_task(_bg_enrich_and_update(track_id, title, artist, duration_ms // 1000))
                     asyncio.create_task(self._prefetch_next_queue_track())
 
                 # Швидкий розрахунок енергії з кешу або дефолту 120 (0 ms блокування)
@@ -739,19 +896,10 @@ class SpotifyService:
 
                 prev_playing = self._cached_state.get("playing", False)
                 self._cached_state["playing"] = is_playing
-                if is_playing:
-                    self._ensure_lyrics_sync_task()
-                elif self._lyrics_task and not self._lyrics_task.done():
-                    self._lyrics_task.cancel()
                 self._cached_state["progress_ms"] = progress_ms
                 self._cached_state["duration_ms"] = duration_ms
                 self._cached_state["bpm"] = bpm
                 self._cached_state["energy"] = energy
-
-                # Визначаємо поточний рядок тексту за прогресом
-                cur_lyric = self._get_active_lyric(progress_ms)
-                if cur_lyric:
-                    self._cached_state["lyric"] = cur_lyric
 
                 try:
                     from app.core.events import realtime_hub
@@ -759,6 +907,11 @@ class SpotifyService:
                     realtime_hub.emit_to_dashboards({"type": "spotify", "spotify": cur_st})
                     if track_changed or (is_playing != prev_playing):
                         realtime_hub.emit_spotify_to_box(cur_st)
+                    if track_changed:
+                        import orjson
+                        save_st = dict(cur_st)
+                        save_st["playing"] = False
+                        db_service.set_setting("spotify_last_state", orjson.dumps(save_st).decode("utf-8"))
                 except Exception as emit_err:
                     logger.debug("Spotify state emit error: %s", emit_err)
 
@@ -828,16 +981,25 @@ class SpotifyService:
     def get_cached_state(self, include_lyrics: bool = False) -> Dict[str, Any]:
         st = dict(self._cached_state)
         st["linked"] = self.is_linked()
+        try:
+            st["bg_style"] = int(db_service.get_setting("spotify_bg_style", "0") or 0)
+        except Exception:
+            st["bg_style"] = 0
         if st.get("playing") and self._last_poll_time > 0:
             elapsed_ms = int((time.time() - self._last_poll_time) * 1000)
             orig_prog = st.get("progress_ms", 0)
             dur = st.get("duration_ms", 0)
             if dur > 0:
-                st["progress_ms"] = min(orig_prog + elapsed_ms, dur)
+                cur_prog = orig_prog + elapsed_ms
+                if cur_prog >= dur:
+                    st["playing"] = False
+                    st["progress_ms"] = dur
+                    self._cached_state["playing"] = False
+                    self._cached_state["progress_ms"] = dur
+                else:
+                    st["progress_ms"] = cur_prog
             else:
                 st["progress_ms"] = orig_prog + elapsed_ms
-        st["lyric"] = ""
-        st["lyrics"] = []
         return st
 
 

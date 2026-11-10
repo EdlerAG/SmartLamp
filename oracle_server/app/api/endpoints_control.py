@@ -239,9 +239,12 @@ async def save_calendar_ical(request: Request, role: str = Depends(verify_access
 @router.get("/api/v1/box/state")
 @router.get("/api/v5/state")
 async def get_full_cloud_state(hours: int = 24, fast: bool = False, role: str = Depends(verify_access)):
-    cal_event = await google_calendar_service.get_next_event()
-    if spotify_service.is_linked():
-        await spotify_service.fetch_current_playback()
+    if not fast:
+        cal_event = await google_calendar_service.get_next_event()
+        if spotify_service.is_linked():
+            await spotify_service.fetch_current_playback()
+    else:
+        cal_event = getattr(google_calendar_service, "_cached_event", None)
 
     resp = {
         "ok": True,
@@ -536,14 +539,68 @@ async def bind_media_to_slot(name: str, slot: int, _: str = Depends(verify_acces
 
 @router.delete("/api/v5/media/{name}")
 async def delete_custom_media(name: str, _: str = Depends(verify_access)):
+    import re
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", name)
     fpath = db_service.delete_custom_media(name)
     if fpath and os.path.exists(fpath):
         try:
             os.remove(fpath)
         except OSError:
             pass
+    thumb_path = os.path.join(settings.STICKERS_DIR, f"{safe_name}_thumb.png")
+    if os.path.exists(thumb_path):
+        try:
+            os.remove(thumb_path)
+        except OSError:
+            pass
     memory_guard.recalculate_disk_usage()
     return {"ok": True, "deleted": name}
+
+
+def _make_thumbnail(file_path: str, thumb_path: str) -> None:
+    from PIL import Image
+    import numpy as np
+    with open(file_path, "rb") as f:
+        f.seek(16)
+        raw_rgb565 = f.read(115200)
+    if len(raw_rgb565) < 115200:
+        return
+    u16 = np.frombuffer(raw_rgb565, dtype=">u2").reshape((240, 240))
+    r = (((u16 >> 11) & 0x1F) * 255 // 31).astype(np.uint8)
+    g = (((u16 >> 5) & 0x3F) * 255 // 63).astype(np.uint8)
+    b = ((u16 & 0x1F) * 255 // 31).astype(np.uint8)
+    rgb = np.stack([r, g, b], axis=-1)
+    img = Image.fromarray(rgb, "RGB").resize((80, 80), Image.Resampling.LANCZOS)
+    img.save(thumb_path, "PNG")
+
+
+@router.get("/api/v5/media/thumb/{name}")
+async def get_media_thumbnail(name: str):
+    """Генерує та кешує швидку мініатюру 80x80 PNG для галереї стікерів (з HTTP Cache-Control)."""
+    import re
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", name)
+    file_path = os.path.join(settings.STICKERS_DIR, f"{safe_name}.mbx")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    thumb_path = os.path.join(settings.STICKERS_DIR, f"{safe_name}_thumb.png")
+    headers = {"Cache-Control": "public, max-age=86400, immutable"}
+    if os.path.exists(thumb_path):
+        return FileResponse(thumb_path, media_type="image/png", headers=headers)
+
+    await asyncio.to_thread(_make_thumbnail, file_path, thumb_path)
+    if not os.path.exists(thumb_path):
+        raise HTTPException(status_code=400, detail="Corrupted mbx")
+    return FileResponse(thumb_path, media_type="image/png", headers=headers)
+
+
+@router.post("/api/v5/spotify/seek")
+async def spotify_seek(request: Request, _: str = Depends(verify_access)):
+    """Перемотування треку Spotify на вказану секунду (Seek)."""
+    body = await request.json()
+    pos_ms = int(body.get("position_ms", 0))
+    ok = await spotify_service.seek_track(pos_ms)
+    return {"ok": ok, "position_ms": pos_ms}
 
 
 @router.get("/api/v5/spotify/login")
@@ -657,6 +714,35 @@ async def get_infographic_png(_: str = Depends(verify_access)):
     if not os.path.exists(png_path):
         raise HTTPException(status_code=500, detail="Infographic generation failed")
     return FileResponse(png_path, media_type="image/png", filename="hallmark_infographic.png")
+
+
+@router.post("/api/v5/climate/calibrate")
+async def calibrate_climate(
+    t_off: Optional[float] = Query(None, description="Зміщення температури (°C)"),
+    h_off: Optional[float] = Query(None, description="Зміщення вологості (%)"),
+    p_off: Optional[float] = Query(None, description="Зміщення барометра (мм рт. ст.)"),
+    _: str = Depends(verify_access),
+):
+    """Калібрування кліматичних датчиків SmartLamp (збереження в NVS та передача на плату)."""
+    cmd = {}
+    if t_off is not None:
+        cmd["t_off"] = float(t_off)
+        db_service.set_setting("climate_t_off", str(t_off))
+    if h_off is not None:
+        cmd["h_off"] = float(h_off)
+        db_service.set_setting("climate_h_off", str(h_off))
+    if p_off is not None:
+        cmd["p_off"] = float(p_off)
+        db_service.set_setting("climate_p_off", str(p_off))
+
+    if cmd:
+        state_service.enqueue_raw(cmd)
+        try:
+            from app.core.events import realtime_hub
+            await realtime_hub.push_to_box(cmd)
+        except Exception:
+            pass
+    return {"ok": True, "calibration": cmd}
 
 
 @router.post("/api/v5/audio/volume")

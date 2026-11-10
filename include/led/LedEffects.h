@@ -7,6 +7,16 @@
 // Hardware SK6812 RGBW (GRBW) on isolated ESP32-S3 RMT0
 typedef NeoPixelBus<NeoGrbwFeature, NeoEsp32Rmt0Sk6812Method> SmartLampStrip;
 
+inline float fastPow4(float x) {
+    float x2 = x * x;
+    return x2 * x2;
+}
+
+inline float fastPow6(float x) {
+    float x2 = x * x;
+    return x2 * x2 * x2;
+}
+
 namespace LedEffects {
 
     // 1. Fast 8-bit LUT Gamma = 2.8 for R, G, B
@@ -174,7 +184,7 @@ namespace LedEffects {
         float sum_channels = 0.0f;
         float brt = constrain(brightness_factor, 0.01f, 1.0f);
 
-        for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+        for (int i = 0; i < Config::NUM_LEDS; i++) {
             scaled_r[i] = constrain(buf.r[i] * brt, 0.0f, 255.0f);
             scaled_g[i] = constrain(buf.g[i] * brt, 0.0f, 255.0f);
             scaled_b[i] = constrain(buf.b[i] * brt, 0.0f, 255.0f);
@@ -188,7 +198,7 @@ namespace LedEffects {
             pwr_scale = (max_total_ma - QUIESCENT_CURRENT_MA) / (total_current_est - QUIESCENT_CURRENT_MA);
         }
 
-        for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+        for (int i = 0; i < Config::NUM_LEDS; i++) {
             uint8_t raw_r = (uint8_t)constrain(scaled_r[i] * pwr_scale, 0.0f, 255.0f);
             uint8_t raw_g = (uint8_t)constrain(scaled_g[i] * pwr_scale, 0.0f, 255.0f);
             uint8_t raw_b = (uint8_t)constrain(scaled_b[i] * pwr_scale, 0.0f, 255.0f);
@@ -217,43 +227,43 @@ namespace LedEffects {
 
         switch (notify_type) {
             case NOTIFY_CYAN_WAVE: {
-                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+                for (int i = 0; i < Config::NUM_LEDS; i++) {
                     stageBuf.set(i, 0.0f, norm_p * 180.0f, norm_p * 255.0f, 0.0f);
                 }
                 break;
             }
             case NOTIFY_FIRE: {
-                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+                for (int i = 0; i < Config::NUM_LEDS; i++) {
                     stageBuf.set(i, norm_p * 255.0f, norm_p * 60.0f, 0.0f, 0.0f);
                 }
                 break;
             }
             case NOTIFY_LIGHTNING: {
-                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+                for (int i = 0; i < Config::NUM_LEDS; i++) {
                     stageBuf.set(i, norm_p * 200.0f, norm_p * 220.0f, norm_p * 255.0f, norm_p * 80.0f);
                 }
                 break;
             }
             case NOTIFY_CAT: {
-                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+                for (int i = 0; i < Config::NUM_LEDS; i++) {
                     stageBuf.set(i, norm_p * 255.0f, norm_p * 120.0f, norm_p * 180.0f, 0.0f);
                 }
                 break;
             }
             case NOTIFY_UFO: {
-                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+                for (int i = 0; i < Config::NUM_LEDS; i++) {
                     stageBuf.set(i, norm_p * 50.0f, norm_p * 255.0f, norm_p * 50.0f, 0.0f);
                 }
                 break;
             }
             case NOTIFY_CROWN: {
-                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+                for (int i = 0; i < Config::NUM_LEDS; i++) {
                     stageBuf.set(i, norm_p * 255.0f, norm_p * 200.0f, 0.0f, norm_p * 40.0f);
                 }
                 break;
             }
             case NOTIFY_AMBILIGHT: {
-                for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+                for (int i = 0; i < Config::NUM_LEDS; i++) {
                     stageBuf.set(i, (float)col_r, (float)col_g, (float)col_b, 0.0f);
                 }
                 break;
@@ -348,7 +358,7 @@ namespace LedEffects {
                     float v = (bak_cnt > 1) ? ((float)k / (float)(bak_cnt - 1)) : 0.5f;
                     float dist_ctr = fabsf(v - 0.5f) * 2.0f;
                     float spark_val = sinf(t * 3.8f + (float)k * 0.65f);
-                    float spark = (spark_val > 0.0f) ? powf(spark_val, 6.0f) : 0.0f;
+                    float spark = (spark_val > 0.0f) ? fastPow6(spark_val) : 0.0f;
                     float r = 160.0f + (1.0f - dist_ctr) * 80.0f + spark * 40.0f;
                     float g = 20.0f + (1.0f - dist_ctr) * 45.0f + spark * 80.0f;
                     float w = spark * 75.0f;
@@ -473,7 +483,7 @@ namespace LedEffects {
                     float eff_bpm = (raw_bpm > 124) ? ((float)raw_bpm * 0.5f) : (float)raw_bpm;
                     float beat_period = 60000.0f / eff_bpm;
                     float beat_phase = fmodf((float)song_ms, beat_period) / beat_period;
-                    float beat_swell = powf(sinf(beat_phase * 3.14159265f), 4.0f);
+                    float beat_swell = fastPow4(sinf(beat_phase * 3.14159265f));
 
                     // 1. ЗОНА 1: Дно (Bottom Underglow) — стікання кольору з екрана на стіл + sin^4 біт-пульсація
                     for (int i = 0; i < bot_cnt; i++) {
@@ -566,11 +576,12 @@ namespace LedEffects {
             }
         }
 
-        // 2. Touch Ripple хвиля від дотику до кнопок
+        // 2. Touch Ripple хвиля від дотику до кнопок (з м'яким 30-мс плавним входом для захисту шини 5V під час аудіо-кліка)
         if (touch_ripple_angle != -999 && touch_ripple_elapsed_ms < 1100) {
             float btn_rad = ((float)touch_ripple_angle / 180.0f) * 3.14159265f;
             float wave_dist_leds = (float)touch_ripple_elapsed_ms * 0.024f;
-            float fade = 1.0f - ((float)touch_ripple_elapsed_ms / 1100.0f);
+            float attack = (touch_ripple_elapsed_ms < 30) ? ((float)touch_ripple_elapsed_ms / 30.0f) : 1.0f;
+            float fade = (1.0f - ((float)touch_ripple_elapsed_ms / 1100.0f)) * attack;
 
             for (int i = 0; i < bot_cnt; i++) {
                 int16_t rel = layout.reversed ? (layout.bottom_offset - i) : (i - layout.bottom_offset);

@@ -403,6 +403,9 @@ function buildLedRing() {
 // 🌈 Live 20 FPS Client-Side Animation Loop
 let ringAnimStep = 0;
 function animateLedRingFrame() {
+  if (document.hidden) return;
+  const activeTab = document.querySelector('.tab-content.active');
+  if (activeTab && activeTab.id !== 'tab-light') return;
   if (!ledRingNodes.length) return;
   const now = Date.now();
   const isCalibrating = (now < calUntilTime && calSelectedPixel >= 0);
@@ -896,20 +899,24 @@ function renderGallery(list){
     card.className = 'media-item';
     const rgbStr = `rgb(${m.ambi_rgb[0]},${m.ambi_rgb[1]},${m.ambi_rgb[2]})`;
     card.innerHTML = `
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <b style="font-size:12px;color:var(--text-primary)">${m.name}</b>
-          <span class="ambi-dot" style="background:${rgbStr}" title="Колір Ambi: ${rgbStr}"></span>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div style="width:52px;height:52px;border-radius:50%;overflow:hidden;border:2px solid ${rgbStr};flex-shrink:0;background:var(--bg-surface);display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(${m.ambi_rgb[0]},${m.ambi_rgb[1]},${m.ambi_rgb[2]},0.35)">
+          <img src="/api/v5/media/thumb/${encodeURIComponent(m.name)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">
         </div>
-        <div class="mono" style="font-size:10px;color:var(--text-muted)">
-          Кадрів: ${m.frames} | ${m.fps} FPS<br>
-          Слот: ${m.slot ? 'Кнопка ' + m.slot : 'Звичайний'}
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <b style="font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.name}</b>
+            <span class="ambi-dot" style="background:${rgbStr}" title="Колір Ambi: ${rgbStr}"></span>
+          </div>
+          <div class="mono" style="font-size:10px;color:var(--text-muted)">
+            ${m.frames} кадр. · ${m.fps} FPS · ${m.media_type === 'video_note' ? '🌟 Наліпка' : '🖼 GIF'}
+          </div>
         </div>
       </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
-        <button class="btn btn-cool" style="padding:4px 8px;font-size:10px;flex:1" onclick="triggerMedia('${m.name}')">Запустити</button>
-        <button class="btn" style="padding:4px 8px;font-size:10px" onclick="setAsSaver('${m.name}')">На заставку</button>
-        <button class="btn btn-danger" style="padding:4px 6px;font-size:10px" onclick="deleteMedia('${m.name}')">✕</button>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn btn-cool" style="padding:5px 8px;font-size:10px;flex:1" onclick="triggerMedia('${m.name}')">▶ Вивести</button>
+        <button class="btn" style="padding:5px 8px;font-size:10px" onclick="setAsSaver('${m.name}')">📌 Заставка</button>
+        <button class="btn btn-danger" style="padding:5px 6px;font-size:10px" onclick="deleteMedia('${m.name}')">✕</button>
       </div>
     `;
     g.appendChild(card);
@@ -1059,43 +1066,7 @@ function tickSpotifyProgress() {
     spBarEl.style.width = pct.toFixed(1) + '%';
   }
 
-  // 🎵 Real-time Synchronized Karaoke Lyrics
-  const currentSec = currentMs / 1000.0;
-  const lyrics = spotifyPlayback.lyrics;
-  const lyricBox = getEl('spLyricBox');
 
-  if (lyrics && lyrics.length > 0 && spotifyPlayback.playing) {
-    let activeIdx = -1;
-    for (let i = 0; i < lyrics.length; i++) {
-      if (lyrics[i].sec <= currentSec) {
-        activeIdx = i;
-      } else {
-        break;
-      }
-    }
-    if (activeIdx >= 0) {
-      if (lyricBox) lyricBox.style.display = 'block';
-      const prevText = activeIdx > 0 ? lyrics[activeIdx - 1].text : '';
-      const currText = lyrics[activeIdx].text;
-      const nextText = activeIdx < lyrics.length - 1 ? lyrics[activeIdx + 1].text : '';
-
-      setCachedText('spLyricPrev', prevText);
-      setCachedText('spLyric', `🎤 ${currText}`);
-      setCachedText('spLyricNext', nextText);
-    } else {
-      if (lyricBox) lyricBox.style.display = 'block';
-      setCachedText('spLyricPrev', '');
-      setCachedText('spLyric', '🎵 ...');
-      setCachedText('spLyricNext', lyrics[0].text);
-    }
-  } else if (spotifyPlayback.single_lyric && spotifyPlayback.playing) {
-    if (lyricBox) lyricBox.style.display = 'block';
-    setCachedText('spLyricPrev', '');
-    setCachedText('spLyric', `💬 "${spotifyPlayback.single_lyric}"`);
-    setCachedText('spLyricNext', '');
-  } else {
-    if (lyricBox) lyricBox.style.display = 'none';
-  }
 
   if (spotifyPlayback.duration_ms > 0 && currentMs >= spotifyPlayback.duration_ms && spotifyPlayback.playing) {
     if (!window._songEndTimer) {
@@ -1699,7 +1670,7 @@ function selectMoodTheme(mood, autoSyncLamp = true) {
   if (autoSyncLamp) {
     const lampMode = MOOD_TO_MODE[mood];
     if (lampMode !== undefined) {
-      setMode(lampMode);
+      sendCmd({ set_mode: lampMode });
     }
     fetch('/api/v5/setup/mood', {
       method: 'POST',
@@ -1864,8 +1835,20 @@ function applyState(d) {
     onProviderChange();
   }
 
-  if(d.custom_media) renderGallery(d.custom_media);
-  if(d.voice_presets) renderVoicePresets(d.voice_presets);
+  if (d.custom_media) {
+    const mediaJson = JSON.stringify(d.custom_media);
+    if (window._lastMediaJson !== mediaJson) {
+      window._lastMediaJson = mediaJson;
+      renderGallery(d.custom_media);
+    }
+  }
+  if (d.voice_presets) {
+    const voiceJson = JSON.stringify(d.voice_presets);
+    if (window._lastVoiceJson !== voiceJson) {
+      window._lastVoiceJson = voiceJson;
+      renderVoicePresets(d.voice_presets);
+    }
+  }
 
   if(d.quiet_hours){
     updateQuietHoursUI(d.quiet_hours.enabled, d.quiet_hours.start, d.quiet_hours.end);
@@ -2391,3 +2374,37 @@ setTimeout(() => {
   bindSliderLockGuards();
   startLedRingLiveAnimation();
 }, 200);
+
+function seekSpotify(e) {
+  if (!spotifyPlayback || !spotifyPlayback.duration_ms) return;
+  const container = document.getElementById('spProgressContainer');
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  const clickX = e.clientX - rect.left;
+  const frac = Math.max(0, Math.min(1, clickX / rect.width));
+  const targetMs = Math.floor(frac * spotifyPlayback.duration_ms);
+
+  fetch('/api/v5/spotify/seek', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ position_ms: targetMs })
+  }).catch(() => {});
+
+  spotifyPlayback.progress_ms = targetMs;
+  spotifyLastTick = Date.now();
+  tickSpotifyProgress();
+}
+
+function previewMediaFile(event) {
+  const file = event.target.files && event.target.files[0];
+  const box = document.getElementById('mediaPreviewBox');
+  const img = document.getElementById('mediaPreviewImg');
+  if (!file || !box || !img) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    img.src = e.target.result;
+    box.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}

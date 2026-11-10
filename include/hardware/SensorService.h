@@ -92,6 +92,11 @@ struct Bmp280Wire {
 
         return (float)p / 256.0f;
     }
+
+    float readTemperature() {
+        if (!ready) return NAN;
+        return (float)((t_fine * 5 + 128) >> 8) / 100.0f;
+    }
 };
 
 class SensorService : public IService {
@@ -147,6 +152,13 @@ private:
             state.sht_connected = false;
         }
 
+        if (state.sht_connected) {
+            Wire.beginTransmission(sht_addr);
+            Wire.write(0x30);
+            Wire.write(0x66); // Heater Disable
+            Wire.endTransmission();
+        }
+
         sht_waiting_data = false;
         sht_fail_count = 0;
         bmp_fail_count = 0;
@@ -155,7 +167,6 @@ private:
     uint32_t last_ldr_ms      = 0;
     uint32_t last_hist_ms     = 0;
     bool     first_hist_saved = false;
-    float    led_heat_accumulator = 0.0f;
 
     bool probeSht31(uint8_t addr) {
         Wire.beginTransmission(addr);
@@ -209,6 +220,11 @@ public:
         // Швидке початкове зчитування температури та вологості SHT30/31 при старті
         if (state.sht_connected) {
             Wire.beginTransmission(sht_addr);
+            Wire.write(0x30);
+            Wire.write(0x66); // Heater Disable
+            Wire.endTransmission();
+            delay(5);
+            Wire.beginTransmission(sht_addr);
             Wire.write(0x24);
             Wire.write(0x00);
             if (Wire.endTransmission() == 0) {
@@ -221,8 +237,8 @@ public:
                         uint16_t raw_h = ((uint16_t)buf[3] << 8) | buf[4];
                         float t_val = -45.0f + (175.0f * (float)raw_t / 65535.0f);
                         float h_val = 100.0f * ((float)raw_h / 65535.0f);
-                        state.temperature = t_val - Config::TEMP_OFFSET_C;
-                        state.humidity = constrain(h_val, 0.0f, 100.0f);
+                        state.temperature = t_val + state.temp_offset;
+                        state.humidity = constrain(h_val + state.humidity_offset, 0.0f, 100.0f);
                         state.sensors_valid = true;
                     }
                 }
@@ -247,19 +263,33 @@ public:
 
                 if (crc8(&buf[0], 2) == buf[2] && crc8(&buf[3], 2) == buf[5]) {
                     sht_fail_count = 0;
+                    state.sht_connected = true;
+                    state.sensors_valid = true;
                     uint16_t rawT = ((uint16_t)buf[0] << 8) | buf[1];
                     uint16_t rawH = ((uint16_t)buf[3] << 8) | buf[4];
 
-                    float dynamic_offset = Config::TEMP_OFFSET_C - (led_heat_accumulator * 1.5f);
-                    float t = (-45.0f + 175.0f * ((float)rawT / 65535.0f)) + dynamic_offset;
-                    float h = 100.0f * ((float)rawH / 65535.0f);
+                    float raw_t = -45.0f + 175.0f * ((float)rawT / 65535.0f);
+                    float raw_h = 100.0f * ((float)rawH / 65535.0f);
 
-                    if (t > -40.0f && t < 85.0f && fabs(t - state.temperature) >= 0.05f) {
-                        state.temperature = t;
+                    // Прозора калібрувальна модель: фізичний Sensirion SHT3x + стабільне зміщення NVS
+                    // Жодних прихованих нелінійних віднімань чи стрибків від світла/CPU!
+                    float t = raw_t + state.temp_offset;
+                    float h = constrain(raw_h + state.humidity_offset, 0.0f, 100.0f);
+
+                    if (t > -40.0f && t < 85.0f) {
+                        if (!state.sensors_valid || fabs(t - state.temperature) > 5.0f) {
+                            state.temperature = t;
+                        } else if (fabs(t - state.temperature) >= 0.05f) {
+                            state.temperature = (state.temperature * 0.7f) + (t * 0.3f);
+                        }
                         state.ui_force_dirty = true;
                     }
-                    if (h >= 0.0f && h <= 100.0f && fabs(h - state.humidity) >= 0.5f) {
-                        state.humidity = h;
+                    if (h >= 0.0f && h <= 100.0f) {
+                        if (!state.sensors_valid || fabs(h - state.humidity) > 10.0f) {
+                            state.humidity = h;
+                        } else if (fabs(h - state.humidity) >= 0.5f) {
+                            state.humidity = (state.humidity * 0.7f) + (h * 0.3f);
+                        }
                         state.ui_force_dirty = true;
                     }
                 } else {
@@ -274,11 +304,7 @@ public:
         if (now - last_climate_ms >= climate_interval) {
             last_climate_ms = now;
 
-            // Динамічна компенсація теплового розігріву корпусу від світлодіодів
-            float target_heat = (state.light_mode != MODE_LIGHT_OFF)
-                                ? ((float)state.current_led_brt / (float)Config::MAX_SAFE_BRT)
-                                : 0.0f;
-            led_heat_accumulator = (led_heat_accumulator * 0.985f) + (target_heat * 0.015f);
+
 
             if (state.sht_connected && !sht_waiting_data) {
                 Wire.beginTransmission(sht_addr);
@@ -292,9 +318,10 @@ public:
 
             if (state.bmp_connected) {
                 float p = bmp280.readPressure();
+                float bmp_t = bmp280.readTemperature();
                 if (!isnan(p) && p > 80000.0f && p < 115000.0f) {
                     bmp_fail_count = 0;
-                    float mm = p * 0.00750062f;
+                    float mm = (p * 0.00750062f) + state.pressure_offset;
                     if (fabs(mm - state.pressure) >= 0.2f) {
                         state.pressure = mm;
                         state.ui_force_dirty = true;
@@ -303,6 +330,16 @@ public:
                         first_hist_saved = true;
                         last_hist_ms = now;
                         state.addPressureSample(mm);
+                    }
+
+                    // Резервна температура з BMP280, якщо SHT31 відключений або збійний
+                    if (!state.sht_connected && !isnan(bmp_t) && bmp_t > -40.0f && bmp_t < 85.0f) {
+                        float t_bmp = bmp_t + state.temp_offset;
+                        if (fabs(t_bmp - state.temperature) >= 0.05f) {
+                            state.temperature = t_bmp;
+                            state.sensors_valid = true;
+                            state.ui_force_dirty = true;
+                        }
                     }
                 } else {
                     if (++bmp_fail_count >= 3) recoverI2cBus();

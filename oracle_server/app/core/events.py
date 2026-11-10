@@ -100,7 +100,6 @@ class RealtimeHub:
 
         last_track_id = ""
         last_playing = None
-        last_lyric = ""
         last_push_time = 0.0
 
         try:
@@ -111,19 +110,16 @@ class RealtimeHub:
                         now = time.time()
                         cur_track = cur_st.get("track_id", "")
                         cur_playing = cur_st.get("playing", False)
-                        cur_lyric = cur_st.get("lyric", "")
 
                         needs_push = (
                             cur_track != last_track_id
                             or cur_playing != last_playing
-                            or cur_lyric != last_lyric
                             or (now - last_push_time > 15.0)
                         )
 
                         if needs_push:
                             last_track_id = cur_track
                             last_playing = cur_playing
-                            last_lyric = cur_lyric
                             last_push_time = now
                             if self._dashboard_clients:
                                 await self.broadcast_to_dashboards({"type": "spotify", "spotify": cur_st})
@@ -132,7 +128,7 @@ class RealtimeHub:
                     except Exception as poll_err:
                         logger.debug("Spotify poll error in realtime worker: %s", poll_err)
                 # Швидкий адаптивний інтервал: 0.8с під час відтворення, 2.5с на паузі
-                poll_delay = 0.8 if last_playing else 2.5
+                poll_delay = 3.5 if last_playing else 7.0
                 await asyncio.sleep(poll_delay)
         except asyncio.CancelledError:
             pass
@@ -165,7 +161,6 @@ class RealtimeHub:
         try:
             loop = asyncio.get_running_loop()
             box_sp = dict(spotify_state)
-            box_sp.pop("lyrics", None)
             loop.create_task(self.push_to_box({
                 "bot_managed": True,
                 "has_cmd": False,

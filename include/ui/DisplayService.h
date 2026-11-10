@@ -15,6 +15,8 @@ private:
     LGFX_Sprite qr_cache{&canvas};
     LGFX_Sprite vinylSprite{&canvas};
     LGFX_Sprite bgSprite{&canvas};
+    LGFX_Sprite slideSprite{&lcd};
+    bool        slide_snapshot_taken = false;
 
     uint32_t last_frame_ms      = 0;
     uint32_t last_anim_tick_ms  = 0;
@@ -41,8 +43,28 @@ public:
 
     const char* getName() const override { return "Display"; }
 
+    void resetAnimationFrames() {
+        cur_anim_frame = 0;
+        cur_saver_frame = 0;
+        last_anim_tick_ms = millis();
+        last_saver_tick_ms = millis();
+    }
+
     LGFX_Sprite& getVinylSprite() {
         return vinylSprite;
+    }
+
+    LGFX_Sprite& getBgSprite() {
+        return bgSprite;
+    }
+
+    // Розмита текстура обкладинки більше не пишеться у bgSprite: сервер шле big-endian RGB565,
+    // а ESP читає little-endian, тож ця інтерполяція давала кольоровий шум замість фону.
+    // Фон Spotify-деку повністю генерує ScreenRenderer::drawSmartHub.
+    void updateBlurredBackground(const uint16_t* blur32) {
+        if (!blur32) return;
+        state.spotify_blur_ready = true;
+        state.spotify_bg_dirty = true;
     }
 
     void loadScreensaverFromFs(StorageService& storage) {
@@ -104,23 +126,32 @@ public:
         bgSprite.setColorDepth(16);
         bgSprite.createSprite(240, 240);
         bgSprite.fillScreen(0x0000);
+
+        slideSprite.setPsram(true);
+        slideSprite.setColorDepth(16);
+        slideSprite.createSprite(240, 240);
+        slideSprite.fillScreen(HallmarkTheme::BG_PRIMARY);
+
         vinylSprite.fillScreen(0x0000);
+        // Непрозора основа вінілового диска (R = 67 px), темно-графітовий колір без 0x0000
+        vinylSprite.fillCircle(68, 68, 67, canvas.color565(18, 20, 26));
         // Початкові канавки вінілу
         for (int r = 10; r < 66; r += 3) {
             vinylSprite.drawCircle(68, 68, r, HallmarkTheme::BORDER_HAIRLINE);
         }
-        vinylSprite.fillCircle(68, 68, 6, 0x0000);
-        vinylSprite.drawCircle(68, 68, 6, HallmarkTheme::BORDER_HAIRLINE);
+        vinylSprite.fillCircle(68, 68, 14, canvas.color565(32, 36, 46));
+        vinylSprite.fillCircle(68, 68, 4, 0x0821);
+        vinylSprite.drawCircle(68, 68, 4, HallmarkTheme::BORDER_HAIRLINE);
 
         // Вітальний екран
         if (state.onboarded && !state.ap_mode_active) {
             state.sys_ui_state = SystemUiState::SYS_NORMAL;
             state.ui_force_dirty = true;
         } else {
+            state.boot_splash_start_ms = millis();
             ScreenRenderer::drawBootSplash(canvas, 0, Config::BOOT_SPLASH_MS);
             pushCanvas();
         }
-        pushCanvas();
     }
 
     void pushCanvas() {
@@ -153,28 +184,146 @@ public:
 
     bool isHighFpsNeeded() const {
         uint32_t now = millis();
-        return state.sys_ui_state != SystemUiState::SYS_NORMAL ||
+        return state.slide_active ||
+               state.sys_ui_state != SystemUiState::SYS_NORMAL ||
                state.ota_in_progress ||
                state.isCustomFrameActive(now) ||
                state.isReactionActive(now) ||
                state.isHudActive(now) ||
                (state.screen_mode == SCREEN_POMODORO && state.pomo_active && !state.pomo_paused) ||
-               (state.screen_mode == SCREEN_LIVING_GIF && state.saver_loaded) ||
+               (state.screen_mode == SCREEN_LIVING_GIF && (state.saver_loaded || state.anim_frames_count > 0)) ||
                (state.screen_mode == SCREEN_SMART_HUB && (state.spotify.playing || state.tg_unread)) ||
                (now - state.last_screen_switch_ms < 350) ||
                (now - state.last_user_activity_ms < 3000) ||
                state.btn_l_pressed || state.btn_t_pressed || state.btn_r_pressed;
     }
 
-    void updateCpuPerformance(bool high_perf) {
-        static bool is_high = true;
-        if (high_perf && !is_high) {
-            setCpuFrequencyMhz(240);
-            is_high = true;
-        } else if (!high_perf && is_high) {
-            setCpuFrequencyMhz(80);
-            is_high = false;
+    void renderCurrentScreen(uint32_t now) {
+        canvas.fillScreen(HallmarkTheme::BG_PRIMARY);
+        switch (state.screen_mode) {
+            case SCREEN_CLIMATE:
+                ScreenRenderer::drawClimate(canvas, state);
+                break;
+
+            case SCREEN_POMODORO:
+                ScreenRenderer::drawPomodoro(canvas, state, now);
+                break;
+
+            case SCREEN_LIVING_GIF:
+                if (state.saver_loaded && state.saver_num_frames > 0 && state.psram_saver_buf && state.shared_canvas_buf) {
+                    uint32_t saver_delay = 1000 / (state.saver_fps > 0 ? state.saver_fps : 12);
+                    if (now - last_saver_tick_ms >= saver_delay) {
+                        last_saver_tick_ms = now;
+                        cur_saver_frame = (cur_saver_frame + 1) % state.saver_num_frames;
+                    }
+                    if (cur_saver_frame >= state.saver_num_frames) cur_saver_frame = 0;
+                    const uint8_t* frame_ptr = state.psram_saver_buf + sizeof(MbxHeader) + ((size_t)cur_saver_frame * Config::FRAME_BYTES_RGB565);
+                    memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
+                } else if (state.psram_anim_buf && state.anim_frames_count > 0 && state.shared_canvas_buf) {
+                    uint32_t anim_delay = 1000 / (state.anim_fps > 0 ? state.anim_fps : 12);
+                    if (now - last_anim_tick_ms >= anim_delay) {
+                        last_anim_tick_ms = now;
+                        cur_anim_frame = (cur_anim_frame + 1) % state.anim_frames_count;
+                    }
+                    if (cur_anim_frame >= state.anim_frames_count) cur_anim_frame = 0;
+                    const uint8_t* frame_ptr = state.psram_anim_buf + sizeof(MbxHeader) + ((size_t)cur_anim_frame * Config::FRAME_BYTES_RGB565);
+                    memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
+                }
+                ScreenRenderer::drawLivingGif(canvas, state, now);
+                break;
+
+            case SCREEN_SMART_HUB:
+                ScreenRenderer::drawSmartHub(canvas, vinylSprite, bgSprite, state, vinyl_angle, now);
+                break;
+
+            default:
+                ScreenRenderer::drawClimate(canvas, state);
+                break;
         }
+    }
+
+    void renderNormalScreens(uint32_t now) {
+        // Динамічний розрахунок FPS для 4 основних вікон
+        uint32_t target_fps = 10;
+        if (state.slide_active) {
+            target_fps = 60; // 60 FPS для ідеально плавного переходу Slide
+        } else if (state.isHudActive(now) || (now - state.last_screen_switch_ms < 250)) {
+            target_fps = 30; // 30 FPS для плавного відображення преміального HUD-тосту
+        } else if (state.screen_mode == SCREEN_POMODORO) {
+            target_fps = (state.pomo_active && !state.pomo_paused) ? 10 : 4;
+        } else if (state.screen_mode == SCREEN_LIVING_GIF) {
+            uint8_t fps = 25;
+            if (state.saver_loaded && state.saver_fps > 0) fps = state.saver_fps;
+            else if (state.anim_frames_count > 0 && state.anim_fps > 0) fps = state.anim_fps;
+            target_fps = fps;
+        } else if (state.screen_mode == SCREEN_SMART_HUB) {
+            if (state.tg_unread) target_fps = 15;
+            else if (state.spotify.playing || state.spotify.isSwitchingOptimistic(now) || state.tonearm_moving || (now - state.last_user_activity_ms < 1500)) target_fps = 30;
+            else target_fps = 6;
+        }
+
+        uint32_t frame_interval = 1000 / target_fps;
+        if ((now - last_frame_ms < frame_interval) && !state.ui_force_dirty && !state.slide_active) return;
+        last_frame_ms = now;
+        state.ui_force_dirty = false;
+
+        // Плавний перехід між екранами (Slide Transition 60 FPS, 240 мс)
+        if (state.slide_active) {
+            uint32_t elapsed = now - state.slide_start_ms;
+            if (elapsed >= AppState::SLIDE_DURATION_MS) {
+                state.slide_active = false;
+                slide_snapshot_taken = false;
+            } else {
+                if (!slide_snapshot_taken) {
+                    memcpy(slideSprite.getBuffer(), canvas.getBuffer(), Config::FRAME_BYTES_RGB565);
+                    slide_snapshot_taken = true;
+                }
+
+                renderCurrentScreen(now);
+                ScreenRenderer::drawPageIndicator(canvas, state);
+
+                float p = (float)elapsed / (float)AppState::SLIDE_DURATION_MS;
+                float ease = 1.0f - powf(1.0f - p, 3.0f); // Cubic ease out
+                int16_t offset = (int16_t)(ease * 240.0f);
+                if (offset < 0)   offset = 0;
+                if (offset > 240) offset = 240;
+
+                // Зшиваємо кадри зсуву прямо в canvas, щоб передати через pushCanvas()
+                // Це гарантує 100% збереження кута повороту екрана (state.screen_angle, наприклад 294°)
+                // без жодного смикання чи скидання на 0°!
+                uint16_t* old_buf = (uint16_t*)slideSprite.getBuffer();
+                uint16_t* new_buf = (uint16_t*)canvas.getBuffer();
+                if (old_buf && new_buf && offset > 0 && offset < 240) {
+                    if (state.slide_dir > 0) {
+                        // Зсув вліво (новий екран насувається справа)
+                        for (int y = 0; y < 240; ++y) {
+                            uint16_t* n_row = new_buf + y * 240;
+                            const uint16_t* o_row = old_buf + y * 240;
+                            memmove(n_row + (240 - offset), n_row, offset * sizeof(uint16_t));
+                            memcpy(n_row, o_row + offset, (240 - offset) * sizeof(uint16_t));
+                        }
+                    } else {
+                        // Зсув вправо (новий екран насувається зліва)
+                        for (int y = 0; y < 240; ++y) {
+                            uint16_t* n_row = new_buf + y * 240;
+                            const uint16_t* o_row = old_buf + y * 240;
+                            memmove(n_row, n_row + (240 - offset), offset * sizeof(uint16_t));
+                            memcpy(n_row + offset, o_row, (240 - offset) * sizeof(uint16_t));
+                        }
+                    }
+                } else if (old_buf && new_buf && offset == 0) {
+                    memcpy(new_buf, old_buf, Config::FRAME_BYTES_RGB565);
+                }
+
+                pushCanvas();
+                return;
+            }
+        }
+
+        renderCurrentScreen(now);
+        ScreenRenderer::drawPageIndicator(canvas, state);
+        ScreenRenderer::drawHudToast(canvas, state, now);
+        pushCanvas();
     }
 
     void update() override {
@@ -182,16 +331,23 @@ public:
 
         state.updatePomodoroLifecycle(now);
 
-        bool high_perf = isHighFpsNeeded() || state.audio_playing || state.ota_in_progress;
-        // CPU частота керується виключно в main.cpp з RMT-захистом
-
-        if (state.isHudActive(now) && state.current_lcd_brt == 0) {
-            state.current_lcd_brt = 120;
+        uint8_t effective_lcd_brt = state.current_lcd_brt;
+        // Нічний комфорт для очей (Night Eye Comfort без фоторезистора):
+        // Якщо настала ніч (23:00..07:00), увімкнено тихі години або DND,
+        // і користувач не взаємодіє з лампою понад 25 с — делікатно приглушуємо дисплей до 45 одиниць (~18%)
+        bool is_night = state.isNightHours() || state.quiet_hours_active || state.dnd_mode;
+        bool user_idle = (now - state.last_user_activity_ms > 25000UL) && !state.isHudActive(now);
+        if (is_night && user_idle && effective_lcd_brt > 45) {
+            effective_lcd_brt = 45;
         }
 
-        if (applied_lcd_brt != state.current_lcd_brt) {
+        if (state.isHudActive(now) && effective_lcd_brt == 0) {
+            effective_lcd_brt = 120;
+        }
+
+        if (applied_lcd_brt != effective_lcd_brt) {
             bool was_off = (applied_lcd_brt == 0);
-            applied_lcd_brt = state.current_lcd_brt;
+            applied_lcd_brt = effective_lcd_brt;
             if (applied_lcd_brt == 0) {
                 lcd.setBrightness(0);
                 lcd.sleep();
@@ -201,15 +357,17 @@ public:
             }
         }
 
+        // ⚡️ Енергозбереження: якщо дисплей повністю вимкнений / спить —
+        // не навантажуємо CPU обчисленням графіки та шину SPI холостим DMA
+        if (applied_lcd_brt == 0) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            return;
+        }
+
         // ====================================================================
         // РІВЕНЬ А: СИСТЕМНІ СТАНИ ЗАПУСКУ ТА ДІАГНОСТИКИ
         // ====================================================================
         if (state.sys_ui_state == SystemUiState::SYS_BOOT_SPLASH) {
-            if (state.onboarded && !state.ap_mode_active) {
-                state.sys_ui_state = SystemUiState::SYS_NORMAL;
-                state.ui_force_dirty = true;
-            }
-        } else {
             uint32_t elapsed = now - state.boot_splash_start_ms;
             if (elapsed < Config::BOOT_SPLASH_MS) {
                 if (now - last_frame_ms >= 16) {
@@ -318,16 +476,22 @@ public:
             return;
         }
 
-        // 3. Пріоритет: Тимчасовий стрім мультикадрового .mbx із PSRAM або активна заставка
-        if (state.isCustomFrameActive(now)) {
+        // 3. Пріоритет: Тимчасове спливаюче медіа з Telegram
+        // (ТІЛЬКИ коли діє активний таймер показу media_expire_ms > 0 і ми НЕ на екрані заставки SCREEN_LIVING_GIF)
+        if (state.isCustomFrameActive(now) && state.media_expire_ms > 0 && state.screen_mode != SCREEN_LIVING_GIF) {
             uint8_t fps = state.anim_fps;
             uint32_t frame_delay = 1000 / (fps > 0 ? fps : 1);
-            if (state.ui_force_dirty || (state.anim_frames_count > 1 && (now - last_anim_tick_ms >= frame_delay))) {
-                state.ui_force_dirty = false;
+            bool advance_frame = (state.anim_frames_count > 1) && (now - last_anim_tick_ms >= frame_delay);
+            if (advance_frame) {
                 last_anim_tick_ms = now;
+                cur_anim_frame = (cur_anim_frame + 1) % state.anim_frames_count;
+            }
+
+            if (state.ui_force_dirty || advance_frame) {
+                state.ui_force_dirty = false;
 
                 if (state.psram_anim_buf && state.shared_canvas_buf) {
-                    cur_anim_frame = (cur_anim_frame + 1) % state.anim_frames_count;
+                    if (cur_anim_frame >= state.anim_frames_count) cur_anim_frame = 0;
                     const uint8_t* frame_ptr = state.psram_anim_buf + sizeof(MbxHeader) + ((size_t)cur_anim_frame * Config::FRAME_BYTES_RGB565);
                     memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
                 }
@@ -352,73 +516,11 @@ public:
                 pushCanvas();
             }
             return;
-        } else if (state.anim_frames_count > 0 && !state.canvas_loading) {
-            // Час дії таймера сплив або надійшла команда скасування — скидаємо активне медіа
+        } else if (state.anim_frames_count > 0 && !state.canvas_loading && state.media_expire_ms > 0 && now >= state.media_expire_ms) {
+            // Час дії таймера сплив — скидаємо активне тимчасове медіа
             state.stopActiveMedia();
         }
 
-        // Динамічний розрахунок FPS для 5 основних вікон
-        uint32_t target_fps = 10;
-        if (state.isHudActive(now) || (now - state.last_screen_switch_ms < 250)) {
-            target_fps = 30; // 30 FPS для плавного відображення преміального HUD-тосту
-        } else if (state.screen_mode == SCREEN_POMODORO) {
-            target_fps = (state.pomo_active && !state.pomo_paused) ? 10 : 4;
-        } else if (state.screen_mode == SCREEN_LIVING_GIF) {
-            target_fps = (state.saver_loaded && state.saver_fps > 0) ? state.saver_fps : 25;
-        } else if (state.screen_mode == SCREEN_SMART_HUB) {
-            if (state.tg_unread) target_fps = 15;
-            else if (state.spotify.playing) target_fps = 30; // 30 FPS для плавного обертання вінілу
-            else target_fps = 4;
-        }
-
-        uint32_t frame_interval = 1000 / target_fps;
-        if ((now - last_frame_ms < frame_interval) && !state.ui_force_dirty) return;
-        last_frame_ms = now;
-        state.ui_force_dirty = false;
-
-        canvas.fillScreen(HallmarkTheme::BG_PRIMARY);
-
-        switch (state.screen_mode) {
-            case SCREEN_CLIMATE:
-                ScreenRenderer::drawClimate(canvas, state);
-                break;
-
-            case SCREEN_POMODORO:
-                ScreenRenderer::drawPomodoro(canvas, state, now);
-                break;
-
-            case SCREEN_LIVING_GIF:
-                if (state.saver_loaded && state.saver_num_frames > 0 && state.psram_saver_buf && state.shared_canvas_buf) {
-                    uint32_t saver_delay = 1000 / (state.saver_fps > 0 ? state.saver_fps : 12);
-                    if (now - last_saver_tick_ms >= saver_delay) {
-                        last_saver_tick_ms = now;
-                        cur_saver_frame = (cur_saver_frame + 1) % state.saver_num_frames;
-                    }
-                    const uint8_t* frame_ptr = state.psram_saver_buf + sizeof(MbxHeader) + ((size_t)cur_saver_frame * Config::FRAME_BYTES_RGB565);
-                    memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
-                } else if (state.psram_anim_buf && state.anim_frames_count > 0 && state.shared_canvas_buf) {
-                    uint32_t anim_delay = 1000 / (state.anim_fps > 0 ? state.anim_fps : 12);
-                    if (now - last_saver_tick_ms >= anim_delay) {
-                        last_saver_tick_ms = now;
-                        cur_saver_frame = (cur_saver_frame + 1) % state.anim_frames_count;
-                    }
-                    const uint8_t* frame_ptr = state.psram_anim_buf + sizeof(MbxHeader) + ((size_t)cur_saver_frame * Config::FRAME_BYTES_RGB565);
-                    memcpy(state.shared_canvas_buf, frame_ptr, Config::FRAME_BYTES_RGB565);
-                }
-                ScreenRenderer::drawLivingGif(canvas, state, now);
-                break;
-
-            case SCREEN_SMART_HUB:
-                ScreenRenderer::drawSmartHub(canvas, vinylSprite, bgSprite, state, vinyl_angle, now);
-                break;
-
-            default:
-                ScreenRenderer::drawClimate(canvas, state);
-                break;
-        }
-
-        ScreenRenderer::drawPageIndicator(canvas, state);
-        ScreenRenderer::drawHudToast(canvas, state, now);
-        pushCanvas();
+        renderNormalScreens(now);
     }
 };

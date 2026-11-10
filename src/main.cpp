@@ -169,8 +169,6 @@ void processEvents() {
     AppEvent ev;
 
     while (xQueueReceive(appState.eventQueue, &ev, 0) == pdTRUE) {
-        // Тактильний звуковий клік на будь-яке натискання сенсора (якщо увімкнено та не MUTE)
-        audioService.playTouchClick();
 
         // 0. Якщо активне вікно святкування Дня Народження — будь-який клік закриває оверлей
         if (appState.sys_ui_state == SystemUiState::SYS_BIRTHDAY_CELEBRATE) {
@@ -200,17 +198,21 @@ void processEvents() {
 
         switch (ev.type) {
             case EventType::BTN_LEFT_SHORT:
+                if (appState.anim_frames_count > 0 && appState.media_expire_ms > 0) {
+                    appState.stopActiveMedia();
+                }
                 if (appState.sys_ui_state == SystemUiState::SYS_NETWORK_DIAG) {
                     appState.sys_ui_state = SystemUiState::SYS_NORMAL;
                 } else if (appState.screen_mode == SCREEN_POMODORO) {
                     if (appState.pomo_active) {
                         appState.pomoAdjustMinutes(-1);
                     } else {
-                        appState.screen_mode = SCREEN_CLIMATE;
+                        appState.triggerScreenSlide(SCREEN_CLIMATE, -1);
                         appState.markSettingsDirty();
                     }
                 } else {
-                    appState.screen_mode = (appState.screen_mode + 1) % MAIN_SCREEN_COUNT;
+                    uint8_t next_mode = (appState.screen_mode + 1) % MAIN_SCREEN_COUNT;
+                    appState.triggerScreenSlide(next_mode, 1);
                     appState.last_screen_switch_ms = millis();
                     appState.markSettingsDirty();
                 }
@@ -229,11 +231,16 @@ void processEvents() {
                     }
                 } else if (appState.screen_mode == SCREEN_POMODORO) {
                     // З екрана Pomodoro довгий клік повертає на головний годинник
-                    appState.screen_mode = SCREEN_CLIMATE;
+                    appState.triggerScreenSlide(SCREEN_CLIMATE, -1);
+                    appState.markSettingsDirty();
+                } else if (appState.screen_mode == SCREEN_CLIMATE) {
+                    // На головному екрані: довге утримання перемикає Нічний режим
+                    appState.night_mode_enabled = !appState.night_mode_enabled;
+                    appState.showHudToast("Night Mode", appState.night_mode_enabled ? "Auto (23-07)" : "Disabled");
                     appState.markSettingsDirty();
                 } else {
                     // З будь-якого іншого екрана довге утримання лівої кнопки перемикає на Pomodoro
-                    appState.screen_mode = SCREEN_POMODORO;
+                    appState.triggerScreenSlide(SCREEN_POMODORO, 1);
                     appState.markSettingsDirty();
                 }
                 appState.registerActivity();
@@ -256,20 +263,24 @@ void processEvents() {
                     audioService.playBootChord();
                     appState.triggerLedNotification(NOTIFY_CYAN_WAVE, true);
                     return;
-                } else if (appState.anim_frames_count > 0) {
-                    // Якщо зараз крутиться активна гіфка/наліпка — скидаємо показ за дотиком до кришки
-                    appState.stopActiveMedia();
                 } else if (appState.screen_mode == SCREEN_POMODORO) {
                     // Дотик до сенсорної кришки вмикає Старт / Паузу Pomodoro
                     appState.pomoToggleStartPause();
-                } else if (appState.screen_mode == SCREEN_SMART_HUB && appState.tg_unread) {
-                    // Дотик до кришки позначає вхідне повідомлення прочитаним
-                    appState.tg_unread = false;
-                    appState.cmd_send_tg_ack = true;
-                    appState.triggerLedNotification(NOTIFY_FIRE, false);
-                } else if (appState.screen_mode == SCREEN_SMART_HUB && (appState.spotify.playing || appState.spotify.track_id[0] != '\0')) {
-                    // Play / Pause для Spotify за дотиком до сенсорної кришки
-                    appState.cmd_spotify_action = 3;
+                } else if (appState.screen_mode == SCREEN_SMART_HUB) {
+                    if (appState.tg_unread) {
+                        // Дотик до кришки позначає вхідне повідомлення прочитаним
+                        appState.tg_unread = false;
+                        appState.cmd_send_tg_ack = true;
+                        appState.triggerLedNotification(NOTIFY_FIRE, false);
+                    } else if (appState.spotify.playing || appState.spotify.track_id[0] != '\0' || appState.sp_linked) {
+                        // Миттєвий локальний відгук Play / Pause для Spotify (0 ms, без перекриття вінілу плашкою HUD)
+                        appState.toggleSpotifyPlayPause(millis());
+                    } else {
+                        CommandRouter::nextLightMode(appState);
+                    }
+                } else if (appState.anim_frames_count > 0 && appState.media_expire_ms > 0) {
+                    // Тільки тимчасове медіа скасовується за дотиком до кришки
+                    appState.stopActiveMedia();
                 } else {
                     CommandRouter::nextLightMode(appState);
                 }
@@ -285,7 +296,6 @@ void processEvents() {
                     CommandRouter::togglePower(appState);
                 } else {
                     appState.setDnd(!appState.dnd_mode);
-                    audioService.playTouchClick();
                 }
                 break;
 
@@ -317,11 +327,14 @@ void processEvents() {
 
             case EventType::BTN_RIGHT_LONG:
                 if (appState.screen_mode == SCREEN_POMODORO) {
-                    // Довгий клік правої кнопки скидає Pomodoro
                     appState.pomoStop();
                 } else if (appState.screen_mode == SCREEN_SMART_HUB && (appState.spotify.playing || appState.spotify.track_id[0] != '\0')) {
-                    // Попередній трек Spotify за довгим кліком правої кнопки
                     appState.cmd_spotify_action = 2;
+                } else if (appState.screen_mode == SCREEN_CLIMATE) {
+                    appState.cycleTouchClickProfile();
+                    const char* prof_names[] = {"Apple Tock", "Wood Tap", "Soft Pop"};
+                    appState.showHudToast("Click Sound", prof_names[appState.touch_click_profile]);
+                    audioService.playClickSample(appState.touch_click_profile, 1);
                 }
                 appState.registerActivity();
                 break;
@@ -391,6 +404,9 @@ void setup() {
     oracleService.setDisplayService(&displayService);
     oracleService.setStorageService(&storageService);
 
+    // Зв'язуємо ввід із аудіо для миттєвих апаратних кліків (<0.1 мс)
+    inputService.setAudioService(&audioService);
+
     // 2. Швидкі сервіси реального часу на Core 1
     // 2. Ініціалізація швидких сервісів Core 1 (Дисплей та кнопки)
     core1FastServices.add(&inputService);
@@ -427,6 +443,7 @@ void setup() {
 }
 
 void loop() {
+    uint32_t loop_start_us = micros();
     esp_task_wdt_reset();
 
     static uint32_t last_stk_check_ms = 0;
@@ -459,6 +476,8 @@ void loop() {
                             appState.ap_mode_active ||
                             appState.tls_in_flight || 
                             appState.spotify_vinyl_needed ||
+                            (appState.screen_mode == SCREEN_SMART_HUB && appState.current_lcd_brt > 0) ||
+                            (appState.screen_mode == SCREEN_LIVING_GIF && appState.current_lcd_brt > 0) ||
                             appState.spotify.playing ||
                             audioService.isPlaying() || 
                             ledService.isAnimating() ||
@@ -501,8 +520,12 @@ void loop() {
                 last_freq_change_ms = loop_now;
             }
         } else {
-            // Зниження частоти: якщо світло вимкнено — тримаємо мінімум 160 МГц, щоб не відключався павербанк
-            uint32_t min_freq = (appState.light_mode == MODE_LIGHT_OFF) ? 160 : 80;
+            // Зниження частоти: глибокий сон 80 МГц для холодного споживання коли екран вимкнений або DND.
+            // 160 МГц тримається лише вдень при вимкненому світлі, щоб не засинали старі павербанки.
+            uint32_t min_freq = 80;
+            if (appState.current_lcd_brt > 0 && !appState.dnd_mode && appState.light_mode == MODE_LIGHT_OFF) {
+                min_freq = 160;
+            }
             if (current_hw_mhz > min_freq && 
                 (loop_now - high_demand_last_seen_ms >= 15000UL) && 
                 (loop_now - last_freq_change_ms >= 3000UL)) {
@@ -514,4 +537,9 @@ void loop() {
 
     bool active = ledService.isAnimating() || displayService.isHighFpsNeeded();
     vTaskDelay(pdMS_TO_TICKS(active ? 4 : 15));
+
+    uint32_t loop_dt_ms = (micros() - loop_start_us) / 1000;
+    if (loop_dt_ms > appState.diag_loop_max_ms) {
+        appState.diag_loop_max_ms = loop_dt_ms;
+    }
 }

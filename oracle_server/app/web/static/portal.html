@@ -172,8 +172,8 @@
           <div id="spArtist" class="mono" style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
             Підключіть Spotify для трансляції вінілу на шкатулку (Вікно 3)
           </div>
-          <div style="width:100%;height:5px;background:var(--border-hairline);border-radius:3px;margin-top:8px;overflow:hidden">
-            <div id="spProgressBar" style="width:0%;height:100%;background:var(--accent-spotify);transition:width 0.4s linear;border-radius:3px"></div>
+          <div id="spProgressContainer" onclick="seekSpotify(event)" style="width:100%;height:8px;background:var(--border-hairline);border-radius:4px;margin-top:8px;overflow:hidden;cursor:pointer;position:relative" title="Клікніть для перемотування треку">
+            <div id="spProgressBar" style="width:0%;height:100%;background:var(--accent-spotify);transition:width 0.2s linear;border-radius:4px"></div>
           </div>
           
         </div>
@@ -637,8 +637,12 @@
         <button class="btn" style="padding:3px 6px;font-size:10px" onclick="setMediaTimer(0)">♾ Безкінечно</button>
       </div>
 
+      <div id="mediaPreviewBox" style="display:none;margin-bottom:12px;text-align:center">
+        <img id="mediaPreviewImg" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:2px solid var(--accent-cool);box-shadow:0 0 16px rgba(56,189,248,0.3);display:inline-block">
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:4px">Круглий попередній перегляд на дисплеї 240×240</div>
+      </div>
       <form onsubmit="uploadMedia(event)" style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;margin-bottom:10px">
-        <input type="file" id="mediaFile" accept=".gif,.webp,.png,.jpg,.jpeg" required style="padding:5px">
+        <input type="file" id="mediaFile" accept=".gif,.webp,.png,.jpg,.jpeg" required style="padding:5px" onchange="previewMediaFile(event)">
         <div style="display:flex;gap:4px">
           <input type="text" id="mediaName" placeholder="Назва..." style="padding:5px">
           <select id="mediaSlot" style="width:110px;padding:5px">
@@ -706,7 +710,7 @@
           <button class="btn" style="padding:6px;font-size:10px" onclick="systemAction('start_ap')">📡 Wi-Fi AP</button>
         </div>
         <div id="boxDiagLine" class="mono" style="font-size:10px;color:var(--text-secondary)">
-          Стан: <span id="diagStatus" style="color:var(--accent-success)">Підключено</span> | Перезапуск: <span id="diagRst" style="color:var(--accent-warm)">--</span> | Heap: <span id="diagHeap">--</span> KB, PSRAM: <span id="diagPsram">--</span> KB
+          Стан: <span id="diagStatus" style="color:var(--accent-success)">Підключено</span> | Перезапуск: <span id="diagRst" style="color:var(--accent-warm)">--</span> | CPU: <span id="diagCpu" style="color:var(--accent-cool)">--</span> MHz | Chip: <span id="diagChipT" style="color:var(--accent-warm)">--</span>°C | Heap: <span id="diagHeap">--</span> KB, PSRAM: <span id="diagPsram">--</span> KB
         </div>
       </div>
 

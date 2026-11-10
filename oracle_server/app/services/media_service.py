@@ -177,6 +177,8 @@ class MediaService:
 
         frames_bytes: List[bytes] = []
         ambi_rgb: Tuple[int, int, int] = (56, 189, 248)
+        ambi2_rgb: Tuple[int, int, int] = (248, 113, 113)
+        ambi3_rgb: Tuple[int, int, int] = (250, 204, 21)
         fps = settings.GIF_DEFAULT_FPS
 
         try:
@@ -200,11 +202,13 @@ class MediaService:
                     img.seek(f_idx)
                     arr = cls._fit_and_composite_frame(img)
                     if idx_pos == len(frame_indices) // 2:
-                        ambi_rgb = cls._extract_ambilight_color(arr)
+                        p, s, a = cls._extract_ambilight_triad(arr)
+                        ambi_rgb, ambi2_rgb, ambi3_rgb = p, s, a
                     frames_bytes.append(cls._rgb_array_to_rgb565_bytes(arr))
             else:
                 arr = cls._fit_and_composite_frame(img)
-                ambi_rgb = cls._extract_ambilight_color(arr)
+                p, s, a = cls._extract_ambilight_triad(arr)
+                ambi_rgb, ambi2_rgb, ambi3_rgb = p, s, a
                 frames_bytes.append(cls._rgb_array_to_rgb565_bytes(arr))
 
         num_frames = len(frames_bytes)
@@ -236,9 +240,12 @@ class MediaService:
         with open(cls.RAM_ANIM_PATH, "wb") as f:
             f.write(full_mbx)
 
-        safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", save_name)[:28].lower()
-        if not safe_name:
+        title = save_name.strip() if save_name else (f"Стікер {crc_hex[:4]}" if media_type == "sticker" else f"Гіфка {crc_hex[:4]}")
+        ascii_candidate = re.sub(r"[^a-zA-Z0-9_-]", "", save_name)[:28].lower()
+        if not ascii_candidate:
             safe_name = f"custom_slot_{reaction_slot}" if reaction_slot > 0 else f"live_{crc_hex[:6]}"
+        else:
+            safe_name = ascii_candidate
 
         if save_name or reaction_slot > 0:
             perm_path = os.path.join(settings.STICKERS_DIR, f"{safe_name}.mbx")
@@ -247,6 +254,7 @@ class MediaService:
             memory_guard.register_file_write(len(full_mbx))
             db_service.upsert_custom_media(
                 name=safe_name,
+                title=title,
                 media_type=media_type,
                 file_path=perm_path,
                 crc32_hex=crc_hex,
@@ -263,12 +271,15 @@ class MediaService:
 
         return {
             "name": safe_name,
+            "title": title,
             "media_type": media_type,
             "crc": crc_hex,
             "frames": num_frames,
             "fps": fps,
             "size_bytes": len(full_mbx),
             "ambi_rgb": list(ambi_rgb),
+            "ambi2_rgb": list(ambi2_rgb),
+            "ambi3_rgb": list(ambi3_rgb),
         }
 
     @classmethod
@@ -448,13 +459,18 @@ class MediaService:
             "media_frames": meta["frames"],
             "media_fps": meta["fps"],
             "ambi_rgb": meta["ambi_rgb"],
+            "ambi2_rgb": meta.get("ambi2_rgb", [248, 113, 113]),
+            "ambi3_rgb": meta.get("ambi3_rgb", [250, 204, 21]),
         }
         if set_as_saver:
             cmd_dict["set_saver"] = True
+            db_service.set_active_saver(meta["name"])
         if media_timer_min is not None:
             cmd_dict["media_timer"] = int(media_timer_min)
 
         state_service.enqueue_raw(cmd_dict)
+        from app.core.events import realtime_hub
+        await realtime_hub.push_to_box(cmd_dict)
         meta["media_url"] = media_url
         return meta
 
@@ -503,13 +519,24 @@ class MediaService:
             "media_frames": info["frames"],
             "media_fps": info["fps"],
             "ambi_rgb": ambi,
+            "ambi2_rgb": [info.get("ambi_r", 56), info.get("ambi_g", 189), info.get("ambi_b", 248)],
+            "ambi3_rgb": [250, 204, 21],
         }
         if set_as_saver:
             cmd_dict["set_saver"] = True
+            db_service.set_active_saver(safe_name)
         if media_timer_min is not None:
             cmd_dict["media_timer"] = int(media_timer_min)
 
         state_service.enqueue_raw(cmd_dict)
+        from app.core.events import realtime_hub
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(realtime_hub.push_to_box(cmd_dict))
+        except Exception:
+            pass
         return {
             "ok": True,
             "name": safe_name,

@@ -197,6 +197,8 @@ public:
             if (prefs.isKey("scr_ang")) state.screen_angle   = (prefs.getShort("scr_ang", 0) % 360 + 360) % 360;
             if (prefs.isKey("scr_mod")) state.screen_mode    = prefs.getUChar("scr_mod", SCREEN_CLIMATE) % MAIN_SCREEN_COUNT;
             if (prefs.isKey("sp_lnk"))  state.sp_linked      = prefs.getBool("sp_lnk", false);
+            if (prefs.isKey("sp_bg"))   state.spotify_bg_style = prefs.getUChar("sp_bg", 0) % 2;
+            if (prefs.isKey("cl_bg"))   state.climate_bg_style = prefs.getUChar("cl_bg", 0) % 2;
             if (prefs.isKey("c_r"))     state.custom_r       = prefs.getUChar("c_r", 255);
             if (prefs.isKey("c_g"))     state.custom_g       = prefs.getUChar("c_g", 180);
             if (prefs.isKey("c_b"))     state.custom_b       = prefs.getUChar("c_b", 80);
@@ -205,6 +207,11 @@ public:
             if (prefs.isKey("a_vol"))  state.audio_volume       = prefs.getUChar("a_vol", Config::DEFAULT_VOLUME);
             if (prefs.isKey("a_mut"))  state.audio_muted        = prefs.getBool("a_mut", false);
             if (prefs.isKey("t_beep")) state.touch_beep_enabled = prefs.getBool("t_beep", true);
+            if (prefs.isKey("t_prof")) state.touch_click_profile = prefs.getUChar("t_prof", 0);
+
+            if (prefs.isKey("t_off")) state.temp_offset     = prefs.getFloat("t_off", -0.8f);
+            if (prefs.isKey("h_off")) state.humidity_offset = prefs.getFloat("h_off", 0.0f);
+            if (prefs.isKey("p_off")) state.pressure_offset = prefs.getFloat("p_off", 0.0f);
 
             String tok = prefs.isKey("tg_tok") ? prefs.getString("tg_tok") : String(Config::DEFAULT_TG_TOKEN);
             String adm = prefs.isKey("tg_adm") ? prefs.getString("tg_adm") : String(Config::DEFAULT_ADMIN_ID);
@@ -238,11 +245,12 @@ public:
         }
     }
 
-    void saveAudioSettings(uint8_t vol, bool muted, bool beep) {
+    void saveAudioSettings(uint8_t vol, bool muted, bool beep, uint8_t prof = 0) {
         if (prefs.begin("box_state", false)) {
             prefs.putUChar("a_vol", vol);
             prefs.putBool("a_mut", muted);
             prefs.putBool("t_beep", beep);
+            prefs.putUChar("t_prof", prof);
             prefs.end();
         }
     }
@@ -283,9 +291,9 @@ public:
 
     void checkDelayedSave(AppState& state) {
         if (state.ota_in_progress) return; // Заборонено писати в NVS Flash під час OTA!
-        if (state.audio_settings_dirty) {
+        if (state.audio_settings_dirty && (millis() - state.audio_settings_change_ms >= 600)) {
             state.audio_settings_dirty = false;
-            saveAudioSettings(state.audio_volume, state.audio_muted, state.touch_beep_enabled);
+            saveAudioSettings(state.audio_volume, state.audio_muted, state.touch_beep_enabled, state.touch_click_profile);
         }
 
         if (state.tg_config_dirty) {
@@ -326,6 +334,8 @@ public:
                 prefs.putUChar("m_pct", state.manual_brt_pct);
                 prefs.putUChar("scr_mod", state.screen_mode % MAIN_SCREEN_COUNT);
                 prefs.putBool("sp_lnk", state.sp_linked);
+                prefs.putUChar("sp_bg", state.spotify_bg_style);
+                prefs.putUChar("cl_bg", state.climate_bg_style);
                 prefs.putUChar("c_r", state.custom_r);
                 prefs.putUChar("c_g", state.custom_g);
                 prefs.putUChar("c_b", state.custom_b);
@@ -344,6 +354,15 @@ public:
             prefs.putUChar("led_ma", cfg.max_current_ma_div10);
             // Зворотна сумісність
             prefs.putUShort("led_cnt", cfg.totalCount());
+            prefs.end();
+        }
+    }
+
+    void saveClimateOffsets(float t_off, float h_off, float p_off) {
+        if (prefs.begin("box_state", false)) {
+            prefs.putFloat("t_off", t_off);
+            prefs.putFloat("h_off", h_off);
+            prefs.putFloat("p_off", p_off);
             prefs.end();
         }
     }

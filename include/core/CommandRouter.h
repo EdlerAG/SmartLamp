@@ -233,7 +233,7 @@ public:
                  "{\"fw\":\"%s\",\"t\":%.1f,\"h\":%.0f,\"p\":%.0f,\"p_diff\":%.1f,\"l\":%d,"
                  "\"m\":%d,\"m_name\":\"%s\","
                  "\"auto_b\":%s,\"b_idx\":%d,\"b_pct\":%d,"
-                 "\"vol\":%u,\"muted\":%s,\"t_beep\":%s,\"dnd\":%s,"
+                 "\"vol\":%u,\"muted\":%s,\"t_beep\":%s,\"t_prof\":%u,\"dnd\":%s,"
                  "\"pomo\":%s,\"pomo_rem\":%u,\"pomo_brk\":%s,\"pomo_dur\":%u,"
                  "\"sleep_m\":%u,\"media_m\":%u,\"scr\":%d,\"rssi\":%d,\"time\":\"%s\","
                  "\"unread\":%s,\"inbox_cnt\":%u,\"oracle\":%s,"
@@ -243,14 +243,15 @@ public:
                  "\"claim\":\"%s\","
                  "\"alarm_off\":%s,"
                  "\"ack\":%s,\"ping\":%u,"
-                 "\"ota\":%u,\"ws_rec\":%u,\"scr_ang\":%d,"
-                 "\"stk_net\":%lu,\"stk_cld\":%lu,\"stk_led\":%lu,"
-                 "\"led_bot\":%u,\"led_bak\":%u,\"led_cnt\":%u,\"led_off\":%u,\"led_rev\":%s,\"led_ma\":%u}",
+                 "\"ota\":%u,\"ws_rec\":%u,\"scr_ang\":%d,\"sav_f\":%u,\"anm_f\":%u,"
+                 "\"cpu_mhz\":%u,\"chip_t\":%.1f,"
+                 "\"stk_net\":%lu,\"stk_cld\":%lu,\"stk_led\":%lu,\"clk_cnt\":%lu,\"clk_us\":%lu,\"clk_max_us\":%lu,\"clk_b\":%u,\"clk_res\":%d,\"clk_gap\":%lu,\"loop_max_ms\":%lu,\"clk_cpu\":%u,"
+                 "\"led_bot\":%u,\"led_bak\":%u,\"led_cnt\":%u,\"led_off\":%u,\"led_rev\":%s,\"led_ma\":%u,\"t_off\":%.1f,\"h_off\":%.0f,\"p_off\":%.0f}",
                  Config::FW_VERSION,
                  state.temperature, state.humidity, send_p, state.pressure_diff, state.light_percent,
                  state.light_mode, getModeNameUa(state.light_mode),
                  state.auto_brt ? "true" : "false", state.manual_brt_idx, state.getLedBrightnessPercent(),
-                 state.audio_volume, state.audio_muted ? "true" : "false", state.touch_beep_enabled ? "true" : "false",
+                 state.audio_volume, state.audio_muted ? "true" : "false", state.touch_beep_enabled ? "true" : "false", (unsigned int)state.touch_click_profile,
                  state.dnd_mode ? "true" : "false",
                  state.pomo_active ? "true" : "false", state.getPomoRemainingSeconds(),
                  state.pomo_is_break ? "true" : "false", (unsigned int)state.pomo_duration_min,
@@ -264,12 +265,14 @@ public:
                  alarm_off_flag ? "true" : "false",
                  ack_flag ? "true" : "false", ping_val,
                  state.ota_in_progress ? 1 : 0, (unsigned int)state.ws_reconnect_cnt,
-                 (int)state.screen_angle,
-                 (unsigned long)state.stk_net, (unsigned long)state.stk_cloud, (unsigned long)state.stk_led,
+                 (int)state.screen_angle, (unsigned int)state.saver_num_frames, (unsigned int)state.anim_frames_count,
+                 (unsigned int)getCpuFrequencyMhz(), (float)temperatureRead(),
+                 (unsigned long)state.stk_net, (unsigned long)state.stk_cloud, (unsigned long)state.stk_led, (unsigned long)state.diag_clk_cnt, (unsigned long)state.diag_clk_us, (unsigned long)state.diag_clk_max_us, (unsigned int)state.diag_clk_bytes, (int)state.diag_clk_res, (unsigned long)state.diag_clk_gap_ms, (unsigned long)state.diag_loop_max_ms, (unsigned int)state.diag_clk_cpu,
                  (unsigned int)state.led_layout.bottom_count, (unsigned int)state.led_layout.back_count,
                  (unsigned int)state.led_layout.totalCount(), (unsigned int)state.led_layout.bottom_offset,
                  state.led_layout.reversed ? "true" : "false",
-                 (unsigned int)(state.led_layout.max_current_ma_div10 * 10));
+                 (unsigned int)(state.led_layout.max_current_ma_div10 * 10),
+                  state.temp_offset, state.humidity_offset, state.pressure_offset);
     }
 
     static void buildInboxJson(AppState& state, char* out, size_t max_len) {

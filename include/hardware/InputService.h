@@ -1,6 +1,7 @@
 #pragma once
 #include "core/IService.h"
 #include "Config.h"
+#include "hardware/AudioService.h"
 #include "core/AppState.h"
 
 class InputService : public IService {
@@ -29,11 +30,8 @@ private:
     uint32_t combo_start_ms = 0;
     bool     combo_active   = false;
     bool     combo_fired    = false;
+    AudioService* audio_srv = nullptr;
 
-    static volatile bool isr_pin_changed[3];
-    static void isr_btn_left()  { isr_pin_changed[0] = true; }
-    static void isr_btn_top()   { isr_pin_changed[1] = true; }
-    static void isr_btn_right() { isr_pin_changed[2] = true; }
 
 public:
     InputService(AppState& st) : state(st) {
@@ -42,37 +40,39 @@ public:
         btns[2] = ButtonTracker(Config::PIN_TOUCH_RIGHT, EventType::BTN_RIGHT_SHORT, EventType::BTN_RIGHT_LONG);
     }
 
+    void setAudioService(AudioService* srv) { audio_srv = srv; }
+
     const char* getName() const override { return "Input"; }
 
     void init() override {
         for (int i = 0; i < 3; i++) {
-            pinMode(btns[i].pin, INPUT);
+            pinMode(btns[i].pin, INPUT_PULLDOWN);
         }
-        attachInterrupt(digitalPinToInterrupt(btns[0].pin), isr_btn_left, CHANGE);
-        attachInterrupt(digitalPinToInterrupt(btns[1].pin), isr_btn_top, CHANGE);
-        attachInterrupt(digitalPinToInterrupt(btns[2].pin), isr_btn_right, CHANGE);
     }
 
     void update() override {
         uint32_t now = millis();
 
-        // 1. Опитування та оновлення стану кожної кнопки
+        // 1. Опитування та оновлення стану кожної кнопки з надійним антибрязкотом
         for (int i = 0; i < 3; i++) {
-            if (!isr_pin_changed[i] && !btns[i].last_state) {
-                continue;
-            }
-            isr_pin_changed[i] = false;
-
             bool cur = (digitalRead(btns[i].pin) == HIGH);
 
             if (i == 0) state.btn_l_pressed = cur;
             if (i == 1) state.btn_t_pressed = cur;
             if (i == 2) state.btn_r_pressed = cur;
 
-            if (cur && !btns[i].last_state && (now - btns[i].last_release > 120)) {
-                // Leading edge press
+            if (cur && !btns[i].last_state && (now - btns[i].last_release >= 90)) {
+                // Leading edge press (чутливий, миттєвий, без брязкоту)
                 btns[i].press_time = now;
                 btns[i].long_fired = false;
+
+                // Миттєва реєстрація активності для Governor частоти CPU
+                state.registerActivity();
+
+                // Миттєвий студійний клік з просторовою інтонацією (0: Left, 1: Top, 2: Right)
+                if (audio_srv) {
+                    audio_srv->playClickSample(state.touch_click_profile, 1);
+                }
 
                 // Блок 3: Touch Ripple на дотик до сенсорів
                 if (i == 0) state.triggerTouchRipple(-90);
@@ -88,13 +88,22 @@ public:
                         // Очікуємо Wi-Fi combo
                     } else {
                         btns[i].long_fired = true;
+                        state.registerActivity();
+                        // Подвійний тактильний імпульс «тук-тік» на підтвердження довгого затискання
+                        // (окрім перемикання профілю кліка правою кнопкою на SCREEN_CLIMATE, де грає чисте прев'ю нового профілю)
+                        if (audio_srv) {
+                            bool is_climate_profile_switch = (i == 2 && state.sys_ui_state == SystemUiState::SYS_NORMAL && state.screen_mode == SCREEN_CLIMATE);
+                            if (!is_climate_profile_switch) {
+                                audio_srv->playClickSample(state.touch_click_profile, 3);
+                            }
+                        }
                         state.sendEvent(btns[i].long_evt);
                     }
                 }
             } else if (!cur && btns[i].last_state) {
-                // Відпускання клавіші
+                // Відпускання клавіші з фільтрацією надкороткого брязкоту (<40мс)
                 btns[i].last_release = now;
-                if (!btns[i].long_fired && (now - btns[i].press_time >= 35)) {
+                if (!btns[i].long_fired && (now - btns[i].press_time >= 40)) {
                     state.sendEvent(btns[i].short_evt);
                 }
             }
@@ -140,4 +149,4 @@ public:
     }
 };
 
-__attribute__((unused)) volatile bool InputService::isr_pin_changed[3] = { false, false, false };
+

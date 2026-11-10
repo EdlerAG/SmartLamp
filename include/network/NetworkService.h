@@ -226,6 +226,13 @@ public:
             case NetMode::CONNECTED:
                 if (WiFi.status() == WL_CONNECTED) {
                     scanner.checkAsyncScan();
+                    // Адаптивний Modem Sleep: у тихі години або DND економимо струм радіомодуля (зниження нагріву корпусу)
+                    bool quiet = (state.quiet_hours_active || state.dnd_mode) && !state.audio_playing && !state.ota_in_progress && !state.tls_in_flight;
+                    if (quiet != modem_sleep_now) {
+                        modem_sleep_now = quiet;
+                        WiFi.setSleep(quiet ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+                        state.wifi_sleeping = quiet;
+                    }
                 } else {
                     if (state.wifi_connected) {
                         state.wifi_connected = false;

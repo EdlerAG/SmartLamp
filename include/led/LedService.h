@@ -62,7 +62,7 @@ private:
             uint8_t beacon_b = 160 + (uint8_t)(pulse * 95.0f);
             uint16_t total = state.led_layout.totalCount();
 
-            for (int i = 0; i < Config::MAX_LED_COUNT; i++) {
+            for (int i = 0; i < Config::NUM_LEDS; i++) {
                 if (i == target_px) {
                     // Яскравий маркерний бірюзовий маяк на обраному світлодіоді
                     strip.SetPixelColor(i, RgbwColor(0, beacon_g, beacon_b, 0));
@@ -76,7 +76,7 @@ private:
         } else {
             // Гасіння незмонтованих діодів за межами totalCount()
             uint16_t total_active = state.led_layout.totalCount();
-            for (int i = total_active; i < Config::MAX_LED_COUNT; i++) {
+            for (int i = total_active; i < Config::NUM_LEDS; i++) {
                 strip.SetPixelColor(i, RgbwColor(0, 0, 0, 0));
             }
         }
@@ -156,6 +156,15 @@ private:
         uint32_t now = millis();
         bool mode_changed = (state.light_mode != last_mode);
         last_mode = state.light_mode;
+
+        // Швидкий вихід: якщо лампа вимкнена, не навантажуємо Core 1 обчисленнями
+        if (state.light_mode == MODE_LIGHT_OFF && !state.ota_in_progress && notify_frames == 0 && !state.isCalActive(now)) {
+            if (mode_changed || force) {
+                strip.ClearTo(RgbwColor(0, 0, 0, 0));
+                showWithLatchGuard(true);
+            }
+            return;
+        }
 
         uint8_t target_r = state.ambi_r;
         uint8_t target_g = state.ambi_g;
@@ -250,8 +259,9 @@ private:
             return;
         }
 
-        // 3. Dynamic 60 FPS update
-        if (now - last_anim_ms < 16 && !mode_changed && !force) return;
+        // 3. Dynamic LED update (60 FPS для плавних анімацій, 12 FPS для статичних режимів)
+        uint32_t min_interval = isAnimating() ? 16 : 80;
+        if (now - last_anim_ms < min_interval && !mode_changed && !force) return;
         last_anim_ms = now;
 
         // Context screen parameters for Smart AmbiLight fallback
@@ -327,14 +337,7 @@ public:
         uint32_t now = millis();
 
         if (state.ota_in_progress) {
-            // Під час OTA знижуємо частоту оновлення LED до 10 Гц (100 мс)
-            // і показуємо спокійний пульсуючий індикатор прогресу, щоб не навантажувати шину RMT
-            if (now - last_anim_ms >= 100) {
-                last_anim_ms = now;
-                uint8_t val = (uint8_t)(state.ota_progress * 2.5f);
-                strip.ClearTo(RgbwColor(0, (uint8_t)(state.ota_progress * 1.5f), val, 0));
-                strip.Show();
-            }
+            renderStrip(false);
             return;
         }
 

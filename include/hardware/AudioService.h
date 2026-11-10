@@ -6,6 +6,7 @@
 #include <Audio.h>
 #include <driver/i2s.h>
 #include <math.h>
+#include "ClickAudioSamples.h"
 
 class AudioService : public IService {
 private:
@@ -13,6 +14,7 @@ private:
     Audio     audio;
     uint8_t   applied_volume = 0;
     bool      applied_muted  = false;
+    bool      was_running    = false;
 
     // Стан процедурного синтезатора звуків
     enum class SynthType : uint8_t {
@@ -35,7 +37,7 @@ private:
     float     synth_phase3     = 0.0f;
 
     static constexpr uint32_t SAMPLE_RATE = 44100;
-    static constexpr size_t CHUNK_SAMPLES = 128; // 128 стерео-семплів (512 байт) на тик
+    static constexpr size_t CHUNK_SAMPLES = 512; // 128 стерео-семплів (512 байт) на тик
 
     void startSynth(SynthType type) {
         // Якщо увімкнено режим тиші або гучність на нулі — жодних звуків (100% тиша)
@@ -50,7 +52,6 @@ private:
         }
 
         if (audio.isRunning()) return; // Якщо грає стрім MP3 — не перебиваємо його
-        i2s_start(I2S_NUM_0);
         cur_synth = type;
         synth_sample_idx = 0;
         synth_phase1 = 0.0f;
@@ -59,7 +60,7 @@ private:
 
         switch (type) {
             case SynthType::TOUCH_CLICK:
-                synth_total_samples = (SAMPLE_RATE * 6) / 1000;    // 6 мс (~265 семплів)
+                synth_total_samples = (SAMPLE_RATE * 32) / 1000;    // 32 мс (~1411 семплів)
                 break;
             case SynthType::BOOT_CHORD:
                 synth_total_samples = (SAMPLE_RATE * 750) / 1000;  // 750 мс
@@ -86,6 +87,9 @@ private:
                 synth_total_samples = 0;
                 break;
         }
+        if (synth_total_samples > 0) {
+            synth_total_samples = (synth_total_samples + 511) & ~((size_t)511);
+        }
     }
 
     void tickProceduralSynth() {
@@ -102,9 +106,11 @@ private:
             return;
         }
 
-        // Квадратичне масштабування гучності для природного людського слуху
+        // Масштабування гучності: перцептивне для тактильних кліків та квадратичне для іншого аудіо
         float norm_vol = (float)constrain((int)state.audio_volume, 0, 21) / 21.0f;
-        float vol_gain = norm_vol * norm_vol; // Наприклад, на vol=4 це 0.036 (дуже тихий шепіт), на vol=21 це 1.0 (гучно)
+        float vol_gain = (cur_synth == SynthType::TOUCH_CLICK)
+            ? (0.55f + 0.45f * norm_vol) // виразний тактильний клік навіть на невисокій гучності
+            : (norm_vol * norm_vol);
         constexpr float TWO_PI_F = 6.283185307f;
 
         for (size_t i = 0; i < samples_to_gen; i++) {
@@ -114,13 +120,27 @@ private:
 
             switch (cur_synth) {
                 case SynthType::TOUCH_CLICK: {
-                    // Делікатний 6 мс тактильний клік (експоненційний спад частоти 180 -> 90 Гц)
+                    // Преміальний тактильний механічний клац (32 мс, чіткий клацаючий імпульс)
                     float progress = (float)n / (float)synth_total_samples;
-                    float freq = 180.0f - (90.0f * progress);
+                    // Частотний перепад тіла кліка: від 1600 Гц швидко до 440 Гц
+                    float freq = 440.0f + 1160.0f * expf(-progress * 12.0f);
                     synth_phase1 += (freq * TWO_PI_F) / (float)SAMPLE_RATE;
                     if (synth_phase1 > TWO_PI_F) synth_phase1 -= TWO_PI_F;
-                    float env = expf(-progress * 6.5f);
-                    sample_val = sinf(synth_phase1) * env * 0.40f;
+
+                    // Атака (0.6 мс для уникнення DC-кліпінгу) та плавний експоненційний спад
+                    float attack = (progress < 0.02f) ? (progress / 0.02f) : 1.0f;
+                    float decay  = expf(-progress * 7.0f);
+                    float env    = attack * decay;
+
+                    // Високочастотний металевий транзієнт (2750 Гц) у перші 4 мс для відчуття тактильного клацання
+                    float snap = 0.0f;
+                    if (progress < 0.16f) {
+                        synth_phase2 += (2750.0f * TWO_PI_F) / (float)SAMPLE_RATE;
+                        if (synth_phase2 > TWO_PI_F) synth_phase2 -= TWO_PI_F;
+                        snap = sinf(synth_phase2) * expf(-progress * 26.0f) * 0.40f;
+                    }
+
+                    sample_val = (sinf(synth_phase1) * 0.80f + snap) * env;
                     break;
                 }
 
@@ -223,13 +243,35 @@ private:
         }
 
         size_t bytes_written = 0;
-        i2s_write(I2S_NUM_0, pcm_buf, samples_to_gen * sizeof(int16_t) * 2, &bytes_written, 0);
+        i2s_write(I2S_NUM_0, pcm_buf, samples_to_gen * sizeof(int16_t) * 2, &bytes_written, portMAX_DELAY);
         synth_sample_idx += samples_to_gen;
         if (synth_sample_idx >= synth_total_samples) {
             cur_synth = SynthType::NONE;
-            i2s_zero_dma_buffer(I2S_NUM_0);
-            i2s_stop(I2S_NUM_0);
+            click_finish_time = millis() + 48;
+            dma_needs_resync = true;
         }
+    }
+
+    SemaphoreHandle_t i2s_mutex = nullptr;
+    volatile bool     dma_needs_resync = false;
+    volatile uint32_t last_resync_ms   = 0;
+
+    void resyncDmaQueueLocked() {
+        i2s_zero_dma_buffer(I2S_NUM_0);
+        i2s_set_clk(I2S_NUM_0, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+        last_resync_ms = millis();
+        dma_needs_resync = false;
+    }
+
+    static inline int16_t softLimitSample(int32_t x) {
+        if (x > 28000) {
+            x = 28000 + ((x - 28000) >> 2);
+            if (x > 32760) x = 32760;
+        } else if (x < -28000) {
+            x = -28000 - ((-28000 - x) >> 2);
+            if (x < -32760) x = -32760;
+        }
+        return (int16_t)x;
     }
 
 public:
@@ -238,20 +280,151 @@ public:
     const char* getName() const override { return "AudioI2S"; }
 
     void init() override {
+        if (!i2s_mutex) {
+            i2s_mutex = xSemaphoreCreateMutex();
+        }
         audio.setPinout(Config::PIN_I2S_BCLK, Config::PIN_I2S_LRC, Config::PIN_I2S_DOUT);
         applied_volume = state.audio_volume;
         applied_muted  = state.audio_muted;
         audio.setVolume(applied_muted ? 0 : applied_volume);
-        i2s_zero_dma_buffer(I2S_NUM_0);
-        i2s_stop(I2S_NUM_0);
+        if (i2s_mutex) xSemaphoreTake(i2s_mutex, portMAX_DELAY);
+        resyncDmaQueueLocked();
+        if (i2s_mutex) xSemaphoreGive(i2s_mutex);
     }
+
+    volatile uint32_t click_finish_time = 0;
 
     bool isPlaying() {
-        return audio.isRunning() || (cur_synth != SynthType::NONE);
+        return audio.isRunning() || (cur_synth != SynthType::NONE) || (millis() < click_finish_time) || dma_needs_resync;
     }
 
-    void playTouchClick() {
-        startSynth(SynthType::TOUCH_CLICK);
+    void playClickSample(uint8_t profile = 0, uint8_t variation = 1) {
+        if (!state.touch_beep_enabled || state.audio_volume == 0) {
+            return;
+        }
+        if (audio.isRunning()) return;
+
+        // Перцептивна крива гучності для MAX98357A (+9dB GAIN), індекс 0..21 (масштаб Q8: /256)
+        static constexpr uint8_t CLICK_VOL_LUT[22] = {
+            0,  18, 22, 26, 30, 34, 38, 43, 48, 53, 58,
+            64, 70, 76, 82, 88, 94, 100, 106, 112, 118, 124
+        };
+        uint8_t vol_idx = constrain(state.audio_volume, (uint8_t)0, (uint8_t)21);
+        uint32_t vol_mult = CLICK_VOL_LUT[vol_idx];
+
+        const int16_t* sample_data = CLICK_SAMPLE_APPLE;
+        size_t sample_len = CLICK_SAMPLE_APPLE_LEN;
+
+        if (profile == 1) {
+            sample_data = CLICK_SAMPLE_WOOD;
+            sample_len = CLICK_SAMPLE_WOOD_LEN;
+        } else if (profile == 2) {
+            sample_data = CLICK_SAMPLE_POP;
+            sample_len = CLICK_SAMPLE_POP_LEN;
+        }
+
+        if (i2s_mutex) xSemaphoreTake(i2s_mutex, portMAX_DELAY);
+
+        // Stop any procedural synth cleanly
+        cur_synth = SynthType::NONE;
+
+        static int16_t s_click_dma_buf[2048 * 2];
+        memset(s_click_dma_buf, 0, sizeof(s_click_dma_buf));
+
+        constexpr size_t PRE_ROLL = 32; // 0.72 ms guard margin at start of first descriptor
+        int32_t hpf_y = 0;
+        int32_t hpf_prev_x = 0;
+
+        if (variation == 3) {
+            // Haptic double-tap for long press with 1st-order 168 Hz High-Pass filter & smooth tail fade
+            size_t pulse1_len = min((size_t)420, sample_len);
+            for (size_t i = 0; i < pulse1_len; i++) {
+                int32_t raw = (int16_t)pgm_read_word(&sample_data[i]);
+                hpf_y = ((hpf_y + raw - hpf_prev_x) * 250) >> 8;
+                hpf_prev_x = raw;
+                uint32_t env = (i + 64 > pulse1_len) ? ((pulse1_len - i) * 256 / 64) : 256;
+                int32_t scaled = (((hpf_y * (int32_t)(vol_mult * 70 / 100)) >> 8) * (int32_t)env) >> 8;
+                int16_t val = softLimitSample(scaled);
+                s_click_dma_buf[(PRE_ROLL + i) * 2]     = val;
+                s_click_dma_buf[(PRE_ROLL + i) * 2 + 1] = val;
+            }
+
+            hpf_y = 0;
+            hpf_prev_x = 0;
+            size_t pulse2_offset = PRE_ROLL + 1050;
+            size_t pulse2_len = min((size_t)650, sample_len);
+            for (size_t i = 0; i < pulse2_len && (pulse2_offset + i) < 2048; i++) {
+                int32_t raw = (int16_t)pgm_read_word(&sample_data[i]);
+                hpf_y = ((hpf_y + raw - hpf_prev_x) * 250) >> 8;
+                hpf_prev_x = raw;
+                uint32_t env = (i + 64 > pulse2_len) ? ((pulse2_len - i) * 256 / 64) : 256;
+                int32_t scaled = (((hpf_y * (int32_t)(vol_mult * 95 / 100)) >> 8) * (int32_t)env) >> 8;
+                int16_t val = softLimitSample(scaled);
+                s_click_dma_buf[(pulse2_offset + i) * 2]     = val;
+                s_click_dma_buf[(pulse2_offset + i) * 2 + 1] = val;
+            }
+        } else {
+            // Pure studio 1:1 playback with 168 Hz sub-bass High-Pass filter & 32-sample end taper
+            size_t count = min((size_t)(2048 - PRE_ROLL), sample_len);
+            for (size_t i = 0; i < count; i++) {
+                int32_t raw = (int16_t)pgm_read_word(&sample_data[i]);
+                hpf_y = ((hpf_y + raw - hpf_prev_x) * 250) >> 8;
+                hpf_prev_x = raw;
+                uint32_t env = (i + 32 > count) ? ((count - i) * 256 / 32) : 256;
+                int32_t scaled = (((hpf_y * (int32_t)vol_mult) >> 8) * (int32_t)env) >> 8;
+                int16_t val = softLimitSample(scaled);
+                s_click_dma_buf[(PRE_ROLL + i) * 2]     = val;
+                s_click_dma_buf[(PRE_ROLL + i) * 2 + 1] = val;
+            }
+        }
+
+        uint32_t now_ms = millis();
+        state.diag_clk_gap_ms = (state.diag_clk_last_ms > 0) ? (now_ms - state.diag_clk_last_ms) : 0;
+        state.diag_clk_last_ms = now_ms;
+        state.diag_clk_cnt++;
+        state.diag_clk_cpu = getCpuFrequencyMhz();
+        state.diag_clk_core = (uint8_t)xPortGetCoreID();
+
+        // Pre-armed Zero-Latency DMA Burst (~50 us execution, <1 ms acoustic latency):
+        // When background resync has primed desc[0..3] at the head of tx->queue (>=65ms after resync),
+        // we pause GDMA for 45 us, copy 8192 bytes into desc[0..3] non-blockingly, and restart GDMA at desc[0].
+        size_t bytes_written = 0;
+        esp_err_t res = ESP_FAIL;
+        bool fast_ok = false;
+        uint32_t t0 = micros();
+
+        if (!dma_needs_resync && (now_ms - last_resync_ms >= 65)) {
+            i2s_stop(I2S_NUM_0);
+            res = i2s_write(I2S_NUM_0, s_click_dma_buf, sizeof(s_click_dma_buf), &bytes_written, 0);
+            i2s_start(I2S_NUM_0);
+            fast_ok = (res == ESP_OK && bytes_written == sizeof(s_click_dma_buf));
+        }
+
+        if (!fast_ok) {
+            bytes_written = 0;
+            i2s_zero_dma_buffer(I2S_NUM_0);
+            i2s_set_clk(I2S_NUM_0, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+            res = i2s_write(I2S_NUM_0, s_click_dma_buf, sizeof(s_click_dma_buf), &bytes_written, pdMS_TO_TICKS(60));
+            click_finish_time = millis() + 195;
+        } else {
+            click_finish_time = millis() + 48;
+        }
+
+        uint32_t dt_us = micros() - t0;
+        dma_needs_resync = true;
+
+        if (i2s_mutex) xSemaphoreGive(i2s_mutex);
+
+        state.diag_clk_us = dt_us;
+        if (dt_us > state.diag_clk_max_us) {
+            state.diag_clk_max_us = dt_us;
+        }
+        state.diag_clk_bytes = bytes_written;
+        state.diag_clk_res = (int32_t)res;
+    }
+
+    void playTouchClick(uint8_t variation = 1) {
+        playClickSample(state.touch_click_profile, variation);
     }
 
     void playBootChord() {
@@ -327,9 +500,22 @@ public:
             state.audio_playing = true;
             state.registerNetActivity();
             audio.loop();
+            was_running = true;
         } else {
-            tickProceduralSynth();
+            if (i2s_mutex) xSemaphoreTake(i2s_mutex, portMAX_DELAY);
+            if (was_running) {
+                was_running = false;
+                // Після завершення стріму повертаємо 44100 Гц та синхронізуємо чергу DMA для UI-кліків
+                resyncDmaQueueLocked();
+            }
+            if (cur_synth != SynthType::NONE) {
+                tickProceduralSynth();
+            } else if (dma_needs_resync && (int32_t)(millis() - click_finish_time) >= 0) {
+                // Фонова ресинхронізація DMA після повного завершення кліка (гарантує desc[0..3] на вході tx->queue)
+                resyncDmaQueueLocked();
+            }
             state.audio_playing = (cur_synth != SynthType::NONE);
+            if (i2s_mutex) xSemaphoreGive(i2s_mutex);
         }
     }
 };

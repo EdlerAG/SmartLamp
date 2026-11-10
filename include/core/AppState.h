@@ -54,14 +54,20 @@ struct AppState {
     char                   claim_secret[16]     = "";
     volatile uint8_t       setup_bitmask        = 0;
 
-    // Кліматичні дані + тренд барометра
-    volatile float temperature   = 22.0f;
-    volatile float humidity      = 50.0f;
-    volatile float pressure      = 750.0f;
-    volatile float pressure_diff = 0.0f;
-    volatile bool  sht_connected = false;
-    volatile bool  bmp_connected = false;
-    volatile bool  sensors_valid = false;
+    // Кліматичні дані + тренд барометра + калібрувальні зміщення
+    volatile float temperature     = 22.0f;
+    volatile float humidity        = 50.0f;
+    volatile float pressure        = 750.0f;
+    volatile float pressure_diff   = 0.0f;
+    volatile bool  sht_connected   = false;
+    volatile bool  bmp_connected   = false;
+    volatile bool  sensors_valid   = false;
+    volatile float temp_offset     = -0.8f; // Базове зміщення для компенсації тепла ESP32+LCD всередині корпусу (-2.2°C)
+    volatile float humidity_offset = 0.0f;  // Калібрувальне зміщення вологості (%)
+    volatile float pressure_offset = 0.0f;  // Калібрувальне зміщення тиску (мм рт. ст.)
+    volatile float outdoor_temp    = 999.0f; // Температура на вулиці (з метеосервісу сервера)
+    char           outdoor_desc[64] = "";    // Опис погоди за вікном (наприклад, "Хмарно", "Ясно")
+    volatile uint8_t climate_bg_style = 0;   // Стиль Вікна 1: 0 - Глибокий графіт, 1 - Жива аура
 
     float   pressure_hist[24]   = {0};
     uint8_t pressure_hist_count = 0;
@@ -93,6 +99,17 @@ struct AppState {
     volatile uint32_t stk_net   = 0;
     volatile uint32_t stk_cloud = 0;
     volatile uint32_t stk_led   = 0;
+    // Діагностика кліків та шини I2S
+    volatile uint32_t diag_clk_cnt     = 0;
+    volatile uint32_t diag_clk_us      = 0;
+    volatile uint32_t diag_clk_max_us  = 0;
+    volatile size_t   diag_clk_bytes   = 0;
+    volatile int32_t  diag_clk_res     = 0;
+    volatile uint32_t diag_clk_gap_ms  = 0;
+    volatile uint32_t diag_clk_last_ms = 0;
+    volatile uint32_t diag_loop_max_ms = 0;
+    volatile uint32_t diag_clk_cpu     = 0;
+    volatile uint8_t  diag_clk_core    = 0;
 
     void triggerCalibratePixel(int16_t px, uint32_t duration_ms = 4000) {
         portENTER_CRITICAL(&mux);
@@ -165,7 +182,45 @@ struct AppState {
     volatile bool     sleep_timer_active   = false;
 
     // Режими екрана (Рівень Б: 4 основні вікна) та підсвітки
-    volatile uint8_t screen_mode = SCREEN_CLIMATE;
+    volatile uint8_t screen_mode          = SCREEN_CLIMATE;
+    volatile uint8_t prev_screen_mode     = SCREEN_CLIMATE;
+    volatile bool     slide_active         = false;
+    volatile uint32_t slide_start_ms       = 0;
+    volatile int8_t   slide_dir            = 1;  // +1: right/forward, -1: left/back
+    static constexpr uint32_t SLIDE_DURATION_MS = 240;
+
+    void triggerScreenSlide(uint8_t target_mode, int8_t dir) {
+        if (target_mode == screen_mode && !slide_active) return;
+        portENTER_CRITICAL(&mux);
+        prev_screen_mode = screen_mode;
+        screen_mode = target_mode;
+        slide_dir = dir;
+        slide_start_ms = millis();
+        slide_active = true;
+        portEXIT_CRITICAL(&mux);
+        ui_force_dirty = true;
+        registerActivity();
+    }
+
+    // --- НІЧНИЙ РЕЖИМ (Night Mode з теплим бурштиновим годинником) ---
+    volatile bool night_mode_enabled = true; // Авто-режим за замовчуванням
+    volatile bool night_mode_manual  = false; // Ручне примусове вмикання
+
+    bool isNightModeActive() const {
+        if (!night_mode_enabled) return false;
+        if (night_mode_manual) return true;
+        if (quiet_hours_active) return true;
+        if (time_synced && time_str[0] >= '0' && time_str[0] <= '9') {
+            int hr = (time_str[0] - '0') * 10 + (time_str[1] - '0');
+            if (hr >= 23 || hr < 7) return true;
+        }
+        return false;
+    }
+
+    bool isNightHours() const {
+        return isNightModeActive();
+    }
+
     volatile uint8_t light_mode  = MODE_WARM_COZY;
     static constexpr uint8_t LIGHT_MODE_COUNT = TOTAL_LIGHT_MODES;
     volatile int16_t screen_angle = 0; // 0..359 градусів вільного повороту круглої матриці GC9A01
@@ -193,18 +248,19 @@ struct AppState {
     volatile size_t   saver_buf_size        = 0;
     volatile bool     saver_loaded          = false;
     volatile bool     saver_show_clock      = true;
+    volatile uint8_t  saver_clock_mode      = 0;       // 0: Вгорі, 1: Знизу (напівпрозоре скло), 2: Full Art (лише арт)
     volatile bool     cmd_save_saver        = false;
 
-    // Колір AmbiLight для синхронізації стрічки SK6812 з активною гіфкою або Spotify
-    volatile uint8_t  ambi_r                = 56;
-    volatile uint8_t  ambi_g                = 189;
-    volatile uint8_t  ambi_b                = 248;
-    volatile uint8_t  ambi2_r               = 248;
-    volatile uint8_t  ambi2_g               = 113;
-    volatile uint8_t  ambi2_b               = 113;
-    volatile uint8_t  ambi3_r               = 250;
-    volatile uint8_t  ambi3_g               = 204;
-    volatile uint8_t  ambi3_b               = 21;
+    // Колір AmbiLight для синхронізації стрічки SK6812 з активною гіфкою або Spotify (Теплий графіт за замовчуванням)
+    volatile uint8_t  ambi_r                = 54;
+    volatile uint8_t  ambi_g                = 48;
+    volatile uint8_t  ambi_b                = 44;
+    volatile uint8_t  ambi2_r               = 38;
+    volatile uint8_t  ambi2_g               = 34;
+    volatile uint8_t  ambi2_b               = 32;
+    volatile uint8_t  ambi3_r               = 78;
+    volatile uint8_t  ambi3_g               = 66;
+    volatile uint8_t  ambi3_b               = 54;
     volatile bool     ambi_active           = false;
 
     // Резервний оверлей реакції
@@ -269,16 +325,46 @@ struct AppState {
     }
 
     // --- SPOTIFY VINYL HUB (v4.5) ---
+    uint16_t          spotify_blur_buf[1024]; // 32x32 RGB565 текстура розмитої обкладинки
+    volatile bool     spotify_blur_ready    = false;
     SpotifyTrackInfo  spotify;
     volatile int8_t   cmd_spotify_action    = 0; // 0: none, 1: next, 2: prev, 3: play_pause
     volatile bool     spotify_vinyl_needed  = false;
     volatile bool     spotify_vinyl_loading = false;
     volatile bool     sp_linked             = false; // Офіційний Spotify акаунт прив'язано до сервера
+    volatile bool     tonearm_moving        = false;
+    volatile bool     spotify_bg_dirty      = true; // примусове перемалювання фону Spotify-деку
+    volatile uint8_t  spotify_bg_style      = 0;    // 0: Кольорова аура обкладинки (v6.9), 1: Глибокий чорний (v6.8)
 
     void copySpotify(SpotifyTrackInfo& dest) const {
         portENTER_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
         dest = spotify;
         portEXIT_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
+    }
+
+    void toggleSpotifyPlayPause(uint32_t now) {
+        portENTER_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
+        bool next_p = !spotify.playing;
+        if (!next_p) {
+            // Ставимо на паузу: акуратно фіксуємо поточний час прогресу в last_server_progress_ms
+            if (spotify.last_sync_millis > 0) {
+                uint32_t elapsed = (now >= spotify.last_sync_millis) ? (now - spotify.last_sync_millis) : 0;
+                uint32_t est = spotify.last_server_progress_ms + elapsed;
+                if (spotify.duration_ms > 0 && est > spotify.duration_ms) {
+                    est = spotify.duration_ms;
+                }
+                spotify.last_server_progress_ms = est;
+                spotify.progress_ms = est;
+            }
+        } else {
+            // Знімаємо з паузи: скидаємо опорний момент часу на поточний
+            spotify.last_sync_millis = now;
+        }
+        spotify.playing = next_p;
+        spotify.optimistic_play_pause_until_ms = now + 3000;
+        cmd_spotify_action = next_p ? 3 : 4; // 3 = Play, 4 = Pause
+        portEXIT_CRITICAL(const_cast<portMUX_TYPE*>(&mux));
+        ui_force_dirty = true;
     }
 
     uint32_t getLocalSpotifyProgressMs() const {
@@ -304,11 +390,13 @@ struct AppState {
     }
 
     // --- ЗВУКОВА ПІДСИСТЕМА I2S ТА МУТЕ-КОНТРОЛЬ (v4.5) ---
-    volatile uint8_t  audio_volume          = Config::DEFAULT_VOLUME; // 0..21
-    volatile bool     audio_muted           = false; // Повне відключення звуку (100% тиша)
-    volatile bool     touch_beep_enabled    = true;  // Тактильні кліки сенсорних кнопок
-    volatile bool     audio_settings_dirty  = false;
-    volatile bool     dnd_mode              = false; // Режим "Не турбувати" (DND)
+    volatile uint8_t  audio_volume             = Config::DEFAULT_VOLUME; // 0..21
+    volatile bool     audio_muted              = false; // Повне відключення звуку (100% тиша)
+    volatile bool     touch_beep_enabled       = true;  // Тактильні кліки сенсорних кнопок
+    volatile uint8_t  touch_click_profile      = 0;     // 0: Apple Tock, 1: Wood Tap, 2: Soft Pop
+    volatile bool     audio_settings_dirty     = false;
+    volatile uint32_t audio_settings_change_ms = 0;
+    volatile bool     dnd_mode                 = false; // Режим "Не турбувати" (DND)
 
     // --- ОСОБИСТИЙ КАЛЕНДАР НАСТІ ТА ТИХІ ГОДИНИ (v5.0) ---
     char              cal_summary[36]       = "";
@@ -443,9 +531,10 @@ struct AppState {
         strncpy(oracle_url, Config::ORACLE_SERVER_URL, sizeof(oracle_url) - 1);
         strncpy(oracle_key, Config::ORACLE_API_KEY, sizeof(oracle_key) - 1);
 
-        strncpy(inbox[0].sender, "Admin", sizeof(inbox[0].sender) - 1);
-        strncpy(inbox[0].text, "MagicBox готова! Надішли наліпку чи гіфку", sizeof(inbox[0].text) - 1);
-        strncpy(inbox[0].time_received, "--:--", sizeof(inbox[0].time_received) - 1);
+        inbox_count = 0;
+        inbox[0].sender[0] = '\0';
+        inbox[0].text[0] = '\0';
+        inbox[0].time_received[0] = '\0';
         for (int i = 0; i < 24; i++) pressure_hist[i] = 750.0f;
     }
 
@@ -529,6 +618,7 @@ struct AppState {
         audio_volume = constrain(vol, (uint8_t)0, (uint8_t)21);
         if (audio_volume == 0) audio_muted = true;
         audio_settings_dirty = true;
+        audio_settings_change_ms = millis();
         portEXIT_CRITICAL(&mux);
         registerActivity();
     }
@@ -537,6 +627,7 @@ struct AppState {
         portENTER_CRITICAL(&mux);
         audio_muted = muted;
         audio_settings_dirty = true;
+        audio_settings_change_ms = millis();
         portEXIT_CRITICAL(&mux);
         registerActivity();
     }
@@ -545,8 +636,23 @@ struct AppState {
         portENTER_CRITICAL(&mux);
         touch_beep_enabled = enabled;
         audio_settings_dirty = true;
+        audio_settings_change_ms = millis();
         portEXIT_CRITICAL(&mux);
         registerActivity();
+    }
+
+    void setTouchClickProfile(uint8_t prof) {
+        portENTER_CRITICAL(&mux);
+        touch_click_profile = (prof > 2) ? 0 : prof;
+        audio_settings_dirty = true;
+        audio_settings_change_ms = millis();
+        portEXIT_CRITICAL(&mux);
+        registerActivity();
+    }
+
+    void cycleTouchClickProfile() {
+        uint8_t next_prof = (touch_click_profile + 1) % 3;
+        setTouchClickProfile(next_prof);
     }
 
     void setQuietHours(bool active) {
@@ -967,7 +1073,6 @@ struct AppState {
     void setDnd(bool active) {
         portENTER_CRITICAL(&mux);
         dnd_mode = active;
-        audio_muted = active;
         ui_force_dirty = true;
         portEXIT_CRITICAL(&mux);
         registerActivity();

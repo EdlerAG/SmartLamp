@@ -93,13 +93,14 @@ GUIDE_TEXT = """🪄 <b>ІНСТРУКЦІЯ SMARTLAMP SOVEREIGN v5.5</b>
 
 
 class TelegramBotService:
-    __slots__ = ("last_update_id", "synced", "webhook_cleared", "admin_preview_girl")
+    __slots__ = ("last_update_id", "synced", "webhook_cleared", "admin_preview_girl", "rename_pending")
 
     def __init__(self) -> None:
         self.last_update_id: int = 0
         self.synced: bool = False
         self.webhook_cleared: bool = False
         self.admin_preview_girl: bool = False
+        self.rename_pending: dict[str, str] = {}
 
     async def _api(self, method: str, payload: Dict[str, Any], timeout: float = 8.0) -> Optional[Dict[str, Any]]:
         if not settings.TG_BOT_TOKEN:
@@ -256,6 +257,7 @@ class TelegramBotService:
         vol = d.get("vol", 12)
         muted = d.get("muted", False)
         t_beep = d.get("t_beep", True)
+        t_prof = d.get("t_prof", 0)
         mute_lbl = "🔊 Увімкнути звук" if muted else "🔇 Без звуку (Mute)"
         beep_lbl = f"🔘 Кліки кнопок: {'ВКЛ' if t_beep else 'ВИКЛ'}"
         return {
@@ -274,6 +276,12 @@ class TelegramBotService:
                     {"text": beep_lbl, "callback_data": "vol:beep"},
                 ],
                 [
+                    {"text": f"{'✅ ' if t_prof == 0 else ''}🍎 Apple Tock", "callback_data": "tprof:0"},
+                    {"text": f"{'✅ ' if t_prof == 1 else ''}🪵 Wood Tap", "callback_data": "tprof:1"},
+                    {"text": f"{'✅ ' if t_prof == 2 else ''}🫧 Soft Pop", "callback_data": "tprof:2"},
+                ],
+                [
+                    {"text": "🎵 Spotify плеєр", "callback_data": "hub:spotify"},
                     {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
                 ],
             ]
@@ -584,11 +592,13 @@ class TelegramBotService:
             return text, {"inline_keyboard": buttons}
 
         status_str = "▶️ Грає" if playing else "⏸ Пауза"
+        bg_style = int(db_service.get_setting("spotify_bg_style", "0") or 0)
+        bg_label = "🎨 Кольорова аура" if bg_style == 0 else "🌑 Глибокий чорний"
         track_info = f"<b>{title}</b>\n👤 {artist}\n⏱ {time_str}" if title else "<i>Очікування початку треку...</i>"
         text = (
             f"🎵 <b>SPOTIFY ПЛЕЄР</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"Статус: {status_str}\n\n"
+            f"Статус: {status_str} · Стиль: <b>{bg_label}</b>\n\n"
             f"{track_info}\n\n"
             f"💡 Вінілова платівка обертається на екрані лампи (Вікно 3) та живить AmbiLight підсвітку."
         )
@@ -599,6 +609,9 @@ class TelegramBotService:
                     {"text": "⏮ Попередній", "callback_data": "sp_act:previous"},
                     {"text": "⏸ Пауза" if playing else "▶️ Грати", "callback_data": "sp_act:play_pause"},
                     {"text": "⏭ Наступний", "callback_data": "sp_act:next"},
+                ],
+                [
+                    {"text": f"🖼 Фон плеєра: {'🎨 Кольорова аура' if bg_style == 0 else '🌑 Глибокий чорний'}", "callback_data": "spotify:toggle_bg"},
                 ],
                 [
                     {"text": "🎨 Увімкнути Spotify AmbiLight", "callback_data": "mode:11"},
@@ -643,24 +656,35 @@ class TelegramBotService:
     @staticmethod
     def _gallery_inline_kb() -> Dict[str, Any]:
         media_list = db_service.list_custom_media()
+        active_saver = db_service.get_setting("active_saver_name", "")
         visual_media = [m for m in media_list if m.get("media_type") != "sound" and not m.get("name", "").startswith("voice_")]
-        if not visual_media:
-            return {
-                "inline_keyboard": [
-                    [{"text": "📭 Галерея порожня. Надішліть гіфку!", "callback_data": "noop"}],
-                    [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
-                ]
-            }
 
         rows = []
-        for i in range(0, min(len(visual_media), 10), 2):
-            m1 = visual_media[i]
-            r = [{"text": f"🎬 {m1['name'][:14]}", "callback_data": f"play_media:{m1['name']}"}]
-            if i + 1 < len(visual_media):
-                m2 = visual_media[i + 1]
-                r.append({"text": f"🎬 {m2['name'][:14]}", "callback_data": f"play_media:{m2['name']}"})
-            rows.append(r)
+        cl_style = int(db_service.get_setting("climate_bg_style", "0") or 0)
+        style_label = "🎨 Жива аура" if cl_style == 1 else "🌑 Глибокий графіт"
+        rows.append([
+            {"text": f"🖼 Фон годинника: {style_label}", "callback_data": "climate:toggle_bg_gallery"},
+            {"text": "⏰ Показати циферблат", "callback_data": "clock:show"},
+        ])
 
+        if not visual_media:
+            rows.append([{"text": "📭 Колекція порожня. Надішліть гіфку чи наліпку!", "callback_data": "noop"}])
+        else:
+            for i in range(0, min(len(visual_media), 14), 2):
+                m1 = visual_media[i]
+                t1 = m1.get("title") or m1["name"]
+                pre1 = "✅ " if m1["name"] == active_saver else "🎬 "
+                r = [{"text": f"{pre1}{t1[:15]}", "callback_data": f"med_view:{m1['name']}"}]
+                if i + 1 < len(visual_media):
+                    m2 = visual_media[i + 1]
+                    t2 = m2.get("title") or m2["name"]
+                    pre2 = "✅ " if m2["name"] == active_saver else "🎬 "
+                    r.append({"text": f"{pre2}{t2[:15]}", "callback_data": f"med_view:{m2['name']}"})
+                rows.append(r)
+
+        rows.append([
+            {"text": "🕰 Класичний маятник (Стандарт)", "callback_data": "med_restore_pendulum"},
+        ])
         rows.append([
             {"text": "⏹ Зупинити показ (Годинник)", "callback_data": "med_stop"},
             {"text": "⬅️ Головне меню", "callback_data": "menu:hub"},
@@ -668,21 +692,47 @@ class TelegramBotService:
         return {"inline_keyboard": rows}
 
     @staticmethod
-    def _media_control_inline_kb(media_name: str) -> Dict[str, Any]:
+    def _media_detail_kb(media_name: str) -> Dict[str, Any]:
+        active_saver = db_service.get_setting("active_saver_name", "")
+        is_active = (media_name == active_saver)
+        saver_lbl = "✅ Вже є заставкою" if is_active else "📌 Зробити постійною заставкою"
         return {
             "inline_keyboard": [
                 [
-                    {"text": "♾ Постійний показ", "callback_data": "med_timer:0"},
-                    {"text": "⏹ Зупинити показ", "callback_data": "med_stop"},
+                    {"text": "▶️ Увімкнути на лампі", "callback_data": f"play_media:{media_name}"},
+                    {"text": saver_lbl, "callback_data": f"med_saver:{media_name}"},
+                ],
+                [
+                    {"text": "✏️ Перейменувати", "callback_data": f"med_rename:{media_name}"},
+                    {"text": "🗑 Видалити", "callback_data": f"med_del:{media_name}"},
                 ],
                 [
                     {"text": "⏱ 15 хв", "callback_data": "med_timer:15"},
                     {"text": "⏱ 1 год", "callback_data": "med_timer:60"},
-                    {"text": "⏱ 3 год", "callback_data": "med_timer:180"},
+                    {"text": "♾ Постійно", "callback_data": "med_timer:0"},
                 ],
                 [
+                    {"text": "⬅️ До списку колекції", "callback_data": "menu:gallery"},
+                ],
+            ]
+        }
+
+    @staticmethod
+    def _media_control_inline_kb(media_name: str) -> Dict[str, Any]:
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "✏️ Дати назву", "callback_data": f"med_rename:{media_name}"},
                     {"text": "📌 Встановити заставкою", "callback_data": f"med_saver:{media_name}"},
-                    {"text": "🎭 До галереї", "callback_data": "menu:gallery"},
+                ],
+                [
+                    {"text": "♾ Постійний показ", "callback_data": "med_timer:0"},
+                    {"text": "⏱ 15 хв", "callback_data": "med_timer:15"},
+                    {"text": "⏱ 1 год", "callback_data": "med_timer:60"},
+                ],
+                [
+                    {"text": "🖼 Моя колекція", "callback_data": "menu:gallery"},
+                    {"text": "⏹ Зупинити показ", "callback_data": "med_stop"},
                 ],
             ]
         }
@@ -767,6 +817,25 @@ class TelegramBotService:
 
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans})
             await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._volume_inline_kb()})
+
+        elif data.startswith("tprof:"):
+            prof = int(data.split(":", 1)[1])
+            state_service.enqueue_raw({"touch_profile": prof, "muted": False})
+            prof_names = ["🍎 Apple Tock", "🪵 Wood Tap", "🫧 Soft Pop"]
+            p_name = prof_names[prof] if prof < 3 else "Apple Tock"
+            ans = f"Звук встановлено: {p_name}"
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans})
+            await self._api("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": self._volume_inline_kb()})
+
+        elif data == "menu:volume":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "🔊 <b>КЕРУВАННЯ ГУЧНІСТЮ ТА ЗВУКОМ</b>\nОберіть рівень або стиль клацання сенсорних кнопок:",
+                "parse_mode": "HTML",
+                "reply_markup": self._volume_inline_kb(),
+            })
 
         elif data.startswith("pomo:"):
             act = data.split(":", 1)[1]
@@ -878,17 +947,97 @@ class TelegramBotService:
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Spotify: {action}"})
                 await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": sp_t, "parse_mode": "HTML", "reply_markup": sp_k})
 
+        elif data == "spotify:toggle_bg":
+            cur_style = int(db_service.get_setting("spotify_bg_style", "0") or 0)
+            new_style = 1 if cur_style == 0 else 0
+            db_service.set_setting("spotify_bg_style", str(new_style))
+            state_service.enqueue_raw({"sp_bg": new_style})
+            try:
+                from app.core.events import realtime_hub
+                await realtime_hub.push_to_box({"sp_bg": new_style})
+                realtime_hub.emit_spotify_to_box(spotify_service.get_cached_state())
+            except Exception:
+                pass
+            style_msg = "🌑 Стиль плеєра: Глибокий чорний" if new_style == 1 else "🎨 Стиль плеєра: Кольорова аура"
+            sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": style_msg})
+            await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": sp_t, "parse_mode": "HTML", "reply_markup": sp_k})
+
         elif data == "spotify:refresh":
             await asyncio.sleep(0.3)
             sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Дані Spotify оновлено"})
             await self._api("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": sp_t, "parse_mode": "HTML", "reply_markup": sp_k})
 
+        elif data.startswith("med_view:"):
+            name = data.split(":", 1)[1]
+            info = db_service.get_media_by_name(name)
+            if not info:
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "Елемент не знайдено"})
+                return
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            t_title = info.get("title") or info["name"]
+            msg_t = (
+                f"🎬 <b>{t_title}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"• Тип: {info['media_type'].upper()} ({info['frames']} кадрів, {info['fps']} FPS)\n"
+                f"• Розмір: {info['byte_size'] // 1024} КБ\n\n"
+                f"Оберіть потрібну дію:"
+            )
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": msg_t,
+                "parse_mode": "HTML",
+                "reply_markup": self._media_detail_kb(name),
+            })
+
+        elif data.startswith("med_rename:"):
+            name = data.split(":", 1)[1]
+            self.rename_pending[chat_id] = name
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": (
+                    "✍️ <b>Введіть нову назву для цієї наліпки/гіфки:</b>\n"
+                    "<i>Надішліть будь-який текст у цей чат (підтримуються українські літери, пробіли та емодзі, наприклад: <code>🐱 Мурчик</code> чи <code>🔥 Затишний камін</code>).</i>"
+                ),
+                "parse_mode": "HTML",
+            })
+
+        elif data.startswith("med_del:"):
+            name = data.split(":", 1)[1]
+            db_service.delete_custom_media(name)
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🗑 Видалено з колекції!"})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "🖼 <b>КОЛЕКЦІЯ АНІМАЦІЙ ТА ЗАСТАВОК:</b>\nЕлемент видалено. Оберіть наступний:",
+                "parse_mode": "HTML",
+                "reply_markup": self._gallery_inline_kb(),
+            })
+
+        elif data == "med_restore_pendulum":
+            db_service.set_active_saver("")
+            state_service.enqueue_raw({"clear_saver": True})
+            from app.core.events import realtime_hub
+            await realtime_hub.push_to_box({"clear_saver": True})
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "🕰 Повернуто маятник!"})
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": "🖼 <b>КОЛЕКЦІЯ АНІМАЦІЙ ТА ЗАСТАВОК:</b>\n✅ Встановлено класичний швейцарський маятник як постійну заставку!",
+                "parse_mode": "HTML",
+                "reply_markup": self._gallery_inline_kb(),
+            })
+
         elif data.startswith("play_media:"):
             name = data.split(":", 1)[1]
             try:
                 media_service.trigger_saved_media(name, settings.PUBLIC_SERVER_URL)
-                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Запущено '{name}'!"})
+                info = db_service.get_media_by_name(name)
+                d_title = (info.get("title") if info else "") or name
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Запущено «{d_title}»!"})
             except Exception as e:
                 await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"Помилка: {e}"})
 
@@ -897,6 +1046,33 @@ class TelegramBotService:
             media_service.set_timer(t_min)
             msg_t = f"⏱ Таймер показу: {t_min} хв!" if t_min > 0 else "♾ Анімація крутиться постійно!"
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": msg_t})
+
+        elif data == "climate:toggle_bg_gallery":
+            cur_cl = int(db_service.get_setting("climate_bg_style", "0") or 0)
+            new_cl = 1 if cur_cl == 0 else 0
+            db_service.set_setting("climate_bg_style", str(new_cl))
+            state_service.enqueue_raw({"cl_bg": new_cl})
+            try:
+                from app.core.events import realtime_hub
+                await realtime_hub.push_to_box({"cl_bg": new_cl})
+            except Exception:
+                pass
+            ans_text = "🎨 Стиль циферблата: Жива аура" if new_cl == 1 else "🌑 Стиль циферблата: Глибокий графіт"
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans_text})
+            await self._api("editMessageReplyMarkup", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "reply_markup": self._gallery_inline_kb(),
+            })
+
+        elif data == "clock:show":
+            state_service.enqueue_raw({"set_screen": 0})
+            try:
+                from app.core.events import realtime_hub
+                await realtime_hub.push_to_box({"set_screen": 0})
+            except Exception:
+                pass
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": "⏰ Головний циферблат увімкнено!"})
 
         elif data == "med_stop":
             media_service.stop_media()
@@ -976,20 +1152,37 @@ class TelegramBotService:
                 "reply_markup": self._modes_inline_kb(),
             })
 
-        elif data == "hub:climate":
-            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+        elif data == "hub:climate" or data == "climate:toggle_bg":
+            if data == "climate:toggle_bg":
+                cur_cl = int(db_service.get_setting("climate_bg_style", "0") or 0)
+                new_cl = 1 if cur_cl == 0 else 0
+                db_service.set_setting("climate_bg_style", str(new_cl))
+                state_service.enqueue_raw({"cl_bg": new_cl})
+                try:
+                    from app.core.events import realtime_hub
+                    await realtime_hub.push_to_box({"cl_bg": new_cl})
+                except Exception:
+                    pass
+                ans_text = "🎨 Стиль циферблата: Жива аура" if new_cl == 1 else "🌑 Стиль циферблата: Глибокий графіт"
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": ans_text})
+            else:
+                await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+
             d = state_service.latest_telemetry
             t_val = d.get("t", 22.0)
             h_val = d.get("h", 50.0)
             p_val = d.get("p", 750.0)
             p_diff = d.get("p_diff", 0.0)
             trend_sym = "→ стабільно" if abs(p_diff) < 0.7 else ("↑ зростає" if p_diff > 0 else "↓ падає")
+            cl_style = int(db_service.get_setting("climate_bg_style", "0") or 0)
+            style_label = "🌑 Глибокий графіт" if cl_style == 0 else "🎨 Жива аура"
             clim_t = (
-                f"📊 <b>МІКРОКЛІМАТ КІМНАТИ ТА ПОГОДА</b>\n"
+                f"📊 <b>МІКРОКЛІМАТ КІМНАТИ ТА ЦИФЕРБЛАТ</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"🌡 Температура: <b>{t_val:.1f}°C</b>\n"
                 f"💧 Вологість: <b>{h_val:.0f}%</b>\n"
-                f"🧭 Атмосферний тиск: <b>{p_val:.0f} мм рт. ст.</b> ({trend_sym})\n\n"
+                f"🧭 Атмосферний тиск: <b>{p_val:.0f} мм рт. ст.</b> ({trend_sym})\n"
+                f"🖼 Стиль екрана 1: <b>{style_label}</b>\n\n"
                 f"💾 <b>Чорна скринька</b>: сенсори записують історію навіть під час відключень світла!"
             )
             clim_k = {
@@ -998,6 +1191,10 @@ class TelegramBotService:
                         {"text": "📈 Графік за 24 години", "callback_data": "menu:infographic_get"},
                         {"text": "🌤 Прогноз для Києва", "callback_data": "hub:weather"},
                     ],
+                    [
+                        {"text": f"🖼 Стиль фону: {'🎨 Жива аура' if cl_style == 1 else '🌑 Глибокий графіт'}", "callback_data": "climate:toggle_bg"},
+                    ],
+                    [{"text": "⚙️ Калібрування клімату", "callback_data": "hub:climate_calib"}],
                     [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
                 ]
             }
@@ -1008,6 +1205,62 @@ class TelegramBotService:
                 "parse_mode": "HTML",
                 "reply_markup": clim_k,
             })
+
+        elif data == "hub:climate_calib":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            d = state_service.latest_telemetry
+            cur_to = d.get("t_off", -0.8)
+            cur_ho = d.get("h_off", 0.0)
+            cur_po = d.get("p_off", 0.0)
+            cal_msg = (
+                "⚙️ <b>КАЛІБРУВАННЯ КЛІМАТУ SMARTLAMP</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                f"• Зміщення температури: <b>{cur_to:+.1f}°C</b> (ESP32+LCD компенсація)\n"
+                f"• Зміщення вологості: <b>{cur_ho:+.0f}%</b>\n"
+                f"• Зміщення барометра: <b>{cur_po:+.0f} мм</b>\n\n"
+                "Швидкі пресети або введіть команду <code>/calib [t] [h] [p]</code>:"
+            )
+            cal_k = {
+                "inline_keyboard": [
+                    [
+                        {"text": "🌡 0.0°C (Завод)", "callback_data": "cmd:calib:0.0:0:0"},
+                        {"text": "🌡 -0.8°C (База)", "callback_data": "cmd:calib:-0.8:0:0"},
+                        {"text": "🌡 -1.5°C", "callback_data": "cmd:calib:-1.5:0:0"},
+                    ],
+                    [
+                        {"text": "💧 0% (Завод)", "callback_data": f"cmd:calib:{cur_to}:0:0"},
+                        {"text": "💧 -5%", "callback_data": f"cmd:calib:{cur_to}:-5:0"},
+                        {"text": "💧 -10%", "callback_data": f"cmd:calib:{cur_to}:-10:0"},
+                    ],
+                    [{"text": "⬅️ Назад до клімату", "callback_data": "hub:climate"}],
+                ]
+            }
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": cal_msg,
+                "parse_mode": "HTML",
+                "reply_markup": cal_k,
+            })
+
+        elif data.startswith("cmd:calib:"):
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            parts = data.split(":")
+            if len(parts) >= 5:
+                to_val = float(parts[2])
+                ho_val = float(parts[3])
+                po_val = float(parts[4])
+                cal_cmd = {"t_off": to_val, "h_off": ho_val, "p_off": po_val}
+                db_service.set_setting("climate_t_off", str(to_val))
+                db_service.set_setting("climate_h_off", str(ho_val))
+                db_service.set_setting("climate_p_off", str(po_val))
+                state_service.enqueue_raw(cal_cmd)
+                from app.core.events import realtime_hub
+                await realtime_hub.push_to_box(cal_cmd)
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": f"✅ Застосовано зміщення: T={to_val:+.1f}°C, H={ho_val:+.0f}%, P={po_val:+.0f} мм",
+                })
 
         elif data == "hub:weather":
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
@@ -1036,6 +1289,30 @@ class TelegramBotService:
             })
 
         elif data == "hub:audio":
+            await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
+            audio_t = (
+                "🎵 <b>АУДІОХАБ ТА ЗВУКИ ЛАМПИ</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "Оберіть потрібний розділ керування:\n\n"
+                "• <b>Гучність та звуки кнопок</b>: рівень гучності, увімкнення/вимкнення кліків та вибір звукового стилю кнопок (Apple Tock, Wood Tap, Soft Pop).\n"
+                "• <b>Spotify плеєр</b>: керування треками, обкладинка на екрані та візуалізація AmbiLight."
+            )
+            audio_k = {
+                "inline_keyboard": [
+                    [{"text": "🔊 Гучність та звуки кнопок", "callback_data": "menu:volume"}],
+                    [{"text": "🎵 Spotify плеєр", "callback_data": "hub:spotify"}],
+                    [{"text": "⬅️ Головне меню", "callback_data": "menu:hub"}],
+                ]
+            }
+            await self._api("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": msg_id,
+                "text": audio_t,
+                "parse_mode": "HTML",
+                "reply_markup": audio_k,
+            })
+
+        elif data == "hub:spotify":
             await self._api("answerCallbackQuery", {"callback_query_id": cb_id})
             sp_t, sp_k = self._build_spotify_view(settings.PUBLIC_SERVER_URL)
             await self._api("editMessageText", {
@@ -1609,6 +1886,19 @@ class TelegramBotService:
             await self._api("sendMessage", {"chat_id": chat_id, "text": "⛔ Доступ обмежено. Приватна система SmartLamp."})
             return
 
+        # Перехоплення відповіді користувача для зміни назви наліпки/гіфки
+        if chat_id in self.rename_pending and text and not text.startswith("/"):
+            target_name = self.rename_pending.pop(chat_id)
+            new_title = text.strip()[:48]
+            db_service.update_media_title(target_name, new_title)
+            await self._api("sendMessage", {
+                "chat_id": chat_id,
+                "text": f"✅ <b>Назву збережено:</b> «{new_title}» ✨\nТепер вона відображається у вашій колекції!",
+                "parse_mode": "HTML",
+                "reply_markup": self._gallery_inline_kb(),
+            })
+            return
+
         active_kb = ADMIN_KB if is_admin else GIRL_KB
         online_note = "" if state_service.is_online() else "\n🌙 (Лампа офлайн — команду збережено, спрацює при появі живлення)"
 
@@ -1955,6 +2245,60 @@ class TelegramBotService:
             return
 
         # 4. Обробка текстових команд
+        if text.startswith("/calib"):
+            parts = text.split()
+            if len(parts) >= 2:
+                cmd = {}
+                try:
+                    cmd["t_off"] = float(parts[1])
+                    db_service.set_setting("climate_t_off", str(parts[1]))
+                    if len(parts) >= 3:
+                        cmd["h_off"] = float(parts[2])
+                        db_service.set_setting("climate_h_off", str(parts[2]))
+                    if len(parts) >= 4:
+                        cmd["p_off"] = float(parts[3])
+                        db_service.set_setting("climate_p_off", str(parts[3]))
+                    state_service.enqueue_raw(cmd)
+                    from app.core.events import realtime_hub
+                    await realtime_hub.push_to_box(cmd)
+                    resp_msg = (
+                        "✅ <b>Калібрування клімату застосовано:</b>\n"
+                        f"• Температура: {cmd.get('t_off', 0.0):+.1f}°C\n"
+                        f"• Вологість: {cmd.get('h_off', 0.0):+.0f}%\n"
+                        f"• Барометр: {cmd.get('p_off', 0.0):+.0f} мм"
+                    )
+                    await self._api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": resp_msg,
+                        "parse_mode": "HTML",
+                    })
+                except ValueError:
+                    await self._api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": "❌ Формат: <code>/calib [t_offset] [h_offset] [p_offset]</code>\nПриклад: <code>/calib -2.5 -15 0</code>",
+                        "parse_mode": "HTML",
+                    })
+            else:
+                d = state_service.latest_telemetry
+                cur_to = d.get("t_off", -0.8)
+                cur_ho = d.get("h_off", 0.0)
+                cur_po = d.get("p_off", 0.0)
+                info_msg = (
+                    "🌡 <b>ПОТОЧНЕ КАЛІБРУВАННЯ ДАТЧИКІВ:</b>\n"
+                    f"• Зміщення температури: <b>{cur_to:+.1f}°C</b> (ESP32+LCD компенсація: -2.2°C)\n"
+                    f"• Зміщення вологості: <b>{cur_ho:+.0f}%</b>\n"
+                    f"• Зміщення барометра: <b>{cur_po:+.0f} мм</b>\n\n"
+                    "Щоб змінити, надішліть команду:\n"
+                    "<code>/calib [t_offset] [h_offset] [p_offset]</code>\n"
+                    "<i>Приклад:</i> <code>/calib -2.5 -15 0</code>"
+                )
+                await self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": info_msg,
+                    "parse_mode": "HTML",
+                })
+            return
+
         if text.startswith("/status") or text.startswith("/climate") or "Клімат" in text:
             await self._api("sendMessage", {
                 "chat_id": chat_id,
